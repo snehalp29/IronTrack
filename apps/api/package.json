@@ -1,0 +1,22 @@
+{
+  "name": "@irontrack/api",
+  "version": "0.1.0",
+  "description": "IronTrack NestJS REST API",
+  "private": true,
+  "scripts": {
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:seed": "prisma db seed",
+    "prisma:studio": "prisma studio"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "devDependencies": {
+    "prisma": "^7.4.1",
+    "tsx": "^4.21.0"
+  },
+  "dependencies": {
+    "@prisma/client": "^7.4.1"
+  }
+}

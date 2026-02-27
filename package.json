@@ -1,0 +1,40 @@
+{
+  "name": "@irontrack/source",
+  "version": "0.1.0",
+  "description": "IronTrack - Production-ready workout tracking monorepo",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "build": "nx run-many --target=build --all",
+    "test": "nx run-many --target=test --all",
+    "lint": "nx run-many --target=lint --all",
+    "serve:api": "nx serve api",
+    "serve:web": "nx serve web",
+    "serve:ml": "cd apps/ml && poetry run uvicorn app.main:app --reload --port 5000",
+    "db:migrate": "cd apps/api && npx prisma migrate dev",
+    "db:seed": "cd apps/api && npx prisma db seed",
+    "db:studio": "cd apps/api && npx prisma studio",
+    "db:generate": "cd apps/api && npx prisma generate",
+    "docker:up": "docker compose -f infra/docker/docker-compose.yml up -d",
+    "docker:down": "docker compose -f infra/docker/docker-compose.yml down",
+    "setup": "pnpm install && pnpm db:generate"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@nx/js": "22.5.3",
+    "@swc-node/register": "~1.11.1",
+    "@swc/core": "~1.15.5",
+    "@swc/helpers": "~0.5.18",
+    "nx": "22.5.3",
+    "prettier": "~3.6.2",
+    "tslib": "^2.3.0",
+    "typescript": "~5.9.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["@swc/core", "nx"]
+  }
+}
