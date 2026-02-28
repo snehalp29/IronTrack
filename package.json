@@ -73,8 +73,11 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
+      "@prisma/engines",
       "@swc/core",
-      "nx"
+      "esbuild",
+      "nx",
+      "prisma"
     ]
   }
 }
