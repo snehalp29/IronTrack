@@ -3,8 +3,7 @@
 // ─────────────────────────────────────────────────────────────
 
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
@@ -49,7 +48,7 @@ enum StreakType {
   CHECKLIST
 }
 
-enum ChecklistItemType {
+enum ChecklistType {
   WORKOUT
   WARMUP
   MOBILITY
@@ -82,6 +81,7 @@ model User {
   googleId       String?        @unique
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
+  deletedAt      DateTime?
 
   // Relations
   exercises        ExerciseTemplate[]
@@ -412,11 +412,11 @@ model UserStreak {
 // ─── ChecklistItem ─────────────────────────────────────
 
 model ChecklistItem {
-  id          String            @id @default(uuid()) @db.Uuid
-  userId      String            @db.Uuid
-  date        DateTime          @db.Date
-  type        ChecklistItemType
-  isCompleted Boolean           @default(false)
+  id          String        @id @default(uuid()) @db.Uuid
+  userId      String        @db.Uuid
+  date        DateTime      @db.Date
+  type        ChecklistType
+  isCompleted Boolean       @default(false)
   completedAt DateTime?
 
   user User @relation(fields: [userId], references: [id])

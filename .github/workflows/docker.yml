@@ -1,0 +1,25 @@
+name: Docker Images
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-images:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build API image
+        run: docker build -f infra/docker/Dockerfile.api -t irontrack-api:latest .
+
+      - name: Build ML image
+        run: docker build -f infra/docker/Dockerfile.ml -t irontrack-ml:latest .
+
+      - name: Build web image
+        run: docker build -f infra/docker/Dockerfile.web -t irontrack-web:latest .

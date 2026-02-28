@@ -1,40 +1,80 @@
 {
   "name": "@irontrack/source",
   "version": "0.1.0",
+  "private": true,
   "description": "IronTrack - Production-ready workout tracking monorepo",
   "license": "MIT",
-  "private": true,
-  "engines": {
-    "node": ">=20.0.0",
-    "pnpm": ">=9.0.0"
-  },
   "scripts": {
-    "build": "nx run-many --target=build --all",
-    "test": "nx run-many --target=test --all",
-    "lint": "nx run-many --target=lint --all",
-    "serve:api": "nx serve api",
-    "serve:web": "nx serve web",
-    "serve:ml": "cd apps/ml && poetry run uvicorn app.main:app --reload --port 5000",
+    "build": "pnpm run build:api && pnpm run build:web",
+    "build:api": "pnpm --filter @irontrack/api build",
+    "build:web": "pnpm --filter @irontrack/web build",
+    "db:generate": "cd apps/api && npx prisma generate",
     "db:migrate": "cd apps/api && npx prisma migrate dev",
     "db:seed": "cd apps/api && npx prisma db seed",
     "db:studio": "cd apps/api && npx prisma studio",
-    "db:generate": "cd apps/api && npx prisma generate",
-    "docker:up": "docker compose -f infra/docker/docker-compose.yml up -d",
     "docker:down": "docker compose -f infra/docker/docker-compose.yml down",
-    "setup": "pnpm install && pnpm db:generate"
+    "docker:up": "docker compose -f infra/docker/docker-compose.yml up -d --build",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "pnpm run lint:code && pnpm run format:check",
+    "lint:code": "eslint . --ext .ts,.tsx,.js,.jsx",
+    "lint:fix": "pnpm run lint:code -- --fix && pnpm run format",
+    "prepare": "husky",
+    "serve:api": "pnpm --filter @irontrack/api dev",
+    "serve:ml": "cd apps/ml && poetry run uvicorn app.main:app --reload --port 5000",
+    "serve:mobile": "pnpm --filter @irontrack/mobile start",
+    "serve:web": "pnpm --filter @irontrack/web dev",
+    "setup": "pnpm install && pnpm db:generate",
+    "test": "pnpm run test:api && pnpm run test:web && pnpm run test:shared",
+    "test:api": "pnpm --filter @irontrack/api test",
+    "test:ml": "cd apps/ml && poetry run pytest",
+    "test:shared": "pnpm --filter @irontrack/shared exec vitest run --config vitest.config.ts",
+    "test:web": "pnpm --filter @irontrack/web test",
+    "typecheck": "pnpm run typecheck:api && pnpm run typecheck:web && pnpm run typecheck:shared",
+    "typecheck:api": "pnpm --filter @irontrack/api run typecheck",
+    "typecheck:mobile": "pnpm --filter @irontrack/mobile run typecheck",
+    "typecheck:shared": "pnpm --filter @irontrack/shared run typecheck",
+    "typecheck:web": "pnpm --filter @irontrack/web run typecheck"
   },
-  "dependencies": {},
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml,css,scss}": [
+      "prettier --write"
+    ]
+  },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@nx/js": "22.5.3",
     "@swc-node/register": "~1.11.1",
     "@swc/core": "~1.15.5",
     "@swc/helpers": "~0.5.18",
+    "@trivago/prettier-plugin-sort-imports": "^6.0.2",
+    "eslint": "^10.0.2",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.3.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.3.0",
     "nx": "22.5.3",
     "prettier": "~3.6.2",
+    "prettier-plugin-organize-attributes": "^1.0.0",
+    "prettier-plugin-packagejson": "^3.0.0",
+    "prettier-plugin-prisma": "^5.0.0",
+    "prettier-plugin-tailwindcss": "^0.7.1",
     "tslib": "^2.3.0",
-    "typescript": "~5.9.2"
+    "typescript": "~5.9.2",
+    "typescript-eslint": "^8.56.1"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["@swc/core", "nx"]
+    "onlyBuiltDependencies": [
+      "@swc/core",
+      "nx"
+    ]
   }
 }

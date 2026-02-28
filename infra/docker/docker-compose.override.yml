@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  api:
+    command: sh -c "pnpm --filter @irontrack/api dev"
+    volumes:
+      - ../..:/app
+    environment:
+      NODE_ENV: development
+
+  ml:
+    command: sh -c "pip install poetry && poetry run uvicorn app.main:app --host 0.0.0.0 --port 5000 --reload"
+    volumes:
+      - ../../apps/ml:/app
+
+  web:
+    command: sh -c "pnpm --filter @irontrack/web dev --host 0.0.0.0 --port 3000"
+    volumes:
+      - ../..:/app

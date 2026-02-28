@@ -1,0 +1,19 @@
+export enum ExerciseType {
+  WEIGHT_REPS = 'WEIGHT_REPS',
+  BODYWEIGHT = 'BODYWEIGHT',
+  DURATION = 'DURATION',
+  REPS_ONLY = 'REPS_ONLY',
+  BODYWEIGHT_PLUS_WEIGHT = 'BODYWEIGHT_PLUS_WEIGHT',
+}
+
+export enum UnitPreference {
+  METRIC = 'METRIC',
+  IMPERIAL = 'IMPERIAL',
+}
+
+export enum PrType {
+  MAX_WEIGHT = 'MAX_WEIGHT',
+  MAX_REPS = 'MAX_REPS',
+  MAX_VOLUME = 'MAX_VOLUME',
+  MAX_1RM_EST = 'MAX_1RM_EST',
+}

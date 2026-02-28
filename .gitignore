@@ -7,6 +7,7 @@ dist/
 build/
 .next/
 out/
+*.tsbuildinfo
 
 # Environment
 .env
@@ -14,7 +15,7 @@ out/
 .env.*.local
 
 # Prisma
-apps/api/prisma/generated/
+apps/api/generated/
 
 # Python
 __pycache__/

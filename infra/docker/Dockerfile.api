@@ -1,0 +1,25 @@
+FROM node:20-alpine AS deps
+WORKDIR /app
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/api/package.json apps/api/package.json
+COPY libs/shared/package.json libs/shared/package.json
+RUN corepack enable && pnpm install --no-frozen-lockfile
+
+FROM node:20-alpine AS build
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN corepack enable && pnpm --filter @irontrack/api prisma:generate
+RUN pnpm --filter @irontrack/api build
+
+FROM node:20-alpine AS runtime
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=build /app/apps/api/dist ./apps/api/dist
+COPY --from=build /app/apps/api/generated ./apps/api/generated
+COPY --from=build /app/apps/api/prisma ./apps/api/prisma
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/apps/api/package.json ./apps/api/package.json
+EXPOSE 4000
+HEALTHCHECK --interval=15s --timeout=5s --retries=5 CMD wget -qO- http://localhost:4000/api/v1/health || exit 1
+CMD ["node", "apps/api/dist/main.js"]
