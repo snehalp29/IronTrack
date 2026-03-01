@@ -209,7 +209,7 @@ export class AuthService {
   }
 
   private parseDurationToMs(value: string): number {
-    const pattern = /^(\\d+)([smhd])$/;
+    const pattern = /^(\d+)([smhd])$/;
     const match = pattern.exec(value.trim());
     if (!match) {
       return 7 * 24 * 60 * 60 * 1000;

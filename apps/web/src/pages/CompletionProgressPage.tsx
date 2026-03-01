@@ -9,8 +9,8 @@ export function CompletionProgressPage() {
         <div className="card">Chest +2 sessions</div>
         <div className="card">Back +1 session</div>
       </div>
-      <Link to="/workout/complete/next">
-        <button>Up Next</button>
+      <Link to="/workout/complete/next" className="button-link">
+        Up Next
       </Link>
     </div>
   );

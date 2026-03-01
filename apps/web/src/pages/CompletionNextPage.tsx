@@ -8,8 +8,8 @@ export function CompletionNextPage() {
         Recommended template: Pull Day B (targets underworked lats and rear
         delts)
       </p>
-      <Link to="/workout/complete/streak">
-        <button>See Streak</button>
+      <Link to="/workout/complete/streak" className="button-link">
+        See Streak
       </Link>
     </div>
   );

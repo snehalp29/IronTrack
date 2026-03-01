@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   api:
     command: sh -c "pnpm --filter @irontrack/api dev"
@@ -14,6 +12,6 @@ services:
       - ../../apps/ml:/app
 
   web:
-    command: sh -c "pnpm --filter @irontrack/web dev --host 0.0.0.0 --port 3000"
+    command: sh -c "pnpm --filter @irontrack/web dev --host 0.0.0.0 --port 80"
     volumes:
       - ../..:/app

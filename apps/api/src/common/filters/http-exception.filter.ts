@@ -23,9 +23,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
     };
 
     if (!(exception instanceof HttpException)) {
+      const stack = exception instanceof Error ? exception.stack : undefined;
       this.logger.error(
         `Unhandled error for ${request.method} ${request.url}`,
-        exception as Error,
+        stack,
       );
       response
         .status(HttpStatus.INTERNAL_SERVER_ERROR)

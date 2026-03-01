@@ -5,8 +5,8 @@ export function NotFoundPage() {
     <div className="layout card">
       <h1>Not Found</h1>
       <p className="meta">The page does not exist.</p>
-      <Link to="/">
-        <button>Back Home</button>
+      <Link to="/" className="button-link">
+        Back Home
       </Link>
     </div>
   );

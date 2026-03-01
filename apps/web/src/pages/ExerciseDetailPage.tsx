@@ -1,23 +1,32 @@
 import { useSearchParams } from 'react-router-dom';
 
 export function ExerciseDetailPage() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const tab = searchParams.get('tab') ?? 'guide';
+  const setTab = (nextTab: 'guide' | 'history') => {
+    const nextSearchParams = new URLSearchParams(searchParams);
+    nextSearchParams.set('tab', nextTab);
+    setSearchParams(nextSearchParams, { replace: true });
+  };
 
   return (
     <div className="card">
       <h1>Exercise Detail</h1>
       <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-        <a href="?tab=guide">
-          <button className={tab === 'guide' ? undefined : 'secondary'}>
-            Form Guide
-          </button>
-        </a>
-        <a href="?tab=history">
-          <button className={tab === 'history' ? undefined : 'secondary'}>
-            History
-          </button>
-        </a>
+        <button
+          className={tab === 'guide' ? undefined : 'secondary'}
+          onClick={() => setTab('guide')}
+          type="button"
+        >
+          Form Guide
+        </button>
+        <button
+          className={tab === 'history' ? undefined : 'secondary'}
+          onClick={() => setTab('history')}
+          type="button"
+        >
+          History
+        </button>
       </div>
       {tab === 'guide' ? (
         <p className="meta">Coaching cues and setup instructions.</p>

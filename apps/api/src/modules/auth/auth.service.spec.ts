@@ -237,4 +237,14 @@ describe('AuthService', () => {
     const logoutResult = await authService.logout(refreshed.refreshToken);
     expect(logoutResult.success).toBe(true);
   });
+
+  it('parses configured JWT duration strings', () => {
+    const parser = authService as unknown as {
+      parseDurationToMs: (value: string) => number;
+    };
+
+    expect(parser.parseDurationToMs('15m')).toBe(15 * 60_000);
+    expect(parser.parseDurationToMs('7d')).toBe(7 * 86_400_000);
+    expect(parser.parseDurationToMs('invalid')).toBe(7 * 86_400_000);
+  });
 });
