@@ -61,6 +61,36 @@ export class PrDetectionService {
       prType: PrType;
       value: number;
     }>;
+    const trackedPrTypes = [
+      PrType.MAX_WEIGHT,
+      PrType.MAX_REPS,
+      PrType.MAX_VOLUME,
+      PrType.MAX_1RM_EST,
+    ] as const;
+    const exerciseTemplateIds = Array.from(grouped.keys());
+
+    if (!exerciseTemplateIds.length) {
+      return createdPrs;
+    }
+
+    const existingPrs = await this.prisma.pRRecord.findMany({
+      where: {
+        userId,
+        exerciseTemplateId: { in: exerciseTemplateIds },
+        prType: { in: [...trackedPrTypes] },
+      },
+      select: {
+        exerciseTemplateId: true,
+        prType: true,
+        value: true,
+      },
+    });
+    const existingValueByKey = new Map(
+      existingPrs.map((record) => [
+        this.getPrKey(record.exerciseTemplateId, record.prType),
+        record.value,
+      ]),
+    );
 
     for (const [exerciseTemplateId, sets] of grouped.entries()) {
       const candidateMap = this.calculateCandidates(sets);
@@ -69,17 +99,10 @@ export class PrDetectionService {
           continue;
         }
 
-        const existing = await this.prisma.pRRecord.findUnique({
-          where: {
-            userId_exerciseTemplateId_prType: {
-              userId,
-              exerciseTemplateId,
-              prType,
-            },
-          },
-        });
+        const prKey = this.getPrKey(exerciseTemplateId, prType);
+        const existingValue = existingValueByKey.get(prKey);
 
-        if (!existing || candidate.value > existing.value) {
+        if (existingValue === undefined || candidate.value > existingValue) {
           await this.prisma.pRRecord.upsert({
             where: {
               userId_exerciseTemplateId_prType: {
@@ -104,6 +127,7 @@ export class PrDetectionService {
               sessionId,
             },
           });
+          existingValueByKey.set(prKey, candidate.value);
 
           createdPrs.push({
             exerciseTemplateId,
@@ -247,5 +271,9 @@ export class PrDetectionService {
     if (!current || value > current.value) {
       candidates.set(key, { value, achievedAt, setId });
     }
+  }
+
+  private getPrKey(exerciseTemplateId: string, prType: PrType): string {
+    return `${exerciseTemplateId}:${prType}`;
   }
 }

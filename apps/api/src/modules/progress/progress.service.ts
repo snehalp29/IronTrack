@@ -10,8 +10,9 @@ export class ProgressService {
     const start = startDate
       ? new Date(`${startDate}T00:00:00.000Z`)
       : this.startOfWeek(new Date());
-    const end = new Date(start);
-    end.setDate(start.getDate() + 6);
+    const endExclusive = new Date(start);
+    endExclusive.setUTCDate(start.getUTCDate() + 7);
+    const endInclusive = new Date(endExclusive.getTime() - 1);
 
     const sets = await this.prisma.set.findMany({
       where: {
@@ -22,7 +23,7 @@ export class ProgressService {
             userId,
             startedAt: {
               gte: start,
-              lte: end,
+              lt: endExclusive,
             },
           },
         },
@@ -82,7 +83,7 @@ export class ProgressService {
 
     return {
       weekStart: start,
-      weekEnd: end,
+      weekEnd: endInclusive,
       coveragePercent,
       coveredMuscles: coveredMuscleIds.size,
       totalMuscles,

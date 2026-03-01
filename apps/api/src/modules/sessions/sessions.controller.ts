@@ -13,28 +13,20 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   addSessionExerciseSchema,
-  batchCreateSetsSchema,
-  createSetSchema,
   listSessionsQuerySchema,
   reorderSessionExercisesSchema,
   startSessionSchema,
   swapSessionExerciseSchema,
-  toggleSetCompletionSchema,
   updateSessionExerciseSchema,
   updateSessionSchema,
-  updateSetSchema,
 } from './dto/session.schemas';
 import type {
   AddSessionExerciseDto,
-  BatchCreateSetsDto,
-  CreateSetDto,
   ReorderSessionExercisesDto,
   StartSessionDto,
   SwapSessionExerciseDto,
-  ToggleSetCompletionDto,
   UpdateSessionDto,
   UpdateSessionExerciseDto,
-  UpdateSetDto,
 } from './dto/session.schemas';
 import { SessionsService } from './sessions.service';
 
@@ -145,68 +137,5 @@ export class SessionsController {
     body: SwapSessionExerciseDto,
   ) {
     return this.sessionsService.swapSessionExercise(user.sub, sessionId, body);
-  }
-
-  @Post('session-exercises/:seId/sets')
-  async createSet(
-    @CurrentUser() user: { sub: string },
-    @Param('seId') sessionExerciseId: string,
-    @Body(new ZodValidationPipe(createSetSchema)) body: CreateSetDto,
-  ) {
-    return this.sessionsService.createSet(user.sub, sessionExerciseId, body);
-  }
-
-  @Patch('session-exercises/:seId/sets/:id')
-  async updateSet(
-    @CurrentUser() user: { sub: string },
-    @Param('seId') sessionExerciseId: string,
-    @Param('id') id: string,
-    @Body(new ZodValidationPipe(updateSetSchema)) body: UpdateSetDto,
-  ) {
-    return this.sessionsService.updateSet(
-      user.sub,
-      sessionExerciseId,
-      id,
-      body,
-    );
-  }
-
-  @Delete('session-exercises/:seId/sets/:id')
-  async removeSet(
-    @CurrentUser() user: { sub: string },
-    @Param('seId') sessionExerciseId: string,
-    @Param('id') id: string,
-  ) {
-    return this.sessionsService.deleteSet(user.sub, sessionExerciseId, id);
-  }
-
-  @Patch('session-exercises/:seId/sets/:id/complete')
-  async completeSet(
-    @CurrentUser() user: { sub: string },
-    @Param('seId') sessionExerciseId: string,
-    @Param('id') id: string,
-    @Body(new ZodValidationPipe(toggleSetCompletionSchema))
-    body: ToggleSetCompletionDto,
-  ) {
-    return this.sessionsService.toggleSetCompletion(
-      user.sub,
-      sessionExerciseId,
-      id,
-      body,
-    );
-  }
-
-  @Post('session-exercises/:seId/sets/batch')
-  async batchSetCreate(
-    @CurrentUser() user: { sub: string },
-    @Param('seId') sessionExerciseId: string,
-    @Body(new ZodValidationPipe(batchCreateSetsSchema))
-    body: BatchCreateSetsDto,
-  ) {
-    return this.sessionsService.batchCreateSets(
-      user.sub,
-      sessionExerciseId,
-      body,
-    );
   }
 }

@@ -9,10 +9,13 @@ interface SupersetItem<T> {
 @Injectable()
 export class SupersetService {
   interleave<T>(entries: SupersetItem<T>[]): T[] {
-    const singles = entries
-      .filter((entry) => !entry.supersetGroupKey)
-      .sort((a, b) => a.orderIndex - b.orderIndex);
     const groups = new Map<string, SupersetItem<T>[]>();
+    const singleUnits = entries
+      .filter((entry) => !entry.supersetGroupKey)
+      .map((entry) => ({
+        orderIndex: entry.orderIndex,
+        items: [entry.item],
+      }));
 
     for (const entry of entries) {
       if (!entry.supersetGroupKey) {
@@ -24,11 +27,16 @@ export class SupersetService {
       ]);
     }
 
-    const interleavedGroups = Array.from(groups.values()).flatMap((group) => {
+    const groupUnits = Array.from(groups.values()).map((group) => {
       const sorted = [...group].sort((a, b) => a.orderIndex - b.orderIndex);
-      return sorted.map((entry) => entry.item);
+      return {
+        orderIndex: sorted[0]?.orderIndex ?? 0,
+        items: sorted.map((entry) => entry.item),
+      };
     });
 
-    return [...singles.map((single) => single.item), ...interleavedGroups];
+    return [...singleUnits, ...groupUnits]
+      .sort((a, b) => a.orderIndex - b.orderIndex)
+      .flatMap((unit) => unit.items);
   }
 }
