@@ -232,8 +232,11 @@ export class AuthService {
     sub: string;
     email: string;
   }): Promise<User> {
-    const user = await this.prisma.user.findUnique({
-      where: { id: payload.sub },
+    const user = await this.prisma.user.findFirst({
+      where: {
+        id: payload.sub,
+        deletedAt: null,
+      },
     });
     if (!user) {
       throw new UnauthorizedException({
