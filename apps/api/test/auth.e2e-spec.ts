@@ -110,9 +110,10 @@ describe('AuthController (e2e)', () => {
               JWT_REFRESH_SECRET: 'refresh-secret-1234567890',
               JWT_ACCESS_EXPIRY: '15m',
               JWT_REFRESH_EXPIRY: '7d',
-              GOOGLE_CLIENT_ID: '',
-              GOOGLE_CLIENT_SECRET: '',
-              GOOGLE_CALLBACK_URL: '',
+              GOOGLE_CLIENT_ID: 'test-google-client-id',
+              GOOGLE_CLIENT_SECRET: 'test-google-client-secret',
+              GOOGLE_CALLBACK_URL:
+                'http://localhost:3000/api/v1/auth/google/callback',
             }),
           ],
         }),
@@ -124,16 +125,19 @@ describe('AuthController (e2e)', () => {
       .compile();
 
     app = moduleRef.createNestApplication();
+    app.setGlobalPrefix('api/v1');
     await app.init();
   });
 
   afterEach(async () => {
-    await app.close();
+    if (app) {
+      await app.close();
+    }
   });
 
   it('register -> login -> refresh -> logout', async () => {
     const registerRes = await request(app.getHttpServer())
-      .post('/auth/register')
+      .post('/api/v1/auth/register')
       .send({
         email: 'e2e@example.com',
         password: 'Str0ngPassword!',
@@ -145,7 +149,7 @@ describe('AuthController (e2e)', () => {
     expect(registerRes.body.refreshToken).toBeTruthy();
 
     const loginRes = await request(app.getHttpServer())
-      .post('/auth/login')
+      .post('/api/v1/auth/login')
       .send({
         email: 'e2e@example.com',
         password: 'Str0ngPassword!',
@@ -155,7 +159,7 @@ describe('AuthController (e2e)', () => {
     expect(loginRes.body.refreshToken).toBeTruthy();
 
     const refreshRes = await request(app.getHttpServer())
-      .post('/auth/refresh')
+      .post('/api/v1/auth/refresh')
       .send({
         refreshToken: loginRes.body.refreshToken,
       });
@@ -164,7 +168,7 @@ describe('AuthController (e2e)', () => {
     expect(refreshRes.body.accessToken).toBeTruthy();
 
     const logoutRes = await request(app.getHttpServer())
-      .post('/auth/logout')
+      .post('/api/v1/auth/logout')
       .send({
         refreshToken: refreshRes.body.refreshToken,
       });

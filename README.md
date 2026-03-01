@@ -38,6 +38,42 @@ pnpm serve:api
 pnpm serve:web
 ```
 
+## Local API + Demo Data
+
+Run this on your machine:
+
+```bash
+pnpm docker:up
+pnpm db:generate
+pnpm db:migrate
+pnpm db:seed
+pnpm db:seed:demo
+pnpm serve:api
+curl -s http://localhost:3000/api/v1/health
+```
+
+Demo login after seed:
+
+```bash
+curl -s http://localhost:3000/api/v1/auth/login \
+  -H 'content-type: application/json' \
+  -d '{"email":"demo@irontrack.local","password":"DemoPass123!"}'
+```
+
+If Docker fails with `bind: address already in use` on `5000`, set
+`ML_SERVICE_PORT=5001` in your root `.env`, then run:
+
+```bash
+pnpm docker:up
+```
+
+If Docker fails with `bind: address already in use` on `3000`, set
+`WEB_PORT=3001` in your root `.env`, then run:
+
+```bash
+pnpm docker:up
+```
+
 ML service:
 
 ```bash

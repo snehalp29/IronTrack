@@ -1,0 +1,56 @@
+# Import each command in Insomnia via: Create -> Import/Export -> Import Data -> From Clipboard (cURL)
+# Docker base URL: http://localhost:4000/api/v1
+# Local dev base URL: http://localhost:3000/api/v1
+
+# Health
+curl --request GET \
+  --url http://localhost:4000/api/v1/health
+
+# Catalog: muscle groups
+curl --request GET \
+  --url http://localhost:4000/api/v1/muscle-groups
+
+# Catalog: equipment
+curl --request GET \
+  --url http://localhost:4000/api/v1/equipment
+
+# Register
+curl --request POST \
+  --url http://localhost:4000/api/v1/auth/register \
+  --header 'content-type: application/json' \
+  --data '{
+  "email": "demo@irontrack.local",
+  "password": "DemoPass123!",
+  "name": "Demo User"
+}'
+
+# Login
+curl --request POST \
+  --url http://localhost:4000/api/v1/auth/login \
+  --header 'content-type: application/json' \
+  --data '{
+  "email": "demo@irontrack.local",
+  "password": "DemoPass123!"
+}'
+
+# Refresh token
+curl --request POST \
+  --url http://localhost:4000/api/v1/auth/refresh \
+  --header 'content-type: application/json' \
+  --data '{
+  "refreshToken": "<REFRESH_TOKEN>"
+}'
+
+# Current user (requires access token)
+curl --request GET \
+  --url http://localhost:4000/api/v1/users/me \
+  --header 'authorization: Bearer <ACCESS_TOKEN>'
+
+# Logout (requires access token and refresh token)
+curl --request POST \
+  --url http://localhost:4000/api/v1/auth/logout \
+  --header 'authorization: Bearer <ACCESS_TOKEN>' \
+  --header 'content-type: application/json' \
+  --data '{
+  "refreshToken": "<REFRESH_TOKEN>"
+}'

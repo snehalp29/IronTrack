@@ -2,9 +2,53 @@
 // IronTrack — Prisma Seed Script
 // Seeds: 14 muscle groups, 13 equipment, 50+ global exercises
 // ─────────────────────────────────────────────────────────────
+import { PrismaPg } from '@prisma/adapter-pg';
 import { ExerciseType, PrismaClient } from '@prisma/client';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
-const prisma = new PrismaClient();
+function resolveDatabaseUrl(): string | undefined {
+  if (process.env.DATABASE_URL) {
+    return process.env.DATABASE_URL;
+  }
+
+  const envCandidates = [
+    resolve(process.cwd(), '.env'),
+    resolve(process.cwd(), '../../.env'),
+  ];
+
+  for (const envPath of envCandidates) {
+    if (!existsSync(envPath)) {
+      continue;
+    }
+
+    const contents = readFileSync(envPath, 'utf8');
+    const line = contents
+      .split(/\r?\n/)
+      .find((entry) => entry.startsWith('DATABASE_URL='));
+
+    if (!line) {
+      continue;
+    }
+
+    const value = line.slice('DATABASE_URL='.length).trim();
+    if (!value) {
+      continue;
+    }
+
+    return value.replace(/^['"]|['"]$/g, '');
+  }
+
+  return undefined;
+}
+
+const connectionString = resolveDatabaseUrl();
+if (!connectionString) {
+  throw new Error('DATABASE_URL is required to run seed script.');
+}
+
+const adapter = new PrismaPg({ connectionString });
+const prisma = new PrismaClient({ adapter });
 
 // ─── Muscle Groups ──────────────────────────────────────────
 

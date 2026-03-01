@@ -9,23 +9,53 @@ export class WinstonLoggerService implements LoggerService {
     transports: [new transports.Console()],
   });
 
-  log(message: string, context?: string): void {
-    this.logger.info(message, { context });
+  private formatMessage(message: unknown): {
+    message: string;
+    details?: unknown;
+  } {
+    if (message instanceof Error) {
+      return {
+        message: message.message,
+        details: {
+          name: message.name,
+          stack: message.stack,
+        },
+      };
+    }
+
+    if (typeof message === 'string') {
+      return { message };
+    }
+
+    return { message: 'Non-string log message', details: message };
   }
 
-  error(message: string, trace?: string, context?: string): void {
-    this.logger.error(message, { trace, context });
+  log(message: unknown, context?: string): void {
+    const payload = this.formatMessage(message);
+    this.logger.info(payload.message, { context, details: payload.details });
   }
 
-  warn(message: string, context?: string): void {
-    this.logger.warn(message, { context });
+  error(message: unknown, trace?: string, context?: string): void {
+    const payload = this.formatMessage(message);
+    this.logger.error(payload.message, {
+      trace,
+      context,
+      details: payload.details,
+    });
   }
 
-  debug(message: string, context?: string): void {
-    this.logger.debug(message, { context });
+  warn(message: unknown, context?: string): void {
+    const payload = this.formatMessage(message);
+    this.logger.warn(payload.message, { context, details: payload.details });
   }
 
-  verbose(message: string, context?: string): void {
-    this.logger.verbose(message, { context });
+  debug(message: unknown, context?: string): void {
+    const payload = this.formatMessage(message);
+    this.logger.debug(payload.message, { context, details: payload.details });
+  }
+
+  verbose(message: unknown, context?: string): void {
+    const payload = this.formatMessage(message);
+    this.logger.verbose(payload.message, { context, details: payload.details });
   }
 }
