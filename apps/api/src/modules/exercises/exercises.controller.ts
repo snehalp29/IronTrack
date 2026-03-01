@@ -18,6 +18,11 @@ import {
   updateExerciseSchema,
   upsertExerciseNoteSchema,
 } from './dto/exercise.schemas';
+import type {
+  CreateExerciseDto,
+  UpdateExerciseDto,
+  UpsertExerciseNoteDto,
+} from './dto/exercise.schemas';
 import { ExercisesService } from './exercises.service';
 
 @Controller('exercises')
@@ -41,18 +46,18 @@ export class ExercisesController {
   @Post()
   async create(
     @CurrentUser() user: { sub: string },
-    @Body(new ZodValidationPipe(createExerciseSchema)) body: unknown,
+    @Body(new ZodValidationPipe(createExerciseSchema)) body: CreateExerciseDto,
   ) {
-    return this.exercisesService.create(user.sub, body as any);
+    return this.exercisesService.create(user.sub, body);
   }
 
   @Patch(':id')
   async update(
     @CurrentUser() user: { sub: string },
     @Param('id') id: string,
-    @Body(new ZodValidationPipe(updateExerciseSchema)) body: unknown,
+    @Body(new ZodValidationPipe(updateExerciseSchema)) body: UpdateExerciseDto,
   ) {
-    return this.exercisesService.update(user.sub, id, body as any);
+    return this.exercisesService.update(user.sub, id, body);
   }
 
   @Delete(':id')
@@ -79,8 +84,9 @@ export class ExercisesController {
   async upsertNote(
     @CurrentUser() user: { sub: string },
     @Param('id') id: string,
-    @Body(new ZodValidationPipe(upsertExerciseNoteSchema)) body: unknown,
+    @Body(new ZodValidationPipe(upsertExerciseNoteSchema))
+    body: UpsertExerciseNoteDto,
   ) {
-    return this.exercisesService.upsertNote(user.sub, id, body as any);
+    return this.exercisesService.upsertNote(user.sub, id, body);
   }
 }

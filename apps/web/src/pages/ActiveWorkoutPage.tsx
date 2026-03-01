@@ -8,8 +8,9 @@ import { ReorderModal } from '../components/workout/ReorderModal';
 import { SupersetModal } from '../components/workout/SupersetModal';
 import { useRestTimer } from '../hooks/useRestTimer';
 import { useActiveWorkoutStore } from '../stores/activeWorkoutStore';
+import type { SessionExercise } from '../stores/activeWorkoutStore';
 
-const seedExercises = [
+const seedExercises: SessionExercise[] = [
   {
     id: 'se-1',
     exerciseTemplateId: 'ex-1',
@@ -54,7 +55,7 @@ export function ActiveWorkoutPage() {
       <div className="card">
         <h1>Active Workout</h1>
         <p className="meta">No active session</p>
-        <button onClick={() => start('session-local-1', seedExercises as any)}>
+        <button onClick={() => start('session-local-1', seedExercises)}>
           Start Session
         </button>
       </div>

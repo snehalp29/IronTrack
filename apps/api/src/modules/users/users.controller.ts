@@ -3,6 +3,7 @@ import { Body, Controller, Delete, Get, Patch } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { updateMeSchema } from './user.schemas';
+import type { UpdateMeDto } from './user.schemas';
 import { UsersService } from './users.service';
 
 @Controller('users')
@@ -17,9 +18,9 @@ export class UsersController {
   @Patch('me')
   async updateMe(
     @CurrentUser() user: { sub: string },
-    @Body(new ZodValidationPipe(updateMeSchema)) body: unknown,
+    @Body(new ZodValidationPipe(updateMeSchema)) body: UpdateMeDto,
   ) {
-    return this.usersService.updateMe(user.sub, body as any);
+    return this.usersService.updateMe(user.sub, body);
   }
 
   @Delete('me')

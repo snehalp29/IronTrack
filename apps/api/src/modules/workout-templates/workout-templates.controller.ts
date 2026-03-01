@@ -15,6 +15,11 @@ import {
   reorderWorkoutTemplateSchema,
   updateWorkoutTemplateSchema,
 } from './dto/workout-template.schemas';
+import type {
+  CreateWorkoutTemplateDto,
+  ReorderWorkoutTemplateDto,
+  UpdateWorkoutTemplateDto,
+} from './dto/workout-template.schemas';
 import { WorkoutTemplatesService } from './workout-templates.service';
 
 @Controller('workout-templates')
@@ -36,26 +41,29 @@ export class WorkoutTemplatesController {
   @Post()
   async create(
     @CurrentUser() user: { sub: string },
-    @Body(new ZodValidationPipe(createWorkoutTemplateSchema)) body: unknown,
+    @Body(new ZodValidationPipe(createWorkoutTemplateSchema))
+    body: CreateWorkoutTemplateDto,
   ) {
-    return this.workoutTemplatesService.create(user.sub, body as any);
+    return this.workoutTemplatesService.create(user.sub, body);
   }
 
   @Patch('reorder')
   async reorder(
     @CurrentUser() user: { sub: string },
-    @Body(new ZodValidationPipe(reorderWorkoutTemplateSchema)) body: unknown,
+    @Body(new ZodValidationPipe(reorderWorkoutTemplateSchema))
+    body: ReorderWorkoutTemplateDto,
   ) {
-    return this.workoutTemplatesService.reorder(user.sub, body as any);
+    return this.workoutTemplatesService.reorder(user.sub, body);
   }
 
   @Patch(':id')
   async update(
     @CurrentUser() user: { sub: string },
     @Param('id') id: string,
-    @Body(new ZodValidationPipe(updateWorkoutTemplateSchema)) body: unknown,
+    @Body(new ZodValidationPipe(updateWorkoutTemplateSchema))
+    body: UpdateWorkoutTemplateDto,
   ) {
-    return this.workoutTemplatesService.update(user.sub, id, body as any);
+    return this.workoutTemplatesService.update(user.sub, id, body);
   }
 
   @Delete(':id')

@@ -10,6 +10,12 @@ import {
   refreshSchema,
   registerSchema,
 } from './dto/auth.schemas';
+import type {
+  GoogleAuthDto,
+  LoginDto,
+  RefreshDto,
+  RegisterDto,
+} from './dto/auth.schemas';
 
 @Controller('auth')
 export class AuthController {
@@ -18,37 +24,41 @@ export class AuthController {
   @Public()
   @Post('register')
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
-  async register(@Body(new ZodValidationPipe(registerSchema)) body: unknown) {
-    return this.authService.register(body as any);
+  async register(
+    @Body(new ZodValidationPipe(registerSchema)) body: RegisterDto,
+  ) {
+    return this.authService.register(body);
   }
 
   @Public()
   @Post('login')
   @HttpCode(200)
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
-  async login(@Body(new ZodValidationPipe(loginSchema)) body: unknown) {
-    return this.authService.login(body as any);
+  async login(@Body(new ZodValidationPipe(loginSchema)) body: LoginDto) {
+    return this.authService.login(body);
   }
 
   @Public()
   @Post('refresh')
   @HttpCode(200)
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
-  async refresh(@Body(new ZodValidationPipe(refreshSchema)) body: unknown) {
-    return this.authService.refresh(body as any);
+  async refresh(@Body(new ZodValidationPipe(refreshSchema)) body: RefreshDto) {
+    return this.authService.refresh(body);
   }
 
   @Public()
   @Post('google')
   @HttpCode(200)
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
-  async google(@Body(new ZodValidationPipe(googleAuthSchema)) body: unknown) {
-    return this.authService.googleLogin(body as any);
+  async google(
+    @Body(new ZodValidationPipe(googleAuthSchema)) body: GoogleAuthDto,
+  ) {
+    return this.authService.googleLogin(body);
   }
 
   @Post('logout')
   @HttpCode(200)
-  async logout(@Body(new ZodValidationPipe(refreshSchema)) body: unknown) {
-    return this.authService.logout((body as any).refreshToken);
+  async logout(@Body(new ZodValidationPipe(refreshSchema)) body: RefreshDto) {
+    return this.authService.logout(body.refreshToken);
   }
 }

@@ -8,6 +8,7 @@ import {
   checklistWeekQuerySchema,
   upsertChecklistSchema,
 } from './dto/checklist.schemas';
+import type { UpsertChecklistDto } from './dto/checklist.schemas';
 
 @Controller('checklist')
 export class ChecklistController {
@@ -25,9 +26,10 @@ export class ChecklistController {
   @Put()
   async upsert(
     @CurrentUser() user: { sub: string },
-    @Body(new ZodValidationPipe(upsertChecklistSchema)) body: unknown,
+    @Body(new ZodValidationPipe(upsertChecklistSchema))
+    body: UpsertChecklistDto,
   ) {
-    return this.checklistService.upsert(user.sub, body as any);
+    return this.checklistService.upsert(user.sub, body);
   }
 
   @Get('week')

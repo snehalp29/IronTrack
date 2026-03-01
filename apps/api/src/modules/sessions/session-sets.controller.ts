@@ -8,6 +8,12 @@ import {
   toggleSetCompletionSchema,
   updateSetSchema,
 } from './dto/session.schemas';
+import type {
+  BatchCreateSetsDto,
+  CreateSetDto,
+  ToggleSetCompletionDto,
+  UpdateSetDto,
+} from './dto/session.schemas';
 import { SessionsService } from './sessions.service';
 
 @Controller('session-exercises')
@@ -18,13 +24,9 @@ export class SessionSetsController {
   async createSet(
     @CurrentUser() user: { sub: string },
     @Param('seId') sessionExerciseId: string,
-    @Body(new ZodValidationPipe(createSetSchema)) body: unknown,
+    @Body(new ZodValidationPipe(createSetSchema)) body: CreateSetDto,
   ) {
-    return this.sessionsService.createSet(
-      user.sub,
-      sessionExerciseId,
-      body as any,
-    );
+    return this.sessionsService.createSet(user.sub, sessionExerciseId, body);
   }
 
   @Patch(':seId/sets/:id')
@@ -32,13 +34,13 @@ export class SessionSetsController {
     @CurrentUser() user: { sub: string },
     @Param('seId') sessionExerciseId: string,
     @Param('id') id: string,
-    @Body(new ZodValidationPipe(updateSetSchema)) body: unknown,
+    @Body(new ZodValidationPipe(updateSetSchema)) body: UpdateSetDto,
   ) {
     return this.sessionsService.updateSet(
       user.sub,
       sessionExerciseId,
       id,
-      body as any,
+      body,
     );
   }
 
@@ -56,13 +58,14 @@ export class SessionSetsController {
     @CurrentUser() user: { sub: string },
     @Param('seId') sessionExerciseId: string,
     @Param('id') id: string,
-    @Body(new ZodValidationPipe(toggleSetCompletionSchema)) body: unknown,
+    @Body(new ZodValidationPipe(toggleSetCompletionSchema))
+    body: ToggleSetCompletionDto,
   ) {
     return this.sessionsService.toggleSetCompletion(
       user.sub,
       sessionExerciseId,
       id,
-      body as any,
+      body,
     );
   }
 
@@ -70,12 +73,13 @@ export class SessionSetsController {
   async batchCreate(
     @CurrentUser() user: { sub: string },
     @Param('seId') sessionExerciseId: string,
-    @Body(new ZodValidationPipe(batchCreateSetsSchema)) body: unknown,
+    @Body(new ZodValidationPipe(batchCreateSetsSchema))
+    body: BatchCreateSetsDto,
   ) {
     return this.sessionsService.batchCreateSets(
       user.sub,
       sessionExerciseId,
-      body as any,
+      body,
     );
   }
 }

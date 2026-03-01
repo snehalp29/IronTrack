@@ -1,13 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { useActiveWorkoutStore } from './activeWorkoutStore';
+import type { SessionExercise } from './activeWorkoutStore';
 
 describe('activeWorkoutStore', () => {
   it('supports start -> complete flow', () => {
     const { start, finish, clear } = useActiveWorkoutStore.getState();
-
-    clear();
-    start('session-1', [
+    const sessionExercises: SessionExercise[] = [
       {
         id: 'se-1',
         exerciseTemplateId: 'ex-1',
@@ -23,7 +22,10 @@ describe('activeWorkoutStore', () => {
           },
         ],
       },
-    ] as any);
+    ];
+
+    clear();
+    start('session-1', sessionExercises);
 
     expect(useActiveWorkoutStore.getState().state).toBe('IN_PROGRESS');
 

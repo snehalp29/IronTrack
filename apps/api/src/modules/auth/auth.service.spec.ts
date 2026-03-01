@@ -8,14 +8,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuthService } from './auth.service';
 
 describe('AuthService', () => {
-  const refreshTokens: Array<{
-    id: string;
-    userId: string;
-    tokenHash: string;
-    revokedAt: Date | null;
-    expiresAt: Date;
-  }> = [];
-  const users: Array<{
+  type UserRecord = {
     id: string;
     email: string;
     passwordHash: string;
@@ -25,17 +18,70 @@ describe('AuthService', () => {
     googleId?: string;
     name?: string;
     avatarUrl?: string;
-  }> = [];
+  };
+  type RefreshTokenRecord = {
+    id: string;
+    userId: string;
+    tokenHash: string;
+    revokedAt: Date | null;
+    expiresAt: Date;
+  };
+  type UserFindUniqueArgs = {
+    where: { id?: string; email?: string };
+  };
+  type UserCreateArgs = {
+    data: {
+      email: string;
+      passwordHash: string;
+      authProvider?: 'LOCAL' | 'GOOGLE';
+      timezone?: string;
+      unitPreference?: 'METRIC' | 'IMPERIAL';
+      name?: string;
+      avatarUrl?: string;
+      googleId?: string;
+    };
+  };
+  type UserUpsertArgs = {
+    where: { email: string };
+    update: Partial<UserRecord>;
+    create: UserCreateArgs['data'];
+  };
+  type RefreshTokenCreateArgs = {
+    data: {
+      userId: string;
+      tokenHash: string;
+      expiresAt: Date;
+    };
+  };
+  type RefreshTokenFindFirstArgs = {
+    where: {
+      tokenHash: string;
+      revokedAt: null;
+      expiresAt: { gt: Date };
+    };
+    include?: { user?: boolean };
+  };
+  type RefreshTokenUpdateArgs = {
+    where: { id: string };
+    data: { revokedAt: Date };
+  };
+  type RefreshTokenUpdateManyArgs = {
+    where: { tokenHash: string; revokedAt: null };
+    data: { revokedAt: Date };
+  };
+
+  const refreshTokens: RefreshTokenRecord[] = [];
+  const users: UserRecord[] = [];
 
   const prismaMock = {
     user: {
       findUnique: jest.fn(
-        async ({ where }: any) =>
+        async ({ where }: UserFindUniqueArgs) =>
           users.find((user) =>
             where.id ? user.id === where.id : user.email === where.email,
           ) ?? null,
       ),
-      create: jest.fn(async ({ data }: any) => {
+      create: jest.fn(async ({ data }: UserCreateArgs) => {
         const user = {
           id: randomUUID(),
           email: data.email,
@@ -49,7 +95,7 @@ describe('AuthService', () => {
         users.push(user);
         return user;
       }),
-      upsert: jest.fn(async ({ where, update, create }: any) => {
+      upsert: jest.fn(async ({ where, update, create }: UserUpsertArgs) => {
         const existing = users.find((user) => user.email === where.email);
         if (existing) {
           Object.assign(existing, update);
@@ -71,7 +117,7 @@ describe('AuthService', () => {
       }),
     },
     refreshToken: {
-      create: jest.fn(async ({ data }: any) => {
+      create: jest.fn(async ({ data }: RefreshTokenCreateArgs) => {
         refreshTokens.push({
           id: randomUUID(),
           userId: data.userId,
@@ -81,44 +127,49 @@ describe('AuthService', () => {
         });
         return data;
       }),
-      findFirst: jest.fn(async ({ where, include }: any) => {
-        const token = refreshTokens.find(
-          (item) =>
-            item.tokenHash === where.tokenHash &&
-            item.revokedAt === where.revokedAt &&
-            item.expiresAt > where.expiresAt.gt,
-        );
+      findFirst: jest.fn(
+        async ({ where, include }: RefreshTokenFindFirstArgs) => {
+          const token = refreshTokens.find(
+            (item) =>
+              item.tokenHash === where.tokenHash &&
+              item.revokedAt === where.revokedAt &&
+              item.expiresAt > where.expiresAt.gt,
+          );
+          if (!token) {
+            return null;
+          }
+          if (include?.user) {
+            return {
+              ...token,
+              user: users.find((user) => user.id === token.userId),
+            };
+          }
+          return token;
+        },
+      ),
+      update: jest.fn(async ({ where, data }: RefreshTokenUpdateArgs) => {
+        const token = refreshTokens.find((item) => item.id === where.id);
         if (!token) {
-          return null;
+          return undefined;
         }
-        if (include?.user) {
-          return {
-            ...token,
-            user: users.find((user) => user.id === token.userId),
-          };
-        }
+        token.revokedAt = data.revokedAt;
         return token;
       }),
-      update: jest.fn(async ({ where, data }: any) => {
-        const target = refreshTokens.find((token) => token.id === where.id);
-        if (target) {
-          target.revokedAt = data.revokedAt;
-        }
-        return target;
-      }),
-      updateMany: jest.fn(async ({ where, data }: any) => {
-        let count = 0;
-        for (const token of refreshTokens) {
-          if (
-            token.tokenHash === where.tokenHash &&
-            token.revokedAt === where.revokedAt
-          ) {
-            token.revokedAt = data.revokedAt;
-            count += 1;
+      updateMany: jest.fn(
+        async ({ where, data }: RefreshTokenUpdateManyArgs) => {
+          let count = 0;
+          for (const token of refreshTokens) {
+            if (
+              token.tokenHash === where.tokenHash &&
+              token.revokedAt === where.revokedAt
+            ) {
+              token.revokedAt = data.revokedAt;
+              count += 1;
+            }
           }
-        }
-        return { count };
-      }),
+          return { count };
+        },
+      ),
     },
   };
 
