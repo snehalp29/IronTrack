@@ -4,3 +4,4 @@
 /.nx/cache
 /.nx/workspace-data
 /output
+pnpm-lock.yaml
