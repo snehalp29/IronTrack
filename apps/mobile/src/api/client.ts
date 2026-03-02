@@ -13,12 +13,13 @@ export async function apiRequest<T>(
   init?: RequestInit,
 ): Promise<T> {
   const token = await SecureStore.getItemAsync('access_token');
+  const authHeader = token ? { Authorization: `Bearer ${token}` } : {};
 
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
-      Authorization: token ? `Bearer ${token}` : '',
+      ...authHeader,
       ...(init?.headers ?? {}),
     },
   });
