@@ -15,9 +15,14 @@ export class CorrelationIdInterceptor implements NestInterceptor {
     const response = context.switchToHttp().getResponse<Response>();
 
     const headerValue = request.headers['x-correlation-id'];
-    const correlationId = Array.isArray(headerValue)
+    const normalizedHeaderValue = Array.isArray(headerValue)
       ? headerValue[0]
-      : (headerValue ?? randomUUID());
+      : headerValue;
+    const correlationId =
+      typeof normalizedHeaderValue === 'string' &&
+      normalizedHeaderValue.trim().length > 0
+        ? normalizedHeaderValue.trim()
+        : randomUUID();
 
     request.headers['x-correlation-id'] = correlationId;
     response.setHeader('x-correlation-id', correlationId);
