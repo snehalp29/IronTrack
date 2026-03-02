@@ -1,7 +1,12 @@
 import * as SecureStore from 'expo-secure-store';
 
-const API_URL =
-  process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000/api/v1';
+const DEFAULT_API_URL = 'http://localhost:3000/api/v1';
+const API_URL = resolveApiUrl(process.env.EXPO_PUBLIC_API_URL);
+
+function resolveApiUrl(configuredApiUrl: string | undefined): string {
+  const trimmedUrl = configuredApiUrl?.trim();
+  return trimmedUrl && trimmedUrl.length > 0 ? trimmedUrl : DEFAULT_API_URL;
+}
 
 export async function apiRequest<T>(
   path: string,
