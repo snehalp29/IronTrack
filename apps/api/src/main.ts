@@ -33,7 +33,7 @@ async function bootstrap() {
 
   const allowedOrigins = (
     configService.get<string>('CORS_ORIGINS') ??
-    'http://localhost:3000,http://localhost:8081'
+    'http://localhost:3000,http://localhost:5173,http://localhost:8081'
   )
     .split(',')
     .map((item) => item.trim())

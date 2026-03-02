@@ -235,6 +235,7 @@ describe('AuthController (e2e)', () => {
 
     const logoutRes = await request(app.getHttpServer())
       .post('/api/v1/auth/logout')
+      .set('Authorization', `Bearer ${refreshRes.body.accessToken}`)
       .send({
         refreshToken: refreshRes.body.refreshToken,
       });

@@ -17,7 +17,9 @@ export const envSchema = z.object({
   ML_SERVICE_URL: z.string().url().default('http://localhost:5000'),
   CORS_ORIGINS: z
     .string()
-    .default('http://localhost:3000,http://localhost:8081'),
+    .default(
+      'http://localhost:3000,http://localhost:5173,http://localhost:8081',
+    ),
 });
 
 export type Env = z.infer<typeof envSchema>;

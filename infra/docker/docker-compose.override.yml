@@ -1,6 +1,8 @@
 services:
   api:
-    command: sh -c "pnpm --filter @irontrack/api dev"
+    build:
+      target: deps
+    command: sh -c "corepack enable && pnpm install --no-frozen-lockfile && pnpm --filter @irontrack/api dev"
     volumes:
       - ../..:/app
     environment:
@@ -12,6 +14,8 @@ services:
       - ../../apps/ml:/app
 
   web:
-    command: sh -c "pnpm --filter @irontrack/web dev --host 0.0.0.0 --port 80"
+    build:
+      target: build
+    command: sh -c "corepack enable && pnpm install --no-frozen-lockfile && pnpm --filter @irontrack/web dev --host 0.0.0.0 --port 80"
     volumes:
       - ../..:/app
