@@ -63,7 +63,7 @@ export class StreakService {
     }
 
     const previousDateString = streak.lastCompletedDate
-      ? this.formatDateInTimezone(streak.lastCompletedDate, timezone)
+      ? this.formatStoredDate(streak.lastCompletedDate)
       : null;
 
     if (previousDateString === localDate) {
@@ -98,6 +98,10 @@ export class StreakService {
     });
 
     return formatter.format(date);
+  }
+
+  private formatStoredDate(date: Date): string {
+    return date.toISOString().slice(0, 10);
   }
 
   private daysBetween(prev: string, next: string): number {

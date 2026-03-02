@@ -4,9 +4,13 @@
   "private": true,
   "main": "index.js",
   "scripts": {
+    "preandroid": "pnpm --filter @irontrack/shared build",
     "android": "expo start --android",
+    "preios": "pnpm --filter @irontrack/shared build",
     "ios": "expo start --ios",
+    "prestart": "pnpm --filter @irontrack/shared build",
     "start": "expo start",
+    "pretest": "pnpm --filter @irontrack/shared build",
     "test": "jest",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },

@@ -56,7 +56,7 @@ export class ChecklistService {
   async getWeek(userId: string, query: ChecklistWeekQueryDto) {
     const start = new Date(`${query.startDate}T00:00:00.000Z`);
     const end = new Date(start);
-    end.setDate(start.getDate() + 6);
+    end.setUTCDate(start.getUTCDate() + 6);
 
     return this.prisma.checklistItem.findMany({
       where: {
