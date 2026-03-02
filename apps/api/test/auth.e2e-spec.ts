@@ -1,10 +1,9 @@
 import { INestApplication } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { randomUUID } from 'crypto';
 import request from 'supertest';
 
-import { AuthModule } from '../src/modules/auth/auth.module';
+import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 describe('AuthController (e2e)', () => {
@@ -79,6 +78,20 @@ describe('AuthController (e2e)', () => {
     user: {
       findUnique: jest.fn(
         async ({ where }: UserFindUniqueArgs) =>
+          users.find((user) =>
+            where.id ? user.id === where.id : user.email === where.email,
+          ) ?? null,
+      ),
+      findFirst: jest.fn(
+        async ({
+          where,
+        }: {
+          where: {
+            id?: string;
+            email?: string;
+            deletedAt?: null;
+          };
+        }) =>
           users.find((user) =>
             where.id ? user.id === where.id : user.email === where.email,
           ) ?? null,
@@ -164,27 +177,20 @@ describe('AuthController (e2e)', () => {
   beforeEach(async () => {
     users.length = 0;
     refreshTokens.length = 0;
+    process.env.NODE_ENV = 'test';
+    process.env.DATABASE_URL =
+      'postgresql://postgres:postgres@localhost:5432/irontrack_test?schema=public';
+    process.env.JWT_ACCESS_SECRET = 'access-secret-1234567890';
+    process.env.JWT_REFRESH_SECRET = 'refresh-secret-1234567890';
+    process.env.JWT_ACCESS_EXPIRY = '15m';
+    process.env.JWT_REFRESH_EXPIRY = '7d';
+    process.env.GOOGLE_CLIENT_ID = 'test-google-client-id';
+    process.env.GOOGLE_CLIENT_SECRET = 'test-google-client-secret';
+    process.env.GOOGLE_CALLBACK_URL =
+      'http://localhost:3000/api/v1/auth/google/callback';
 
     const moduleRef = await Test.createTestingModule({
-      imports: [
-        ConfigModule.forRoot({
-          isGlobal: true,
-          ignoreEnvFile: true,
-          load: [
-            () => ({
-              JWT_ACCESS_SECRET: 'access-secret-1234567890',
-              JWT_REFRESH_SECRET: 'refresh-secret-1234567890',
-              JWT_ACCESS_EXPIRY: '15m',
-              JWT_REFRESH_EXPIRY: '7d',
-              GOOGLE_CLIENT_ID: 'test-google-client-id',
-              GOOGLE_CLIENT_SECRET: 'test-google-client-secret',
-              GOOGLE_CALLBACK_URL:
-                'http://localhost:3000/api/v1/auth/google/callback',
-            }),
-          ],
-        }),
-        AuthModule,
-      ],
+      imports: [AppModule],
     })
       .overrideProvider(PrismaService)
       .useValue(prismaMock)
@@ -199,6 +205,16 @@ describe('AuthController (e2e)', () => {
     if (app) {
       await app.close();
     }
+  });
+
+  it('logout without bearer token is rejected', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/auth/logout')
+      .send({
+        refreshToken: 'missing-token-12345',
+      });
+
+    expect(response.status).toBe(401);
   });
 
   it('register -> login -> refresh -> logout', async () => {

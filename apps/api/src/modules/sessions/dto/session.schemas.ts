@@ -57,7 +57,7 @@ export const swapSessionExerciseSchema = z.object({
   toExerciseTemplateId: z.string().uuid(),
 });
 
-export const createSetSchema = z.object({
+const baseCreateSetSchema = z.object({
   orderIndex: z.number().int().nonnegative(),
   type: z.enum([
     'WEIGHT_REPS',
@@ -76,7 +76,26 @@ export const createSetSchema = z.object({
   rpe: z.number().optional(),
 });
 
-export const updateSetSchema = createSetSchema.partial();
+const validateSetCompletionConsistency = (
+  value: { isCompleted?: boolean; completedAt?: string },
+  ctx: z.RefinementCtx,
+) => {
+  if (value.isCompleted === false && value.completedAt !== undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'completedAt cannot be provided when isCompleted is false',
+      path: ['completedAt'],
+    });
+  }
+};
+
+export const createSetSchema = baseCreateSetSchema.superRefine(
+  validateSetCompletionConsistency,
+);
+
+export const updateSetSchema = baseCreateSetSchema
+  .partial()
+  .superRefine(validateSetCompletionConsistency);
 
 export const toggleSetCompletionSchema = z.object({
   isCompleted: z.boolean(),

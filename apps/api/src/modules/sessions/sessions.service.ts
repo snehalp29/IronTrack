@@ -476,7 +476,7 @@ export class SessionsService {
         orderIndex: input.orderIndex,
         type: input.type,
         payload: input.payload as Prisma.InputJsonValue,
-        isCompleted: input.isCompleted ?? false,
+        isCompleted: input.isCompleted ?? Boolean(input.completedAt),
         completedAt: input.completedAt
           ? new Date(input.completedAt)
           : input.isCompleted
@@ -544,24 +544,32 @@ export class SessionsService {
       });
     }
 
+    const updateData: Prisma.SetUpdateInput = {
+      orderIndex: input.orderIndex,
+      type: input.type,
+      payload: input.payload as Prisma.InputJsonValue | undefined,
+      idempotencyKey: input.idempotencyKey,
+      weight: input.weight,
+      reps: input.reps,
+      durationSeconds: input.durationSeconds,
+      rpe: input.rpe,
+    };
+
+    if (input.isCompleted !== undefined) {
+      updateData.isCompleted = input.isCompleted;
+      updateData.completedAt = input.isCompleted
+        ? input.completedAt
+          ? new Date(input.completedAt)
+          : new Date()
+        : null;
+    } else if (input.completedAt !== undefined) {
+      updateData.isCompleted = true;
+      updateData.completedAt = new Date(input.completedAt);
+    }
+
     const updated = await this.prisma.set.update({
       where: { id: setId },
-      data: {
-        orderIndex: input.orderIndex,
-        type: input.type,
-        payload: input.payload as Prisma.InputJsonValue | undefined,
-        isCompleted: input.isCompleted,
-        completedAt: input.completedAt
-          ? new Date(input.completedAt)
-          : input.isCompleted
-            ? new Date()
-            : null,
-        idempotencyKey: input.idempotencyKey,
-        weight: input.weight,
-        reps: input.reps,
-        durationSeconds: input.durationSeconds,
-        rpe: input.rpe,
-      },
+      data: updateData,
       include: {
         sessionExercise: true,
       },

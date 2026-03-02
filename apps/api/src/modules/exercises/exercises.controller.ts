@@ -14,12 +14,14 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   createExerciseSchema,
+  exerciseHistoryQuerySchema,
   listExercisesQuerySchema,
   updateExerciseSchema,
   upsertExerciseNoteSchema,
 } from './dto/exercise.schemas';
 import type {
   CreateExerciseDto,
+  ExerciseHistoryQueryDto,
   ListExercisesQuery,
   UpdateExerciseDto,
   UpsertExerciseNoteDto,
@@ -70,14 +72,14 @@ export class ExercisesController {
   async history(
     @CurrentUser() user: { sub: string },
     @Param('id') id: string,
-    @Query('page') page?: string,
-    @Query('pageSize') pageSize?: string,
+    @Query(new ZodValidationPipe(exerciseHistoryQuerySchema))
+    query: ExerciseHistoryQueryDto,
   ) {
     return this.exercisesService.history(
       user.sub,
       id,
-      Number(page ?? 1),
-      Number(pageSize ?? 20),
+      query.page,
+      query.pageSize,
     );
   }
 

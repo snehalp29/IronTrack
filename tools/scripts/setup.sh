@@ -61,7 +61,6 @@ echo "[irontrack] Starting docker services..."
 echo "[irontrack] Waiting for services to become healthy..."
 wait_for_service postgres
 wait_for_service ml
-wait_for_service api
 
 echo "[irontrack] Generating Prisma client..."
 cd apps/api
@@ -72,5 +71,9 @@ npx prisma migrate deploy
 
 echo "[irontrack] Seeding database..."
 npx prisma db seed
+
+cd "$ROOT_DIR"
+echo "[irontrack] Waiting for API service to become healthy..."
+wait_for_service api
 
 echo "[irontrack] Setup complete."

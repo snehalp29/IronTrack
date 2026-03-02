@@ -43,7 +43,15 @@ export const upsertExerciseNoteSchema = z.object({
   note: z.string().min(1).max(4000),
 });
 
+export const exerciseHistoryQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().positive().max(100).default(20),
+});
+
 export type ListExercisesQuery = z.infer<typeof listExercisesQuerySchema>;
 export type CreateExerciseDto = z.infer<typeof createExerciseSchema>;
 export type UpdateExerciseDto = z.infer<typeof updateExerciseSchema>;
 export type UpsertExerciseNoteDto = z.infer<typeof upsertExerciseNoteSchema>;
+export type ExerciseHistoryQueryDto = z.infer<
+  typeof exerciseHistoryQuerySchema
+>;
