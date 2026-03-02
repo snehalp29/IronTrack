@@ -1,9 +1,5 @@
 import { getDatabase } from './database';
-
-interface SyncResult {
-  synced: number;
-  conflicts: number;
-}
+import { type SyncResult, replaySyncQueueWithDb } from './syncEngine.core';
 
 export async function queueMutation(
   entityType: string,
@@ -26,40 +22,7 @@ export async function queueMutation(
 
 export async function replaySyncQueue(): Promise<SyncResult> {
   const db = getDatabase();
-  const items = db.getAllSync<{
-    id: number;
-    entity_type: string;
-    local_id: string;
-    payload: string;
-  }>(`SELECT * FROM sync_queue ORDER BY id ASC`);
-
-  let synced = 0;
-  let conflicts = 0;
-
-  for (const item of items) {
-    try {
-      const payload = JSON.parse(item.payload);
-      await fakeRemoteApply(item.entity_type, payload);
-
-      db.runSync(`DELETE FROM sync_queue WHERE id = ?`, [item.id]);
-      synced += 1;
-    } catch (error) {
-      const message = (error as Error).message;
-      if (message.includes('409')) {
-        // Conflict strategy:
-        // - server-wins ordering metadata
-        // - client-wins set payload details
-        conflicts += 1;
-      }
-
-      db.runSync(
-        `UPDATE sync_queue SET attempts = attempts + 1, next_attempt_at = ? WHERE id = ?`,
-        [new Date(Date.now() + 30_000).toISOString(), item.id],
-      );
-    }
-  }
-
-  return { synced, conflicts };
+  return replaySyncQueueWithDb(db, fakeRemoteApply);
 }
 
 async function fakeRemoteApply(

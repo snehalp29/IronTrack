@@ -3,12 +3,21 @@ import { Test } from '@nestjs/testing';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ExercisesService } from './exercises.service';
 
+type ListedExercise = Pick<
+  Awaited<ReturnType<ExercisesService['list']>>['items'][number],
+  'id' | 'name'
+>;
+
 describe('ExercisesService', () => {
   it('returns paginated list', async () => {
+    const listedExercises: ListedExercise[] = [
+      { id: '1', name: 'Bench Press' },
+    ];
+
     const prismaMock = {
       $transaction: jest.fn(async () => [
-        [{ id: '1', name: 'Bench Press' }],
-        1,
+        listedExercises,
+        listedExercises.length,
       ]),
       exerciseTemplate: {
         findMany: jest.fn(),

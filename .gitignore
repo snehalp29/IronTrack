@@ -52,6 +52,7 @@ Thumbs.db
 # Testing
 coverage/
 *.lcov
+output/
 
 # Misc
 *.log

@@ -12,8 +12,8 @@ export function WorkoutPreviewPage() {
         <li>Incline Dumbbell Press - 3 x 10</li>
         <li>Cable Fly - 3 x 12</li>
       </ul>
-      <Link to="/workout/active">
-        <button>Start Workout</button>
+      <Link to="/workout/active" className="button-link">
+        Start Workout
       </Link>
     </div>
   );

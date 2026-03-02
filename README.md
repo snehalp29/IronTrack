@@ -113,7 +113,9 @@ Reset DB:
 
 ```bash
 pnpm test:api
+pnpm test:e2e:api
 pnpm test:web
+pnpm test:e2e:web
 pnpm test:shared
 pnpm test:ml
 ```
@@ -130,7 +132,7 @@ Configure GitHub branch protection for `main` with:
 
 ## CI/CD
 
-- `.github/workflows/ci.yml`: installs dependencies, runs API/web/shared/ML tests, and builds API/web.
+- `.github/workflows/ci.yml`: installs dependencies, runs lint/typecheck, API unit + e2e tests, web unit + Playwright tests, shared + ML tests, and builds API/web.
 - `.github/workflows/docker.yml`: builds API/ML/web Docker images on pushes to `main`.
 
 ## Notes

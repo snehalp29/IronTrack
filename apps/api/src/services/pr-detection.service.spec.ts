@@ -4,44 +4,61 @@ import { PrType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PrDetectionService } from './pr-detection.service';
 
+type DetectedPr = Awaited<
+  ReturnType<PrDetectionService['detectForSession']>
+>[number];
+
+interface SessionSetFixture {
+  id: string;
+  weight: number | null;
+  reps: number | null;
+  completedAt: Date | null;
+  sessionExercise: {
+    exerciseTemplateId: string;
+  };
+}
+
 describe('PrDetectionService', () => {
   it('loads existing PR records in one query and upserts only improved values', async () => {
     const completedAt = new Date('2024-01-01T10:00:00.000Z');
+    const sessionSets: SessionSetFixture[] = [
+      {
+        id: 'set-1',
+        weight: 100,
+        reps: 5,
+        completedAt,
+        sessionExercise: { exerciseTemplateId: 'exercise-1' },
+      },
+    ];
+    const existingPrRecords: DetectedPr[] = [
+      {
+        exerciseTemplateId: 'exercise-1',
+        prType: PrType.MAX_WEIGHT,
+        value: 110,
+      },
+      {
+        exerciseTemplateId: 'exercise-1',
+        prType: PrType.MAX_REPS,
+        value: 5,
+      },
+      {
+        exerciseTemplateId: 'exercise-1',
+        prType: PrType.MAX_VOLUME,
+        value: 450,
+      },
+      {
+        exerciseTemplateId: 'exercise-1',
+        prType: PrType.MAX_1RM_EST,
+        value: 120,
+      },
+    ];
+
     const prismaMock = {
       set: {
-        findMany: jest.fn(async () => [
-          {
-            id: 'set-1',
-            weight: 100,
-            reps: 5,
-            completedAt,
-            sessionExercise: { exerciseTemplateId: 'exercise-1' },
-          },
-        ]),
+        findMany: jest.fn(async () => sessionSets),
       },
       pRRecord: {
-        findMany: jest.fn(async () => [
-          {
-            exerciseTemplateId: 'exercise-1',
-            prType: PrType.MAX_WEIGHT,
-            value: 110,
-          },
-          {
-            exerciseTemplateId: 'exercise-1',
-            prType: PrType.MAX_REPS,
-            value: 5,
-          },
-          {
-            exerciseTemplateId: 'exercise-1',
-            prType: PrType.MAX_VOLUME,
-            value: 450,
-          },
-          {
-            exerciseTemplateId: 'exercise-1',
-            prType: PrType.MAX_1RM_EST,
-            value: 120,
-          },
-        ]),
+        findMany: jest.fn(async () => existingPrRecords),
         upsert: jest.fn(async () => undefined),
       },
     } as unknown as PrismaService;

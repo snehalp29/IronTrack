@@ -60,8 +60,17 @@ jobs:
       - name: Run API tests
         run: pnpm test:api
 
+      - name: Run API e2e tests
+        run: pnpm test:e2e:api
+
       - name: Run web tests
         run: pnpm test:web
+
+      - name: Install Playwright browser
+        run: pnpm --filter @irontrack/web exec playwright install --with-deps chromium
+
+      - name: Run web Playwright tests
+        run: pnpm test:e2e:web
 
       - name: Run shared tests
         run: pnpm test:shared

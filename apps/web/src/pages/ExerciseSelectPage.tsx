@@ -13,8 +13,12 @@ export function ExerciseSelectPage() {
           </button>
         ))}
       </div>
-      <Link to="/exercise/create">
-        <button style={{ marginTop: 12 }}>Create New Exercise</button>
+      <Link
+        to="/exercise/create"
+        className="button-link"
+        style={{ marginTop: 12 }}
+      >
+        Create New Exercise
       </Link>
     </div>
   );
