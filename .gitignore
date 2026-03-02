@@ -65,3 +65,5 @@ infra/docker/volumes/
 # Temp
 tmp/
 temp/
+
+mock-screens
