@@ -1,6 +1,6 @@
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { JwtService } from '@nestjs/jwt';
+import { JwtModule, JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import { hash } from 'bcryptjs';
 import { randomUUID } from 'crypto';
@@ -187,6 +187,7 @@ describe('AuthService', () => {
   };
 
   let authService: AuthService;
+  let jwtService: JwtService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -201,9 +202,16 @@ describe('AuthService', () => {
     });
 
     const moduleRef = await Test.createTestingModule({
+      imports: [
+        JwtModule.register({
+          secret: 'access-secret-1234567890',
+          signOptions: {
+            expiresIn: 15 * 60,
+          },
+        }),
+      ],
       providers: [
         AuthService,
-        JwtService,
         {
           provide: ConfigService,
           useValue: {
@@ -232,6 +240,7 @@ describe('AuthService', () => {
     }).compile();
 
     authService = moduleRef.get(AuthService);
+    jwtService = moduleRef.get(JwtService);
   });
 
   it('register/login/refresh/logout flow', async () => {
@@ -271,6 +280,39 @@ describe('AuthService', () => {
     expect(parser.parseDurationToMs('15m')).toBe(15 * 60_000);
     expect(parser.parseDurationToMs('7d')).toBe(7 * 86_400_000);
     expect(parser.parseDurationToMs('invalid')).toBe(7 * 86_400_000);
+  });
+
+  it('uses jwt module defaults for access tokens and explicit options for refresh tokens', async () => {
+    const signSpy = jest.spyOn(jwtService, 'signAsync');
+
+    await authService.register({
+      email: 'defaults@example.com',
+      password: 'Str0ngPassword!',
+      name: 'Defaults',
+    });
+
+    expect(signSpy).toHaveBeenCalledTimes(2);
+
+    const [accessPayload, accessOptions] = signSpy.mock.calls[0];
+    expect(accessPayload).toEqual(
+      expect.objectContaining({
+        sub: expect.any(String),
+        email: 'defaults@example.com',
+      }),
+    );
+    expect(accessOptions).toBeUndefined();
+
+    const [refreshPayload, refreshOptions] = signSpy.mock.calls[1];
+    expect(refreshPayload).toEqual(
+      expect.objectContaining({
+        sub: expect.any(String),
+        email: 'defaults@example.com',
+      }),
+    );
+    expect(refreshOptions).toEqual({
+      secret: 'refresh-secret-1234567890',
+      expiresIn: 7 * 24 * 60 * 60,
+    });
   });
 
   it('google login uses verified token identity', async () => {
