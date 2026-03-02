@@ -1,5 +1,6 @@
+import { type SyncResult, replaySyncQueueWithDb } from '@irontrack/shared';
+
 import { getDatabase } from './database';
-import { type SyncResult, replaySyncQueueWithDb } from './syncEngine.core';
 
 export async function queueMutation(
   entityType: string,

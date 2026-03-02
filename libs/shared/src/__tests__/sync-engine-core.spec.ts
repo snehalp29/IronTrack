@@ -4,7 +4,7 @@ import {
   DUE_SYNC_QUEUE_QUERY,
   type SyncQueueDb,
   replaySyncQueueWithDb,
-} from '../../../../apps/mobile/src/db/syncEngine.core';
+} from '../utils/sync-queue';
 
 describe('sync engine core', () => {
   it('queries only due queue items using next_attempt_at cutoff', async () => {

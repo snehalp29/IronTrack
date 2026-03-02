@@ -5,4 +5,5 @@ export * from './utils/volume';
 export * from './utils/one-rm';
 export * from './utils/dates';
 export * from './utils/units';
+export * from './utils/sync-queue';
 export * from './constants';
