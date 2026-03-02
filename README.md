@@ -67,6 +67,9 @@ If Docker fails with `bind: address already in use` on `5000`, set
 pnpm docker:up
 ```
 
+If you run the API locally (`pnpm serve:api`) against that containerized ML
+service, also set `ML_SERVICE_URL=http://localhost:5001` in `.env`.
+
 If Docker fails with `bind: address already in use` on `3000`, set
 `WEB_PORT=3001` in your root `.env`, then run:
 
