@@ -1,9 +1,10 @@
 interface Props {
   open: boolean;
   onClose: () => void;
+  onConfirm: () => void;
 }
 
-export function IncompleteWarningModal({ open, onClose }: Props) {
+export function IncompleteWarningModal({ open, onClose, onConfirm }: Props) {
   if (!open) return null;
 
   return (
@@ -11,7 +12,9 @@ export function IncompleteWarningModal({ open, onClose }: Props) {
       <h3>Incomplete Workout</h3>
       <p className="meta">You still have unfinished sets. Finish anyway?</p>
       <div style={{ display: 'flex', gap: 8 }}>
-        <button style={{ background: '#9a3412' }}>Finish Anyway</button>
+        <button style={{ background: '#9a3412' }} onClick={onConfirm}>
+          Finish Anyway
+        </button>
         <button className="secondary" onClick={onClose}>
           Continue Workout
         </button>

@@ -18,11 +18,7 @@ export const refreshSchema = z.object({
 });
 
 export const googleAuthSchema = z.object({
-  idToken: z.string().optional(),
-  googleId: z.string().optional(),
-  email: z.string().email().optional(),
-  name: z.string().optional(),
-  avatarUrl: z.string().url().optional(),
+  idToken: z.string().min(20),
 });
 
 export type RegisterDto = z.infer<typeof registerSchema>;

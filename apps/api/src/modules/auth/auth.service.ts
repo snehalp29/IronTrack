@@ -16,6 +16,7 @@ import {
   RefreshDto,
   RegisterDto,
 } from './dto/auth.schemas';
+import { GoogleTokenVerifierService } from './google-token-verifier.service';
 
 export interface AuthTokens {
   accessToken: string;
@@ -28,6 +29,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly googleTokenVerifierService: GoogleTokenVerifierService,
   ) {}
 
   async register(input: RegisterDto): Promise<AuthTokens> {
@@ -119,38 +121,32 @@ export class AuthService {
   }
 
   async googleLogin(input: GoogleAuthDto): Promise<AuthTokens> {
-    if (!input.googleId && !input.idToken) {
+    if (!input.idToken) {
       throw new BadRequestException({
         code: 'GOOGLE_TOKEN_REQUIRED',
-        message: 'googleId or idToken is required',
+        message: 'idToken is required',
       });
     }
 
-    const email = input.email?.toLowerCase();
-    const googleId = input.googleId ?? input.idToken;
-
-    if (!email || !googleId) {
-      throw new BadRequestException({
-        code: 'GOOGLE_PAYLOAD_INVALID',
-        message: 'Google payload missing required fields',
-      });
-    }
+    const identity = await this.googleTokenVerifierService.verifyIdToken(
+      input.idToken,
+    );
 
     const user = await this.prisma.user.upsert({
-      where: { email },
+      where: { email: identity.email },
       update: {
         authProvider: AuthProvider.GOOGLE,
-        googleId,
-        name: input.name,
-        avatarUrl: input.avatarUrl,
+        googleId: identity.googleId,
+        name: identity.name,
+        avatarUrl: identity.avatarUrl,
       },
       create: {
-        email,
-        passwordHash: await hash(googleId, 10),
+        email: identity.email,
+        passwordHash: await hash(identity.googleId, 10),
         authProvider: AuthProvider.GOOGLE,
-        googleId,
-        name: input.name,
-        avatarUrl: input.avatarUrl,
+        googleId: identity.googleId,
+        name: identity.name,
+        avatarUrl: identity.avatarUrl,
       },
     });
 

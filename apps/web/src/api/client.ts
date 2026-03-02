@@ -1,12 +1,6 @@
 const API_BASE_URL =
   import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api/v1';
 
-type ApiErrorPayload = {
-  error?: {
-    message?: string;
-  };
-};
-
 export async function apiFetch<T>(
   path: string,
   init?: RequestInit,
@@ -20,13 +14,25 @@ export async function apiFetch<T>(
   });
 
   if (!response.ok) {
-    const payload: ApiErrorPayload = await response
-      .json()
-      .catch(() => ({}) as ApiErrorPayload);
+    const payload: unknown = await response.json().catch(() => null);
     throw new Error(
-      payload?.error?.message ?? `Request failed (${response.status})`,
+      getApiErrorMessage(payload) ?? `Request failed (${response.status})`,
     );
   }
 
   return response.json() as Promise<T>;
+}
+
+function getApiErrorMessage(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== 'object') {
+    return undefined;
+  }
+
+  const maybeError = (payload as { error?: unknown }).error;
+  if (!maybeError || typeof maybeError !== 'object') {
+    return undefined;
+  }
+
+  const maybeMessage = (maybeError as { message?: unknown }).message;
+  return typeof maybeMessage === 'string' ? maybeMessage : undefined;
 }

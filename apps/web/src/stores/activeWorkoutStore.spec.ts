@@ -4,6 +4,12 @@ import { useActiveWorkoutStore } from './activeWorkoutStore';
 import type { SessionExercise } from './activeWorkoutStore';
 
 describe('activeWorkoutStore', () => {
+  it('rehydrates without browser localStorage', async () => {
+    await expect(
+      useActiveWorkoutStore.persist.rehydrate(),
+    ).resolves.toBeUndefined();
+  });
+
   it('supports start -> complete flow', () => {
     const { start, finish, clear } = useActiveWorkoutStore.getState();
     const sessionExercises: SessionExercise[] = [

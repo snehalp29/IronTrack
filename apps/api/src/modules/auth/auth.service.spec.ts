@@ -1,3 +1,4 @@
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
@@ -6,6 +7,7 @@ import { randomUUID } from 'crypto';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuthService } from './auth.service';
+import { GoogleTokenVerifierService } from './google-token-verifier.service';
 
 describe('AuthService', () => {
   type UserRecord = {
@@ -72,6 +74,17 @@ describe('AuthService', () => {
 
   const refreshTokens: RefreshTokenRecord[] = [];
   const users: UserRecord[] = [];
+  const googleTokenVerifierMock = {
+    verifyIdToken: jest.fn<
+      Promise<{
+        email: string;
+        googleId: string;
+        name?: string;
+        avatarUrl?: string;
+      }>,
+      [string]
+    >(),
+  };
 
   const prismaMock = {
     user: {
@@ -176,8 +189,16 @@ describe('AuthService', () => {
   let authService: AuthService;
 
   beforeEach(async () => {
+    jest.clearAllMocks();
     users.length = 0;
     refreshTokens.length = 0;
+    googleTokenVerifierMock.verifyIdToken.mockReset();
+    googleTokenVerifierMock.verifyIdToken.mockResolvedValue({
+      email: 'verified@irontrack.local',
+      googleId: 'google-user-id-123',
+      name: 'Verified User',
+      avatarUrl: 'https://example.com/avatar.png',
+    });
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -203,6 +224,10 @@ describe('AuthService', () => {
           },
         },
         { provide: PrismaService, useValue: prismaMock },
+        {
+          provide: GoogleTokenVerifierService,
+          useValue: googleTokenVerifierMock,
+        },
       ],
     }).compile();
 
@@ -246,5 +271,49 @@ describe('AuthService', () => {
     expect(parser.parseDurationToMs('15m')).toBe(15 * 60_000);
     expect(parser.parseDurationToMs('7d')).toBe(7 * 86_400_000);
     expect(parser.parseDurationToMs('invalid')).toBe(7 * 86_400_000);
+  });
+
+  it('google login uses verified token identity', async () => {
+    const tokens = await authService.googleLogin({
+      idToken: 'valid-google-id-token-1234567890',
+    });
+
+    expect(tokens.accessToken).toBeTruthy();
+    expect(tokens.refreshToken).toBeTruthy();
+    expect(googleTokenVerifierMock.verifyIdToken).toHaveBeenCalledWith(
+      'valid-google-id-token-1234567890',
+    );
+    expect(prismaMock.user.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { email: 'verified@irontrack.local' },
+        update: expect.objectContaining({
+          googleId: 'google-user-id-123',
+          authProvider: 'GOOGLE',
+        }),
+      }),
+    );
+  });
+
+  it('google login requires idToken', async () => {
+    await expect(authService.googleLogin({} as never)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(googleTokenVerifierMock.verifyIdToken).not.toHaveBeenCalled();
+  });
+
+  it('google login rejects unverified tokens', async () => {
+    googleTokenVerifierMock.verifyIdToken.mockRejectedValueOnce(
+      new UnauthorizedException({
+        code: 'INVALID_GOOGLE_TOKEN',
+        message: 'Google token is invalid',
+      }),
+    );
+
+    await expect(
+      authService.googleLogin({
+        idToken: 'invalid-google-id-token-1234567890',
+      }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(prismaMock.user.upsert).not.toHaveBeenCalled();
   });
 });

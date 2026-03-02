@@ -1,9 +1,10 @@
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { randomUUID } from 'crypto';
 import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
+import { GoogleTokenVerifierService } from '../src/modules/auth/google-token-verifier.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 describe('AuthController (e2e)', () => {
@@ -73,6 +74,17 @@ describe('AuthController (e2e)', () => {
 
   const users: UserRecord[] = [];
   const refreshTokens: RefreshTokenRecord[] = [];
+  const googleTokenVerifierMock = {
+    verifyIdToken: jest.fn<
+      Promise<{
+        email: string;
+        googleId: string;
+        name?: string;
+        avatarUrl?: string;
+      }>,
+      [string]
+    >(),
+  };
 
   const prismaMock = {
     user: {
@@ -175,8 +187,27 @@ describe('AuthController (e2e)', () => {
   };
 
   beforeEach(async () => {
+    jest.clearAllMocks();
     users.length = 0;
     refreshTokens.length = 0;
+    googleTokenVerifierMock.verifyIdToken.mockReset();
+    googleTokenVerifierMock.verifyIdToken.mockImplementation(
+      async (idToken: string) => {
+        if (idToken !== 'valid-google-id-token-1234567890') {
+          throw new UnauthorizedException({
+            code: 'INVALID_GOOGLE_TOKEN',
+            message: 'Google token is invalid',
+          });
+        }
+
+        return {
+          email: 'google-user@irontrack.local',
+          googleId: 'google-sub-123',
+          name: 'Google User',
+          avatarUrl: 'https://example.com/avatar.png',
+        };
+      },
+    );
     process.env.NODE_ENV = 'test';
     process.env.DATABASE_URL =
       'postgresql://postgres:postgres@localhost:5432/irontrack_test?schema=public';
@@ -194,6 +225,8 @@ describe('AuthController (e2e)', () => {
     })
       .overrideProvider(PrismaService)
       .useValue(prismaMock)
+      .overrideProvider(GoogleTokenVerifierService)
+      .useValue(googleTokenVerifierMock)
       .compile();
 
     app = moduleRef.createNestApplication();
@@ -258,5 +291,46 @@ describe('AuthController (e2e)', () => {
 
     expect(logoutRes.status).toBe(200);
     expect(logoutRes.body.success).toBe(true);
+  });
+
+  it('google login validates id token and issues tokens', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/auth/google')
+      .send({
+        idToken: 'valid-google-id-token-1234567890',
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.accessToken).toBeTruthy();
+    expect(response.body.refreshToken).toBeTruthy();
+    expect(googleTokenVerifierMock.verifyIdToken).toHaveBeenCalledWith(
+      'valid-google-id-token-1234567890',
+    );
+    expect(prismaMock.user.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { email: 'google-user@irontrack.local' },
+        update: expect.objectContaining({
+          googleId: 'google-sub-123',
+        }),
+      }),
+    );
+  });
+
+  it('google login rejects invalid id token', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/auth/google')
+      .send({
+        idToken: 'invalid-google-id-token-1234567890',
+      });
+
+    expect(response.status).toBe(401);
+  });
+
+  it('google login requires idToken payload', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/auth/google')
+      .send({});
+
+    expect(response.status).toBe(400);
   });
 });

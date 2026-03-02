@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { createJSONStorage, persist } from 'zustand/middleware';
+import type { StateStorage } from 'zustand/middleware';
 
 export type WorkoutFlowState =
   | 'IDLE'
@@ -73,6 +74,21 @@ function applyExerciseOrder(
     }))
     .sort((a, b) => a.orderIndex - b.orderIndex);
 }
+
+function createNoopStorage(): StateStorage {
+  return {
+    getItem: () => null,
+    setItem: () => undefined,
+    removeItem: () => undefined,
+  };
+}
+
+const activeWorkoutStorage = createJSONStorage<ActiveWorkoutState>(() => {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return createNoopStorage();
+  }
+  return window.localStorage;
+});
 
 export const useActiveWorkoutStore = create<ActiveWorkoutState>()(
   persist(
@@ -198,6 +214,7 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()(
     }),
     {
       name: 'irontrack-active-workout',
+      storage: activeWorkoutStorage,
     },
   ),
 );

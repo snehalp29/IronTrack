@@ -49,6 +49,18 @@ export function ActiveWorkoutPage() {
   const [showReorder, setShowReorder] = useState(false);
   const [showSuperset, setShowSuperset] = useState(false);
   const [showIncomplete, setShowIncomplete] = useState(false);
+  const totals = useMemo(() => {
+    const allSets = exercises.flatMap((exercise) => exercise.sets);
+    const completed = allSets.filter((set) => set.isCompleted).length;
+    const total = allSets.length;
+    return { completed, total };
+  }, [exercises]);
+
+  function finalizeWorkout() {
+    finish({ totalVolume: 12450, durationSeconds: 3120, prs: 2 });
+    setShowIncomplete(false);
+    navigate('/workout/complete');
+  }
 
   if (state === 'IDLE') {
     return (
@@ -61,13 +73,6 @@ export function ActiveWorkoutPage() {
       </div>
     );
   }
-
-  const totals = useMemo(() => {
-    const allSets = exercises.flatMap((exercise) => exercise.sets);
-    const completed = allSets.filter((set) => set.isCompleted).length;
-    const total = allSets.length;
-    return { completed, total };
-  }, [exercises]);
 
   return (
     <div className="grid">
@@ -119,8 +124,7 @@ export function ActiveWorkoutPage() {
               setShowIncomplete(true);
               return;
             }
-            finish({ totalVolume: 12450, durationSeconds: 3120, prs: 2 });
-            navigate('/workout/complete');
+            finalizeWorkout();
           }}
         >
           Finish Workout
@@ -139,6 +143,7 @@ export function ActiveWorkoutPage() {
       <IncompleteWarningModal
         open={showIncomplete}
         onClose={() => setShowIncomplete(false)}
+        onConfirm={finalizeWorkout}
       />
     </div>
   );
