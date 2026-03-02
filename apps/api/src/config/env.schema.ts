@@ -1,5 +1,9 @@
 import { z } from 'zod';
 
+const durationSchema = z
+  .string()
+  .regex(/^\d+[smhd]$/, 'Expected duration format like 15m, 7d, 30s, or 2h');
+
 export const envSchema = z.object({
   NODE_ENV: z
     .enum(['development', 'test', 'production'])
@@ -9,8 +13,8 @@ export const envSchema = z.object({
   DATABASE_URL: z.string().url(),
   JWT_ACCESS_SECRET: z.string().min(16),
   JWT_REFRESH_SECRET: z.string().min(16),
-  JWT_ACCESS_EXPIRY: z.string().default('15m'),
-  JWT_REFRESH_EXPIRY: z.string().default('7d'),
+  JWT_ACCESS_EXPIRY: durationSchema.default('15m'),
+  JWT_REFRESH_EXPIRY: durationSchema.default('7d'),
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
   GOOGLE_CALLBACK_URL: z.string().url().optional(),

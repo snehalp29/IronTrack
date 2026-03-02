@@ -9,6 +9,14 @@ if [[ ! -f ".env" ]]; then
   exit 1
 fi
 
+if ! command -v pnpm >/dev/null 2>&1; then
+  echo "[irontrack] pnpm is required but was not found in PATH."
+  exit 1
+fi
+
+echo "[irontrack] Installing JavaScript dependencies..."
+pnpm install --no-frozen-lockfile
+
 COMPOSE_CMD=(docker compose --env-file .env -f infra/docker/docker-compose.yml)
 
 wait_for_service() {

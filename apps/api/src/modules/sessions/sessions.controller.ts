@@ -22,6 +22,7 @@ import {
 } from './dto/session.schemas';
 import type {
   AddSessionExerciseDto,
+  ListSessionsQuery,
   ReorderSessionExercisesDto,
   StartSessionDto,
   SwapSessionExerciseDto,
@@ -69,10 +70,10 @@ export class SessionsController {
   @Get()
   async list(
     @CurrentUser() user: { sub: string },
-    @Query() query: Record<string, unknown>,
+    @Query(new ZodValidationPipe(listSessionsQuerySchema))
+    query: ListSessionsQuery,
   ) {
-    const parsed = listSessionsQuerySchema.parse(query);
-    return this.sessionsService.listSessions(user.sub, parsed);
+    return this.sessionsService.listSessions(user.sub, query);
   }
 
   @Delete(':id')

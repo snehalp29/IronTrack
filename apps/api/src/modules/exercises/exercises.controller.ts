@@ -20,6 +20,7 @@ import {
 } from './dto/exercise.schemas';
 import type {
   CreateExerciseDto,
+  ListExercisesQuery,
   UpdateExerciseDto,
   UpsertExerciseNoteDto,
 } from './dto/exercise.schemas';
@@ -32,10 +33,10 @@ export class ExercisesController {
   @Get()
   async list(
     @CurrentUser() user: { sub: string },
-    @Query() query: Record<string, unknown>,
+    @Query(new ZodValidationPipe(listExercisesQuerySchema))
+    query: ListExercisesQuery,
   ) {
-    const parsed = listExercisesQuerySchema.parse(query);
-    return this.exercisesService.list(user.sub, parsed);
+    return this.exercisesService.list(user.sub, query);
   }
 
   @Get(':id')

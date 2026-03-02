@@ -8,7 +8,11 @@ import {
   checklistWeekQuerySchema,
   upsertChecklistSchema,
 } from './dto/checklist.schemas';
-import type { UpsertChecklistDto } from './dto/checklist.schemas';
+import type {
+  ChecklistQueryDto,
+  ChecklistWeekQueryDto,
+  UpsertChecklistDto,
+} from './dto/checklist.schemas';
 
 @Controller('checklist')
 export class ChecklistController {
@@ -17,10 +21,10 @@ export class ChecklistController {
   @Get()
   async getByDate(
     @CurrentUser() user: { sub: string },
-    @Query() query: Record<string, unknown>,
+    @Query(new ZodValidationPipe(checklistQuerySchema))
+    query: ChecklistQueryDto,
   ) {
-    const parsed = checklistQuerySchema.parse(query);
-    return this.checklistService.getByDate(user.sub, parsed.date);
+    return this.checklistService.getByDate(user.sub, query.date);
   }
 
   @Put()
@@ -35,9 +39,9 @@ export class ChecklistController {
   @Get('week')
   async getWeek(
     @CurrentUser() user: { sub: string },
-    @Query() query: Record<string, unknown>,
+    @Query(new ZodValidationPipe(checklistWeekQuerySchema))
+    query: ChecklistWeekQueryDto,
   ) {
-    const parsed = checklistWeekQuerySchema.parse(query);
-    return this.checklistService.getWeek(user.sub, parsed);
+    return this.checklistService.getWeek(user.sub, query);
   }
 }

@@ -100,6 +100,9 @@ One-command setup:
 ./tools/scripts/setup.sh
 ```
 
+`setup.sh` installs dependencies, starts Docker services, waits for health checks,
+applies Prisma migrations, and seeds the database.
+
 Reset DB:
 
 ```bash
