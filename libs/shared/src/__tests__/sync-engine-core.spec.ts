@@ -101,7 +101,7 @@ describe('sync engine core', () => {
     };
     const applyRemote = vi
       .fn()
-      .mockRejectedValueOnce(new Error('409 Conflict'))
+      .mockRejectedValueOnce({ status: 409, message: 'Conflict' })
       .mockResolvedValueOnce(undefined);
 
     const result = await replaySyncQueueWithDb(
@@ -120,6 +120,82 @@ describe('sync engine core', () => {
       'DELETE FROM sync_queue WHERE id = ?',
       [11],
     );
+  });
+
+  it('does not count conflicts from message substring matching alone', async () => {
+    const db: SyncQueueDb = {
+      getAllSync: vi.fn().mockReturnValue([
+        {
+          id: 12,
+          entity_type: 'set',
+          local_id: 'set-local-12',
+          operation: 'UPDATE',
+          payload: '{"reps":8}',
+        },
+      ]),
+      runSync: vi.fn(),
+    };
+    const applyRemote = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('remote returned 409 text'));
+
+    const result = await replaySyncQueueWithDb(
+      db,
+      applyRemote,
+      new Date('2026-03-02T10:00:00.000Z'),
+    );
+
+    expect(result).toEqual({ synced: 0, conflicts: 0 });
+  });
+
+  it('counts conflicts when status is provided under error.response.status', async () => {
+    const db: SyncQueueDb = {
+      getAllSync: vi.fn().mockReturnValue([
+        {
+          id: 13,
+          entity_type: 'set',
+          local_id: 'set-local-13',
+          operation: 'DELETE',
+          payload: '{"setId":"13"}',
+        },
+      ]),
+      runSync: vi.fn(),
+    };
+    const applyRemote = vi
+      .fn()
+      .mockRejectedValueOnce({ response: { status: 409 } });
+
+    const result = await replaySyncQueueWithDb(
+      db,
+      applyRemote,
+      new Date('2026-03-02T10:00:00.000Z'),
+    );
+
+    expect(result).toEqual({ synced: 0, conflicts: 1 });
+  });
+
+  it('does not count conflicts for non-object thrown values', async () => {
+    const db: SyncQueueDb = {
+      getAllSync: vi.fn().mockReturnValue([
+        {
+          id: 14,
+          entity_type: 'set',
+          local_id: 'set-local-14',
+          operation: 'UPDATE',
+          payload: '{"reps":5}',
+        },
+      ]),
+      runSync: vi.fn(),
+    };
+    const applyRemote = vi.fn().mockRejectedValueOnce('transport error');
+
+    const result = await replaySyncQueueWithDb(
+      db,
+      applyRemote,
+      new Date('2026-03-02T10:00:00.000Z'),
+    );
+
+    expect(result).toEqual({ synced: 0, conflicts: 0 });
   });
 
   it('passes operation and local id to remote applier when replaying', async () => {

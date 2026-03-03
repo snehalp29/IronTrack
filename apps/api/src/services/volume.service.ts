@@ -2,24 +2,29 @@ import { Injectable } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
 
+export type VolumeSetInput = {
+  weight: number | null;
+  reps: number | null;
+  durationSeconds: number | null;
+};
+
+export function calculateSetVolumeValue(set: VolumeSetInput): number {
+  const weight = set.weight ?? 0;
+  const reps = set.reps ?? 0;
+
+  if (weight > 0 && reps > 0) {
+    return weight * reps;
+  }
+
+  return set.durationSeconds ?? 0;
+}
+
 @Injectable()
 export class VolumeService {
   constructor(private readonly prisma: PrismaService) {}
 
-  calculateSetVolume(set: {
-    weight: number | null;
-    reps: number | null;
-    durationSeconds: number | null;
-  }): number {
-    if (set.weight && set.reps) {
-      return set.weight * set.reps;
-    }
-
-    if (set.durationSeconds) {
-      return set.durationSeconds;
-    }
-
-    return 0;
+  calculateSetVolume(set: VolumeSetInput): number {
+    return calculateSetVolumeValue(set);
   }
 
   async calculateSessionVolume(sessionId: string): Promise<number> {

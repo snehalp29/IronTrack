@@ -40,13 +40,13 @@ export class HttpExceptionFilter implements ExceptionFilter {
     if (typeof exceptionBody === 'object' && exceptionBody !== null) {
       const body = exceptionBody as {
         code?: string;
-        message?: string;
+        message?: unknown;
         details?: unknown;
       };
       response.status(statusCode).json({
         error: {
           code: body.code ?? 'HTTP_ERROR',
-          message: body.message ?? exception.message,
+          message: this.normalizeMessage(body.message, exception.message),
           details: body.details,
         },
       });
@@ -59,5 +59,29 @@ export class HttpExceptionFilter implements ExceptionFilter {
         message: String(exceptionBody),
       },
     });
+  }
+
+  private normalizeMessage(message: unknown, fallback: string): string {
+    if (typeof message === 'string') {
+      return message;
+    }
+
+    if (Array.isArray(message)) {
+      return message
+        .map((value) =>
+          typeof value === 'string' ? value : JSON.stringify(value),
+        )
+        .join('; ');
+    }
+
+    if (message === undefined || message === null) {
+      return fallback;
+    }
+
+    if (typeof message === 'object') {
+      return JSON.stringify(message);
+    }
+
+    return String(message);
   }
 }

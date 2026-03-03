@@ -40,7 +40,7 @@ describe('AuthController', () => {
     (authServiceMock.refresh as jest.Mock).mockResolvedValue({ ok: true });
 
     await expect(
-      controller.refresh({ refreshToken: 'token-value' }),
+      controller.refresh({ refreshToken: 'refresh-token-value-123' }),
     ).resolves.toEqual({ ok: true });
   });
 
@@ -48,7 +48,7 @@ describe('AuthController', () => {
     (authServiceMock.googleLogin as jest.Mock).mockResolvedValue({ ok: true });
 
     await expect(
-      controller.google({ idToken: 'google-token' }),
+      controller.google({ idToken: 'google-token-value-12345' }),
     ).resolves.toEqual({ ok: true });
   });
 
@@ -56,8 +56,8 @@ describe('AuthController', () => {
     (authServiceMock.logout as jest.Mock).mockResolvedValue({ success: true });
 
     await expect(
-      controller.logout({ refreshToken: 'refresh-1' }),
+      controller.logout({ refreshToken: 'refresh-token-123' }),
     ).resolves.toEqual({ success: true });
-    expect(authServiceMock.logout).toHaveBeenCalledWith('refresh-1');
+    expect(authServiceMock.logout).toHaveBeenCalledWith('refresh-token-123');
   });
 });

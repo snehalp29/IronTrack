@@ -97,6 +97,105 @@ describe('HttpExceptionFilter', () => {
     });
   });
 
+  it('normalizes HttpException array message into a string', () => {
+    const filter = new HttpExceptionFilter();
+    const { host, response } = createHost({ method: 'POST', url: '/items' });
+
+    const exception = new HttpException(
+      {
+        code: 'BAD_INPUT',
+        message: ['email is invalid', 'password is too short'],
+      },
+      HttpStatus.BAD_REQUEST,
+    );
+
+    filter.catch(exception, host as never);
+
+    expect(response.status).toHaveBeenCalledWith(HttpStatus.BAD_REQUEST);
+    expect(response.json).toHaveBeenCalledWith({
+      error: {
+        code: 'BAD_INPUT',
+        message: 'email is invalid; password is too short',
+        details: undefined,
+      },
+    });
+  });
+
+  it('normalizes mixed-type array messages into strings', () => {
+    const filter = new HttpExceptionFilter();
+    const { host, response } = createHost({ method: 'POST', url: '/items' });
+
+    const exception = new HttpException(
+      {
+        code: 'BAD_INPUT',
+        message: [
+          'email is invalid',
+          { field: 'password', error: 'too short' },
+        ],
+      },
+      HttpStatus.BAD_REQUEST,
+    );
+
+    filter.catch(exception, host as never);
+
+    expect(response.status).toHaveBeenCalledWith(HttpStatus.BAD_REQUEST);
+    expect(response.json).toHaveBeenCalledWith({
+      error: {
+        code: 'BAD_INPUT',
+        message: 'email is invalid; {"field":"password","error":"too short"}',
+        details: undefined,
+      },
+    });
+  });
+
+  it('normalizes HttpException object message into a JSON string', () => {
+    const filter = new HttpExceptionFilter();
+    const { host, response } = createHost({ method: 'POST', url: '/items' });
+
+    const exception = new HttpException(
+      {
+        code: 'BAD_INPUT',
+        message: { field: 'email', error: 'invalid' },
+      },
+      HttpStatus.BAD_REQUEST,
+    );
+
+    filter.catch(exception, host as never);
+
+    expect(response.status).toHaveBeenCalledWith(HttpStatus.BAD_REQUEST);
+    expect(response.json).toHaveBeenCalledWith({
+      error: {
+        code: 'BAD_INPUT',
+        message: '{"field":"email","error":"invalid"}',
+        details: undefined,
+      },
+    });
+  });
+
+  it('normalizes non-string primitive messages', () => {
+    const filter = new HttpExceptionFilter();
+    const { host, response } = createHost({ method: 'POST', url: '/items' });
+
+    const exception = new HttpException(
+      {
+        code: 'BAD_INPUT',
+        message: 123,
+      },
+      HttpStatus.BAD_REQUEST,
+    );
+
+    filter.catch(exception, host as never);
+
+    expect(response.status).toHaveBeenCalledWith(HttpStatus.BAD_REQUEST);
+    expect(response.json).toHaveBeenCalledWith({
+      error: {
+        code: 'BAD_INPUT',
+        message: '123',
+        details: undefined,
+      },
+    });
+  });
+
   it('maps HttpException string response', () => {
     const filter = new HttpExceptionFilter();
     const { host, response } = createHost({ method: 'GET', url: '/items' });

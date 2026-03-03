@@ -28,6 +28,30 @@ export interface SyncQueueDb {
 export const DUE_SYNC_QUEUE_QUERY =
   'SELECT * FROM sync_queue WHERE next_attempt_at IS NULL OR next_attempt_at <= ? ORDER BY id ASC';
 
+type StructuredSyncError = {
+  status?: unknown;
+  response?: {
+    status?: unknown;
+  };
+};
+
+function getErrorStatus(error: unknown): number | undefined {
+  if (typeof error !== 'object' || error === null) {
+    return undefined;
+  }
+
+  const structured = error as StructuredSyncError;
+  const directStatus =
+    typeof structured.status === 'number' ? structured.status : undefined;
+  if (directStatus !== undefined) {
+    return directStatus;
+  }
+
+  return typeof structured.response?.status === 'number'
+    ? structured.response.status
+    : undefined;
+}
+
 export async function replaySyncQueueWithDb(
   db: SyncQueueDb,
   applyRemote: (mutation: SyncQueueMutation) => Promise<void>,
@@ -53,8 +77,7 @@ export async function replaySyncQueueWithDb(
       db.runSync('DELETE FROM sync_queue WHERE id = ?', [item.id]);
       synced += 1;
     } catch (error) {
-      const message = (error as Error).message;
-      if (message.includes('409')) {
+      if (getErrorStatus(error) === 409) {
         conflicts += 1;
       }
 

@@ -55,7 +55,7 @@ export class SessionsService {
           notes: null,
           supersetGroupKey: exercise.supersetGroupKey,
         }))
-      : (input.exercises ?? []).map((exercise, index) => ({
+      : input.exercises.map((exercise, index) => ({
           exerciseTemplateId: exercise.exerciseTemplateId,
           orderIndex: exercise.orderIndex ?? index,
           notes: exercise.notes,
