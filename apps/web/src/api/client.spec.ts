@@ -141,6 +141,119 @@ describe('apiFetch', () => {
     );
   });
 
+  it('preserves headers passed as a Headers instance', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: vi.fn().mockResolvedValue(JSON.stringify({ ok: true })),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await apiFetch('/sessions', {
+      method: 'POST',
+      headers: new Headers({ Authorization: 'Bearer token' }),
+      body: JSON.stringify({ name: 'Leg Day' }),
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      'http://localhost:3000/api/v1/sessions',
+    );
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(init?.method).toBe('POST');
+    expect(init?.body).toBe(JSON.stringify({ name: 'Leg Day' }));
+
+    const headers = init?.headers as Record<string, string>;
+    const authorization =
+      headers.Authorization ?? headers.authorization ?? headers.AUTHORIZATION;
+    const contentType =
+      headers['Content-Type'] ??
+      headers['content-type'] ??
+      headers['CONTENT-TYPE'];
+    expect(authorization).toBe('Bearer token');
+    expect(contentType).toBe('application/json');
+  });
+
+  it('supports tuple-array headers', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: vi.fn().mockResolvedValue(JSON.stringify({ ok: true })),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await apiFetch('/sessions', {
+      method: 'POST',
+      headers: [['Authorization', 'Bearer token']],
+      body: JSON.stringify({ name: 'Leg Day' }),
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:3000/api/v1/sessions',
+      {
+        method: 'POST',
+        body: JSON.stringify({ name: 'Leg Day' }),
+        headers: {
+          Authorization: 'Bearer token',
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+  });
+
+  it('does not overwrite an existing content-type header', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: vi.fn().mockResolvedValue(JSON.stringify({ ok: true })),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await apiFetch('/sessions', {
+      method: 'POST',
+      headers: { 'content-type': 'text/plain' },
+      body: 'raw body',
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:3000/api/v1/sessions',
+      {
+        method: 'POST',
+        body: 'raw body',
+        headers: {
+          'content-type': 'text/plain',
+        },
+      },
+    );
+  });
+
+  it('ignores undefined header values in object-style headers', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: vi.fn().mockResolvedValue(JSON.stringify({ ok: true })),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await apiFetch('/sessions', {
+      method: 'POST',
+      headers: {
+        Authorization: undefined,
+        'X-Trace-Id': 'trace-123',
+      } as unknown as HeadersInit,
+      body: JSON.stringify({ name: 'Leg Day' }),
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:3000/api/v1/sessions',
+      {
+        method: 'POST',
+        body: JSON.stringify({ name: 'Leg Day' }),
+        headers: {
+          'X-Trace-Id': 'trace-123',
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+  });
+
   it('throws API error message when backend returns one', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,

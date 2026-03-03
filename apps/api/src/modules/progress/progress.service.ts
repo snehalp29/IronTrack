@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 
 import { startOfWeek } from '../../common/utils/dates';
 import { calculateSetVolume } from '../../common/utils/volume';
+import { isIsoDateOnly } from '../../common/validation/iso-date-only';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
@@ -9,9 +10,7 @@ export class ProgressService {
   constructor(private readonly prisma: PrismaService) {}
 
   async weekly(userId: string, startDate?: string) {
-    const start = startDate
-      ? new Date(`${startDate}T00:00:00.000Z`)
-      : startOfWeek(new Date());
+    const start = this.resolveWeekStart(startDate);
     const endExclusive = new Date(start);
     endExclusive.setUTCDate(start.getUTCDate() + 7);
     const endInclusive = new Date(endExclusive.getTime() - 1);
@@ -58,6 +57,7 @@ export class ProgressService {
     for (const set of sets) {
       const volume = calculateSetVolume(set);
       const primary = set.sessionExercise.exercise.primaryMuscle;
+      const appliedSecondaryMuscleIds = new Set<string>();
 
       coveredMuscleIds.add(primary.id);
       muscleVolumeMap.set(primary.id, {
@@ -68,6 +68,14 @@ export class ProgressService {
 
       for (const secondary of set.sessionExercise.exercise.secondaryMuscles) {
         const muscle = secondary.muscleGroup;
+        if (
+          muscle.id === primary.id ||
+          appliedSecondaryMuscleIds.has(muscle.id)
+        ) {
+          continue;
+        }
+        appliedSecondaryMuscleIds.add(muscle.id);
+
         coveredMuscleIds.add(muscle.id);
         muscleVolumeMap.set(muscle.id, {
           id: muscle.id,
@@ -92,5 +100,20 @@ export class ProgressService {
         (a, b) => b.volume - a.volume,
       ),
     };
+  }
+
+  private resolveWeekStart(startDate?: string): Date {
+    if (!startDate) {
+      return startOfWeek(new Date());
+    }
+
+    if (!isIsoDateOnly(startDate)) {
+      throw new BadRequestException({
+        code: 'INVALID_START_DATE',
+        message: 'Invalid startDate',
+      });
+    }
+
+    return startOfWeek(new Date(`${startDate}T00:00:00.000Z`));
   }
 }

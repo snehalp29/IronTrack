@@ -76,6 +76,35 @@ describe('ProgressService', () => {
     ]);
   });
 
+  it('ignores secondary muscles that duplicate primary or repeat within a set', async () => {
+    (prismaMock.set.findMany as jest.Mock).mockResolvedValue([
+      {
+        weight: 100,
+        reps: 5,
+        durationSeconds: null,
+        sessionExercise: {
+          exercise: {
+            primaryMuscle: { id: 'm1', name: 'Chest' },
+            secondaryMuscles: [
+              { muscleGroup: { id: 'm1', name: 'Chest' } },
+              { muscleGroup: { id: 'm2', name: 'Triceps' } },
+              { muscleGroup: { id: 'm2', name: 'Triceps' } },
+            ],
+          },
+        },
+      },
+    ]);
+    (prismaMock.muscleGroup.count as jest.Mock).mockResolvedValue(6);
+
+    const result = await service.weekly('user-1', '2024-01-01');
+
+    expect(result.coveredMuscles).toBe(2);
+    expect(result.perMuscleVolume).toEqual([
+      { id: 'm1', name: 'Chest', volume: 500 },
+      { id: 'm2', name: 'Triceps', volume: 250 },
+    ]);
+  });
+
   it('uses weight x reps when both load data and duration are present', async () => {
     (prismaMock.set.findMany as jest.Mock).mockResolvedValue([
       {
@@ -170,6 +199,35 @@ describe('ProgressService', () => {
           },
         }),
       }),
+    );
+  });
+
+  it('normalizes provided startDate to the Monday of that week', async () => {
+    (prismaMock.set.findMany as jest.Mock).mockResolvedValue([]);
+    (prismaMock.muscleGroup.count as jest.Mock).mockResolvedValue(0);
+
+    await service.weekly('user-1', '2024-03-13');
+
+    expect(prismaMock.set.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          sessionExercise: {
+            session: {
+              userId: 'user-1',
+              startedAt: {
+                gte: new Date('2024-03-11T00:00:00.000Z'),
+                lt: new Date('2024-03-18T00:00:00.000Z'),
+              },
+            },
+          },
+        }),
+      }),
+    );
+  });
+
+  it('rejects invalid startDate values when service is called directly', async () => {
+    await expect(service.weekly('user-1', 'not-a-date')).rejects.toThrow(
+      'Invalid startDate',
     );
   });
 });

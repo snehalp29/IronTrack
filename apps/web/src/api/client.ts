@@ -22,12 +22,14 @@ export async function apiFetch<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T | undefined> {
+  const headers = normalizeHeaders(init?.headers);
+  if (!hasHeader(headers, 'Content-Type')) {
+    headers['Content-Type'] = 'application/json';
+  }
+
   const response = await fetch(buildApiUrl(API_BASE_URL, path), {
     ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init?.headers ?? {}),
-    },
+    headers,
   });
 
   if (!response.ok) {
@@ -71,4 +73,41 @@ function getApiErrorMessage(payload: unknown): string | undefined {
 
   const maybeMessage = (maybeError as { message?: unknown }).message;
   return typeof maybeMessage === 'string' ? maybeMessage : undefined;
+}
+
+function normalizeHeaders(
+  headers: HeadersInit | undefined,
+): Record<string, string> {
+  if (!headers) {
+    return {};
+  }
+
+  const normalized: Record<string, string> = {};
+
+  if (headers instanceof Headers) {
+    headers.forEach((value, key) => {
+      normalized[key] = value;
+    });
+    return normalized;
+  }
+
+  if (Array.isArray(headers)) {
+    for (const [key, value] of headers) {
+      normalized[key] = value;
+    }
+    return normalized;
+  }
+
+  for (const [key, value] of Object.entries(headers)) {
+    if (value !== undefined) {
+      normalized[key] = value;
+    }
+  }
+
+  return normalized;
+}
+
+function hasHeader(headers: Record<string, string>, name: string): boolean {
+  const target = name.toLowerCase();
+  return Object.keys(headers).some((key) => key.toLowerCase() === target);
 }
