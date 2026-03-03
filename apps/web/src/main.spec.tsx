@@ -1,6 +1,6 @@
 import { isValidElement } from 'react';
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const renderMock = vi.hoisted(() => vi.fn());
 const createRootMock = vi.hoisted(() =>
@@ -18,9 +18,7 @@ const queryClientProviderMock = vi.hoisted(() =>
 const appMock = vi.hoisted(() => vi.fn(() => <div>AppRoot</div>));
 
 vi.mock('react-dom/client', () => ({
-  default: {
-    createRoot: createRootMock,
-  },
+  createRoot: createRootMock,
 }));
 
 vi.mock('@tanstack/react-query', () => ({
@@ -35,6 +33,16 @@ vi.mock('./App', () => ({
 vi.mock('./styles.css', () => ({}));
 
 describe('main bootstrap', () => {
+  afterEach(() => {
+    vi.resetModules();
+    vi.unstubAllGlobals();
+    renderMock.mockClear();
+    createRootMock.mockClear();
+    queryClientCtorMock.mockClear();
+    queryClientProviderMock.mockClear();
+    appMock.mockClear();
+  });
+
   it('creates query client and mounts app tree to #root', async () => {
     const rootElement = { id: 'root-node' };
     const getElementById = vi.fn(() => rootElement);
@@ -64,5 +72,18 @@ describe('main bootstrap', () => {
     expect(providerElement.type).toBe(queryClientProviderMock);
     expect(providerElement.props.client).toBe(queryClientMock);
     expect(providerElement.props.children.type).toBe(appMock);
+  });
+
+  it('throws a clear error when #root is missing', async () => {
+    const getElementById = vi.fn(() => null);
+    vi.stubGlobal('document', {
+      getElementById,
+    } as unknown as Document);
+
+    await expect(import('./main')).rejects.toThrow(
+      'Root element "#root" was not found',
+    );
+    expect(createRootMock).not.toHaveBeenCalled();
+    expect(renderMock).not.toHaveBeenCalled();
   });
 });
