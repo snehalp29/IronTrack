@@ -18,16 +18,18 @@ export const listExercisesQuerySchema = z.object({
   isGlobal: z.coerce.boolean().optional(),
 });
 
+const exerciseTypeSchema = z.enum([
+  'WEIGHT_REPS',
+  'BODYWEIGHT',
+  'DURATION',
+  'REPS_ONLY',
+  'BODYWEIGHT_PLUS_WEIGHT',
+]);
+
 export const createExerciseSchema = z.object({
   name: z.string().min(2).max(120),
   description: z.string().max(4000).optional(),
-  exerciseType: z.enum([
-    'WEIGHT_REPS',
-    'BODYWEIGHT',
-    'DURATION',
-    'REPS_ONLY',
-    'BODYWEIGHT_PLUS_WEIGHT',
-  ]),
+  exerciseType: exerciseTypeSchema,
   primaryMuscleGroupId: z.string().uuid(),
   secondaryMuscleGroupIds: z.array(z.string().uuid()).default([]),
   equipmentIds: z.array(z.string().uuid()).default([]),
@@ -37,15 +39,18 @@ export const createExerciseSchema = z.object({
   defaultCues: z.string().max(4000).optional(),
 });
 
-const createExerciseSchemaWithoutRelationDefaults = createExerciseSchema.extend(
-  {
-    secondaryMuscleGroupIds: z.array(z.string().uuid()),
-    equipmentIds: z.array(z.string().uuid()),
-  },
-);
-
-export const updateExerciseSchema =
-  createExerciseSchemaWithoutRelationDefaults.partial();
+export const updateExerciseSchema = z.object({
+  name: z.string().min(2).max(120).optional(),
+  description: z.string().max(4000).optional(),
+  exerciseType: exerciseTypeSchema.optional(),
+  primaryMuscleGroupId: z.string().uuid().optional(),
+  secondaryMuscleGroupIds: z.array(z.string().uuid()).optional(),
+  equipmentIds: z.array(z.string().uuid()).optional(),
+  defaultSets: z.number().int().positive().optional(),
+  repMin: z.number().int().positive().optional(),
+  repMax: z.number().int().positive().optional(),
+  defaultCues: z.string().max(4000).optional(),
+});
 
 export const upsertExerciseNoteSchema = z.object({
   note: z.string().min(1).max(4000),
