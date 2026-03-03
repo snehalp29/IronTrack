@@ -14,7 +14,7 @@ describe('exercise schemas', () => {
     });
   });
 
-  it('validates exercise create/update payloads', () => {
+  it('validates exercise create payload and keeps omitted update relations undefined', () => {
     const payload = {
       name: 'Back Squat',
       exerciseType: 'WEIGHT_REPS',
@@ -28,6 +28,16 @@ describe('exercise schemas', () => {
     });
     expect(updateExerciseSchema.parse({ name: 'Updated Squat' })).toEqual({
       name: 'Updated Squat',
+    });
+  });
+
+  it('allows explicit relation clearing on update when empty arrays are provided', () => {
+    expect(
+      updateExerciseSchema.parse({
+        secondaryMuscleGroupIds: [],
+        equipmentIds: [],
+      }),
+    ).toEqual({
       secondaryMuscleGroupIds: [],
       equipmentIds: [],
     });

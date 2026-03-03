@@ -37,7 +37,15 @@ export const createExerciseSchema = z.object({
   defaultCues: z.string().max(4000).optional(),
 });
 
-export const updateExerciseSchema = createExerciseSchema.partial();
+const createExerciseSchemaWithoutRelationDefaults = createExerciseSchema.extend(
+  {
+    secondaryMuscleGroupIds: z.array(z.string().uuid()),
+    equipmentIds: z.array(z.string().uuid()),
+  },
+);
+
+export const updateExerciseSchema =
+  createExerciseSchemaWithoutRelationDefaults.partial();
 
 export const upsertExerciseNoteSchema = z.object({
   note: z.string().min(1).max(4000),

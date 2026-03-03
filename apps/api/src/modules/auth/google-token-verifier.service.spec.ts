@@ -163,6 +163,23 @@ describe('GoogleTokenVerifierService', () => {
     });
   });
 
+  it('rejects when Google returns a non-JSON body', async () => {
+    fetchSpy.mockResolvedValue({
+      ok: true,
+      json: async () => {
+        throw new Error('invalid json');
+      },
+    } as unknown as Response);
+
+    await expect(
+      service.verifyIdToken('invalid-google-json'),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'GOOGLE_TOKEN_VERIFICATION_FAILED',
+      },
+    });
+  });
+
   it('rejects when email_verified is non-boolean/non-string', async () => {
     fetchSpy.mockResolvedValue({
       ok: true,

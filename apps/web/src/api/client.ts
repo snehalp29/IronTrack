@@ -21,7 +21,7 @@ export function buildApiUrl(baseUrl: string, path: string): string {
 export async function apiFetch<T>(
   path: string,
   init?: RequestInit,
-): Promise<T> {
+): Promise<T | undefined> {
   const response = await fetch(buildApiUrl(API_BASE_URL, path), {
     ...init,
     headers: {
@@ -37,7 +37,25 @@ export async function apiFetch<T>(
     );
   }
 
+  if (isEmptySuccessfulResponse(response)) {
+    return undefined;
+  }
+
   return response.json() as Promise<T>;
+}
+
+function isEmptySuccessfulResponse(response: Response): boolean {
+  if (response.status === 204 || response.status === 205) {
+    return true;
+  }
+
+  const headers = (
+    response as unknown as {
+      headers?: { get?: (name: string) => string | null };
+    }
+  ).headers;
+  const contentLength = headers?.get?.('content-length');
+  return contentLength === '0';
 }
 
 function getApiErrorMessage(payload: unknown): string | undefined {

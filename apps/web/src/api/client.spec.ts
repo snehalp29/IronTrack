@@ -44,6 +44,38 @@ describe('apiFetch', () => {
     );
   });
 
+  it('returns undefined for 204 no-content responses', async () => {
+    const jsonMock = vi.fn().mockRejectedValue(new Error('no body'));
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 204,
+      headers: { get: vi.fn().mockReturnValue(null) },
+      json: jsonMock,
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(apiFetch('/health')).resolves.toBeUndefined();
+    expect(jsonMock).not.toHaveBeenCalled();
+  });
+
+  it('returns undefined when successful response declares zero content length', async () => {
+    const jsonMock = vi.fn().mockRejectedValue(new Error('no body'));
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: vi.fn((name: string) =>
+          name.toLowerCase() === 'content-length' ? '0' : null,
+        ),
+      },
+      json: jsonMock,
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(apiFetch('/health')).resolves.toBeUndefined();
+    expect(jsonMock).not.toHaveBeenCalled();
+  });
+
   it('normalizes paths that omit the leading slash', async () => {
     const payload = { ok: true };
     const fetchMock = vi.fn().mockResolvedValue({
