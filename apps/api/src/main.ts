@@ -9,6 +9,7 @@ import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { CorrelationIdInterceptor } from './common/interceptors/correlation-id.interceptor';
 import { WinstonLoggerService } from './common/logger/winston-logger.service';
+import { normalizeApiPrefix } from './common/utils/api-prefix';
 import { PrismaService } from './prisma/prisma.service';
 
 async function bootstrap() {
@@ -28,7 +29,7 @@ async function bootstrap() {
   app.useGlobalInterceptors(new CorrelationIdInterceptor());
   app.useGlobalFilters(new HttpExceptionFilter());
 
-  const prefix = configService.get<string>('API_PREFIX') ?? 'api/v1';
+  const prefix = normalizeApiPrefix(configService.get<string>('API_PREFIX'));
   app.setGlobalPrefix(prefix);
 
   const allowedOrigins = (
