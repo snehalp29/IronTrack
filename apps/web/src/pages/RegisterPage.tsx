@@ -21,32 +21,33 @@ export function RegisterPage() {
           navigate('/');
         })}
       >
-        <label htmlFor="register-name">Name</label>
+        <label htmlFor="name">Name</label>
         <input
-          id="register-name"
+          id="name"
+          type="text"
           autoComplete="name"
           placeholder="Name"
           {...register('name')}
         />
-        <label htmlFor="register-email">Email</label>
+        <label htmlFor="email">Email</label>
         <input
-          id="register-email"
+          id="email"
           type="email"
           autoComplete="email"
           placeholder="Email"
           {...register('email')}
         />
-        <label htmlFor="register-password">Password</label>
+        <label htmlFor="password">Password</label>
         <input
-          id="register-password"
+          id="password"
           type="password"
           autoComplete="new-password"
           placeholder="Password"
           {...register('password')}
         />
-        <label htmlFor="register-confirm-password">Confirm Password</label>
+        <label htmlFor="confirmPassword">Confirm Password</label>
         <input
-          id="register-confirm-password"
+          id="confirmPassword"
           type="password"
           autoComplete="new-password"
           placeholder="Confirm Password"

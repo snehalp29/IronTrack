@@ -326,47 +326,54 @@ describe('interactive pages', () => {
   it('RegisterPage uses labels and semantic auth input attributes', () => {
     const view = RegisterPage();
 
+    const nameLabel = findElement(
+      view,
+      (element) => element.type === 'label' && element.props.htmlFor === 'name',
+    );
     const emailLabel = findElement(
       view,
       (element) =>
-        element.type === 'label' && element.props.htmlFor === 'register-email',
+        element.type === 'label' && element.props.htmlFor === 'email',
     );
     const passwordLabel = findElement(
       view,
       (element) =>
-        element.type === 'label' &&
-        element.props.htmlFor === 'register-password',
+        element.type === 'label' && element.props.htmlFor === 'password',
     );
     const confirmPasswordLabel = findElement(
       view,
       (element) =>
-        element.type === 'label' &&
-        element.props.htmlFor === 'register-confirm-password',
+        element.type === 'label' && element.props.htmlFor === 'confirmPassword',
+    );
+    const nameInput = findElement(
+      view,
+      (element) => element.type === 'input' && element.props.id === 'name',
     );
     const emailInput = findElement(
       view,
-      (element) =>
-        element.type === 'input' && element.props.id === 'register-email',
+      (element) => element.type === 'input' && element.props.id === 'email',
     );
     const passwordInput = findElement(
       view,
-      (element) =>
-        element.type === 'input' && element.props.id === 'register-password',
+      (element) => element.type === 'input' && element.props.id === 'password',
     );
     const confirmPasswordInput = findElement(
       view,
       (element) =>
-        element.type === 'input' &&
-        element.props.id === 'register-confirm-password',
+        element.type === 'input' && element.props.id === 'confirmPassword',
     );
 
+    expect(nameLabel).toBeDefined();
     expect(emailLabel).toBeDefined();
     expect(passwordLabel).toBeDefined();
     expect(confirmPasswordLabel).toBeDefined();
+    expect(nameInput).toBeDefined();
     expect(emailInput).toBeDefined();
     expect(passwordInput).toBeDefined();
     expect(confirmPasswordInput).toBeDefined();
 
+    expect(nameInput?.props.type).toBe('text');
+    expect(nameInput?.props.autoComplete).toBe('name');
     expect(emailInput?.props.type).toBe('email');
     expect(emailInput?.props.autoComplete).toBe('email');
     expect(passwordInput?.props.type).toBe('password');
