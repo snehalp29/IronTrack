@@ -1,4 +1,3 @@
-import { UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { GoogleTokenVerifierService } from './google-token-verifier.service';
@@ -90,7 +89,7 @@ describe('GoogleTokenVerifierService', () => {
     });
   });
 
-  it('rejects a token with invalid claims', async () => {
+  it('rejects a token with invalid audience', async () => {
     fetchSpy.mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -104,7 +103,53 @@ describe('GoogleTokenVerifierService', () => {
 
     await expect(
       service.verifyIdToken('invalid-google-id-token-1234567890'),
-    ).rejects.toBeInstanceOf(UnauthorizedException);
+    ).rejects.toMatchObject({
+      response: {
+        code: 'INVALID_GOOGLE_TOKEN',
+      },
+    });
+  });
+
+  it('rejects a token with invalid issuer', async () => {
+    fetchSpy.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        aud: 'test-google-client-id',
+        email: 'verified@irontrack.local',
+        email_verified: 'true',
+        iss: 'https://evil.example.com',
+        sub: 'google-sub-123',
+      }),
+    } as Response);
+
+    await expect(
+      service.verifyIdToken('invalid-issuer-token'),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'INVALID_GOOGLE_TOKEN',
+      },
+    });
+  });
+
+  it('rejects a token when email_verified resolves to false', async () => {
+    fetchSpy.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        aud: 'test-google-client-id',
+        email: 'verified@irontrack.local',
+        email_verified: 'false',
+        iss: 'https://accounts.google.com',
+        sub: 'google-sub-123',
+      }),
+    } as Response);
+
+    await expect(
+      service.verifyIdToken('email-not-verified-token'),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'INVALID_GOOGLE_TOKEN',
+      },
+    });
   });
 
   it('rejects when Google token endpoint returns an error', async () => {
@@ -115,7 +160,11 @@ describe('GoogleTokenVerifierService', () => {
 
     await expect(
       service.verifyIdToken('invalid-google-id-token-1234567890'),
-    ).rejects.toBeInstanceOf(UnauthorizedException);
+    ).rejects.toMatchObject({
+      response: {
+        code: 'INVALID_GOOGLE_TOKEN',
+      },
+    });
   });
 
   it('rejects when Google auth is not configured', async () => {
