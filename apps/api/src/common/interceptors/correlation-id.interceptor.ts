@@ -4,8 +4,8 @@ import {
   Injectable,
   NestInterceptor,
 } from '@nestjs/common';
-import { randomUUID } from 'crypto';
 import type { Request, Response } from 'express';
+import { randomUUID } from 'node:crypto';
 import { Observable } from 'rxjs';
 
 @Injectable()

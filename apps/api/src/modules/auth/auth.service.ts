@@ -7,7 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { AuthProvider, User } from '@prisma/client';
 import { compare, hash } from 'bcryptjs';
-import { createHash } from 'crypto';
+import { createHash } from 'node:crypto';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import {
