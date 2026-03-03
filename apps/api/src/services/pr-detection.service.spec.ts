@@ -101,4 +101,192 @@ describe('PrDetectionService', () => {
       },
     ]);
   });
+
+  it('returns empty array when session has no completed sets', async () => {
+    const prismaMock = {
+      set: {
+        findMany: jest.fn(async () => []),
+      },
+      pRRecord: {
+        findMany: jest.fn(async () => []),
+        upsert: jest.fn(async () => undefined),
+      },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        PrDetectionService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(PrDetectionService);
+    await expect(
+      service.detectForSession('user-1', 'session-1'),
+    ).resolves.toEqual([]);
+    expect(prismaMock.pRRecord.findMany).not.toHaveBeenCalled();
+    expect(prismaMock.pRRecord.upsert).not.toHaveBeenCalled();
+  });
+
+  it('skips candidate types with non-positive values', async () => {
+    const prismaMock = {
+      set: {
+        findMany: jest.fn(async () => [
+          {
+            id: 'set-1',
+            weight: null,
+            reps: null,
+            completedAt: new Date('2024-01-01T10:00:00.000Z'),
+            sessionExercise: { exerciseTemplateId: 'exercise-1' },
+          },
+        ]),
+      },
+      pRRecord: {
+        findMany: jest.fn(async () => []),
+        upsert: jest.fn(async () => undefined),
+      },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        PrDetectionService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(PrDetectionService);
+    await expect(
+      service.detectForSession('user-1', 'session-1'),
+    ).resolves.toEqual([]);
+    expect(prismaMock.pRRecord.upsert).not.toHaveBeenCalled();
+  });
+
+  it('recalculates and upserts current PRs for one exercise', async () => {
+    const prismaMock = {
+      set: {
+        findMany: jest.fn(async () => [
+          {
+            id: 'set-1',
+            weight: 100,
+            reps: 5,
+            completedAt: new Date('2024-01-01T10:00:00.000Z'),
+          },
+          {
+            id: 'set-2',
+            weight: 0,
+            reps: 10,
+            completedAt: new Date('2024-01-02T10:00:00.000Z'),
+          },
+          {
+            id: 'set-3',
+            weight: 90,
+            reps: 4,
+            completedAt: null,
+          },
+        ]),
+      },
+      pRRecord: {
+        upsert: jest.fn(async () => undefined),
+      },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        PrDetectionService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(PrDetectionService);
+    await service.recalculateForExercise('user-1', 'exercise-1');
+
+    expect(prismaMock.pRRecord.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          userId_exerciseTemplateId_prType: {
+            userId: 'user-1',
+            exerciseTemplateId: 'exercise-1',
+            prType: PrType.MAX_WEIGHT,
+          },
+        },
+      }),
+    );
+    expect(prismaMock.pRRecord.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          userId_exerciseTemplateId_prType: {
+            userId: 'user-1',
+            exerciseTemplateId: 'exercise-1',
+            prType: PrType.MAX_REPS,
+          },
+        },
+      }),
+    );
+    expect(prismaMock.pRRecord.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          userId_exerciseTemplateId_prType: {
+            userId: 'user-1',
+            exerciseTemplateId: 'exercise-1',
+            prType: PrType.MAX_VOLUME,
+          },
+        },
+      }),
+    );
+    expect(prismaMock.pRRecord.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          userId_exerciseTemplateId_prType: {
+            userId: 'user-1',
+            exerciseTemplateId: 'exercise-1',
+            prType: PrType.MAX_1RM_EST,
+          },
+        },
+      }),
+    );
+  });
+
+  it('recalculate skips PR types that have no positive candidate', async () => {
+    const prismaMock = {
+      set: {
+        findMany: jest.fn(async () => [
+          {
+            id: 'set-1',
+            weight: 0,
+            reps: 12,
+            completedAt: new Date('2024-01-01T10:00:00.000Z'),
+          },
+        ]),
+      },
+      pRRecord: {
+        upsert: jest.fn(async () => undefined),
+      },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        PrDetectionService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(PrDetectionService);
+    await service.recalculateForExercise('user-1', 'exercise-1');
+
+    expect(prismaMock.pRRecord.upsert).toHaveBeenCalledTimes(1);
+    expect(prismaMock.pRRecord.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          userId_exerciseTemplateId_prType: {
+            userId: 'user-1',
+            exerciseTemplateId: 'exercise-1',
+            prType: PrType.MAX_REPS,
+          },
+        },
+        update: expect.objectContaining({
+          value: 12,
+        }),
+      }),
+    );
+  });
 });

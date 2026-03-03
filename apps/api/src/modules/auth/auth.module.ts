@@ -50,5 +50,5 @@ function parseDurationToSeconds(value: string): number {
     d: 86400,
   };
 
-  return amount * (unitMap[unit] ?? 900);
+  return amount * unitMap[unit];
 }

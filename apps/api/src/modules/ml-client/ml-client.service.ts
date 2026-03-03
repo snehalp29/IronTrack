@@ -11,8 +11,8 @@ export class MlClientService {
     private readonly httpService: HttpService,
     configService: ConfigService,
   ) {
-    this.basePath =
-      configService.get<string>('ML_SERVICE_URL') ?? 'http://localhost:5000';
+    const configuredBasePath = configService.get<string>('ML_SERVICE_URL');
+    this.basePath = configuredBasePath?.trim() || 'http://localhost:5000';
   }
 
   async health() {

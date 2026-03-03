@@ -30,7 +30,7 @@ export class SupersetService {
     const groupUnits = Array.from(groups.values()).map((group) => {
       const sorted = [...group].sort((a, b) => a.orderIndex - b.orderIndex);
       return {
-        orderIndex: sorted[0]?.orderIndex ?? 0,
+        orderIndex: sorted[0]!.orderIndex,
         items: sorted.map((entry) => entry.item),
       };
     });

@@ -112,16 +112,13 @@ function normalizeOptionalString(
   if (!value) {
     return undefined;
   }
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
+  return value;
 }
 
-function normalizeEmailVerified(value: unknown): boolean {
+function normalizeEmailVerified(value: boolean | string): boolean {
   if (typeof value === 'boolean') {
     return value;
   }
-  if (typeof value === 'string') {
-    return value.toLowerCase() === 'true';
-  }
-  return false;
+
+  return value.toLowerCase() === 'true';
 }

@@ -35,4 +35,16 @@ describe('session set schemas', () => {
 
     expect(result.success).toBe(false);
   });
+
+  it('rejects completedAt when isCompleted is false', () => {
+    const result = createSetSchema.safeParse({
+      orderIndex: 0,
+      type: 'WEIGHT_REPS',
+      payload: {},
+      isCompleted: false,
+      completedAt: '2026-03-03T12:00:00.000Z',
+    });
+
+    expect(result.success).toBe(false);
+  });
 });

@@ -58,4 +58,16 @@ describe('CorrelationIdInterceptor', () => {
     );
     expect(setHeader).toHaveBeenCalledWith('x-correlation-id', correlationId);
   });
+
+  it('uses first correlation id value when header is an array', async () => {
+    const { context, request, setHeader } = createExecutionContext([
+      'first-id',
+      'second-id',
+    ]);
+
+    await firstValueFrom(interceptor.intercept(context, next));
+
+    expect(request.headers['x-correlation-id']).toBe('first-id');
+    expect(setHeader).toHaveBeenCalledWith('x-correlation-id', 'first-id');
+  });
 });

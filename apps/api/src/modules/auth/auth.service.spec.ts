@@ -31,6 +31,9 @@ describe('AuthService', () => {
   type UserFindUniqueArgs = {
     where: { id?: string; email?: string };
   };
+  type UserFindFirstArgs = {
+    where: { id: string; deletedAt?: null };
+  };
   type UserCreateArgs = {
     data: {
       email: string;
@@ -93,6 +96,10 @@ describe('AuthService', () => {
           users.find((user) =>
             where.id ? user.id === where.id : user.email === where.email,
           ) ?? null,
+      ),
+      findFirst: jest.fn(
+        async ({ where }: UserFindFirstArgs) =>
+          users.find((user) => user.id === where.id) ?? null,
       ),
       create: jest.fn(async ({ data }: UserCreateArgs) => {
         const user = {
@@ -357,5 +364,83 @@ describe('AuthService', () => {
       }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
     expect(prismaMock.user.upsert).not.toHaveBeenCalled();
+  });
+
+  it('rejects registration when email is already taken', async () => {
+    users.push({
+      id: randomUUID(),
+      email: 'taken@example.com',
+      passwordHash: 'hash',
+      authProvider: 'LOCAL',
+    });
+
+    await expect(
+      authService.register({
+        email: 'taken@example.com',
+        password: 'Str0ngPassword!',
+        name: 'Taken',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejects login when user is missing', async () => {
+    await expect(
+      authService.login({
+        email: 'missing@example.com',
+        password: 'Str0ngPassword!',
+      }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('rejects login when password does not match', async () => {
+    users.push({
+      id: randomUUID(),
+      email: 'john@example.com',
+      passwordHash: await hash('different-password', 12),
+      authProvider: 'LOCAL',
+    });
+
+    await expect(
+      authService.login({
+        email: 'john@example.com',
+        password: 'Str0ngPassword!',
+      }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('rejects invalid refresh token', async () => {
+    await expect(
+      authService.refresh({
+        refreshToken: 'non-existent-refresh-token',
+      }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('validates and returns user from JWT payload', async () => {
+    const user = {
+      id: randomUUID(),
+      email: 'payload@example.com',
+      passwordHash: 'hash',
+      authProvider: 'LOCAL' as const,
+    };
+    users.push(user);
+
+    await expect(
+      authService.validateUserFromPayload({
+        sub: user.id,
+        email: user.email,
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({ id: user.id, email: user.email }),
+    );
+  });
+
+  it('rejects JWT payload when user no longer exists', async () => {
+    await expect(
+      authService.validateUserFromPayload({
+        sub: randomUUID(),
+        email: 'missing@example.com',
+      }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 });

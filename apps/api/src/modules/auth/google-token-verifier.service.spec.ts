@@ -44,6 +44,52 @@ describe('GoogleTokenVerifierService', () => {
     });
   });
 
+  it('accepts boolean email_verified and optional name/picture fields', async () => {
+    fetchSpy.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        aud: 'test-google-client-id',
+        email: 'verified@irontrack.local',
+        email_verified: true,
+        iss: 'accounts.google.com',
+        sub: 'google-sub-123',
+      }),
+    } as Response);
+
+    await expect(
+      service.verifyIdToken('valid-google-id-token-boolean'),
+    ).resolves.toEqual({
+      email: 'verified@irontrack.local',
+      googleId: 'google-sub-123',
+      name: undefined,
+      avatarUrl: undefined,
+    });
+  });
+
+  it('normalizes blank optional strings to undefined', async () => {
+    fetchSpy.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        aud: 'test-google-client-id',
+        email: 'verified@irontrack.local',
+        email_verified: 'true',
+        iss: 'https://accounts.google.com',
+        name: '   ',
+        picture: '  ',
+        sub: 'google-sub-123',
+      }),
+    } as Response);
+
+    await expect(
+      service.verifyIdToken('valid-google-id-token-blank-optional'),
+    ).resolves.toEqual({
+      email: 'verified@irontrack.local',
+      googleId: 'google-sub-123',
+      name: undefined,
+      avatarUrl: undefined,
+    });
+  });
+
   it('rejects a token with invalid claims', async () => {
     fetchSpy.mockResolvedValue({
       ok: true,
@@ -70,5 +116,71 @@ describe('GoogleTokenVerifierService', () => {
     await expect(
       service.verifyIdToken('invalid-google-id-token-1234567890'),
     ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('rejects when Google auth is not configured', async () => {
+    const configService = {
+      get: jest.fn().mockReturnValue(undefined),
+    } as unknown as ConfigService;
+    const unconfiguredService = new GoogleTokenVerifierService(configService);
+
+    await expect(
+      unconfiguredService.verifyIdToken('any-token'),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'GOOGLE_AUTH_NOT_CONFIGURED',
+      },
+    });
+  });
+
+  it('rejects when token claims payload does not match schema', async () => {
+    fetchSpy.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        aud: 'test-google-client-id',
+        email_verified: 'true',
+        iss: 'https://accounts.google.com',
+        sub: 'google-sub-123',
+      }),
+    } as Response);
+
+    await expect(
+      service.verifyIdToken('invalid-schema-token'),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'INVALID_GOOGLE_TOKEN',
+      },
+    });
+  });
+
+  it('rejects when fetch throws unexpectedly', async () => {
+    fetchSpy.mockRejectedValue(new Error('network down'));
+
+    await expect(service.verifyIdToken('fetch-throws')).rejects.toMatchObject({
+      response: {
+        code: 'GOOGLE_TOKEN_VERIFICATION_FAILED',
+      },
+    });
+  });
+
+  it('rejects when email_verified is non-boolean/non-string', async () => {
+    fetchSpy.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        aud: 'test-google-client-id',
+        email: 'verified@irontrack.local',
+        email_verified: 1,
+        iss: 'https://accounts.google.com',
+        sub: 'google-sub-123',
+      }),
+    } as Response);
+
+    await expect(
+      service.verifyIdToken('invalid-email-verified'),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'INVALID_GOOGLE_TOKEN',
+      },
+    });
   });
 });

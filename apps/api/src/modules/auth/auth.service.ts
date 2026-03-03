@@ -215,7 +215,7 @@ export class AuthService {
       d: 86_400_000,
     };
 
-    return amount * (unitMap[unit] ?? 86_400_000);
+    return amount * unitMap[unit];
   }
 
   async validateUserFromPayload(payload: {
