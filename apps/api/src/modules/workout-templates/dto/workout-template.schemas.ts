@@ -1,13 +1,32 @@
 import { z } from 'zod';
 
-const templateExerciseSchema = z.object({
-  exerciseTemplateId: z.string().uuid(),
-  orderIndex: z.number().int().nonnegative(),
-  defaultSets: z.number().int().positive().optional(),
-  repMin: z.number().int().positive().optional(),
-  repMax: z.number().int().positive().optional(),
-  supersetGroupKey: z.string().optional(),
-});
+const optionalSupersetGroupKeySchema = z.preprocess(
+  (val) => (typeof val === 'string' && val === '' ? undefined : val),
+  z.string().optional(),
+);
+
+const templateExerciseSchema = z
+  .object({
+    exerciseTemplateId: z.string().uuid(),
+    orderIndex: z.number().int().nonnegative(),
+    defaultSets: z.number().int().positive().optional(),
+    repMin: z.number().int().positive().optional(),
+    repMax: z.number().int().positive().optional(),
+    supersetGroupKey: optionalSupersetGroupKeySchema,
+  })
+  .superRefine((value, ctx) => {
+    if (
+      value.repMin !== undefined &&
+      value.repMax !== undefined &&
+      value.repMin > value.repMax
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['repMin'],
+        message: 'repMin must be less than or equal to repMax',
+      });
+    }
+  });
 
 export const createWorkoutTemplateSchema = z.object({
   name: z.string().min(2).max(120),

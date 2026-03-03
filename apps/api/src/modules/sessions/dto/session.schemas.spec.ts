@@ -1,7 +1,9 @@
 import {
+  addSessionExerciseSchema,
   createSetSchema,
   reorderSessionExercisesSchema,
   startSessionSchema,
+  updateSessionExerciseSchema,
   updateSetSchema,
 } from './session.schemas';
 
@@ -122,5 +124,32 @@ describe('session set schemas', () => {
     });
 
     expect(result.success).toBe(false);
+  });
+
+  it('normalizes empty superset group keys to undefined', () => {
+    expect(
+      startSessionSchema.parse({
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            supersetGroupKey: '',
+          },
+        ],
+      }).exercises[0]?.supersetGroupKey,
+    ).toBeUndefined();
+
+    expect(
+      addSessionExerciseSchema.parse({
+        exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+        orderIndex: 0,
+        supersetGroupKey: '',
+      }).supersetGroupKey,
+    ).toBeUndefined();
+
+    expect(
+      updateSessionExerciseSchema.parse({
+        supersetGroupKey: '',
+      }).supersetGroupKey,
+    ).toBeUndefined();
   });
 });

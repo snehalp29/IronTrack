@@ -33,6 +33,62 @@ describe('workout-template schemas', () => {
     );
   });
 
+  it('rejects invalid rep ranges where repMin is greater than repMax', () => {
+    expect(() =>
+      createWorkoutTemplateSchema.parse({
+        name: 'Upper Body',
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            orderIndex: 0,
+            repMin: 12,
+            repMax: 8,
+          },
+        ],
+      }),
+    ).toThrow();
+
+    expect(() =>
+      updateWorkoutTemplateSchema.parse({
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            orderIndex: 0,
+            repMin: 10,
+            repMax: 5,
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
+  it('normalizes empty superset group keys to undefined', () => {
+    expect(
+      createWorkoutTemplateSchema.parse({
+        name: 'Push Day',
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            orderIndex: 0,
+            supersetGroupKey: '',
+          },
+        ],
+      }).exercises[0]?.supersetGroupKey,
+    ).toBeUndefined();
+
+    expect(
+      updateWorkoutTemplateSchema.parse({
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            orderIndex: 0,
+            supersetGroupKey: '',
+          },
+        ],
+      }).exercises?.[0]?.supersetGroupKey,
+    ).toBeUndefined();
+  });
+
   it('validates reorder payload', () => {
     expect(
       reorderWorkoutTemplateSchema.parse({

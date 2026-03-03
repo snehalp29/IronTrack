@@ -1,5 +1,15 @@
 import { z } from 'zod';
 
+const optionalSupersetGroupKeySchema = z.preprocess(
+  (val) => (typeof val === 'string' && val === '' ? undefined : val),
+  z.string().optional(),
+);
+
+const optionalNullableSupersetGroupKeySchema = z.preprocess(
+  (val) => (typeof val === 'string' && val === '' ? undefined : val),
+  z.string().nullable().optional(),
+);
+
 export const startSessionSchema = z.object({
   workoutTemplateId: z.string().uuid().optional(),
   notes: z.string().max(4000).optional(),
@@ -9,7 +19,7 @@ export const startSessionSchema = z.object({
         exerciseTemplateId: z.string().uuid(),
         orderIndex: z.number().int().nonnegative().optional(),
         notes: z.string().optional(),
-        supersetGroupKey: z.string().optional(),
+        supersetGroupKey: optionalSupersetGroupKeySchema,
       }),
     )
     .default([]),
@@ -33,12 +43,12 @@ export const addSessionExerciseSchema = z.object({
   exerciseTemplateId: z.string().uuid(),
   orderIndex: z.number().int().nonnegative(),
   notes: z.string().optional(),
-  supersetGroupKey: z.string().optional(),
+  supersetGroupKey: optionalSupersetGroupKeySchema,
 });
 
 export const updateSessionExerciseSchema = z.object({
   notes: z.string().optional(),
-  supersetGroupKey: z.string().nullable().optional(),
+  supersetGroupKey: optionalNullableSupersetGroupKeySchema,
   orderIndex: z.number().int().nonnegative().optional(),
   version: z.number().int().positive().optional(),
 });
