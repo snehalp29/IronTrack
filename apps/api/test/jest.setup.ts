@@ -1,9 +1,3 @@
-if (typeof process.loadEnvFile === 'function') {
-  try {
-    process.loadEnvFile();
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-      throw error;
-    }
-  }
-}
+import { loadEnvForJest } from '../src/testing/env-loader';
+
+loadEnvForJest();

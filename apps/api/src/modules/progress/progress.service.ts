@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
+import { startOfWeek } from '../../common/utils/dates';
 import { PrismaService } from '../../prisma/prisma.service';
 import { calculateSetVolumeValue } from '../../services/volume.service';
 
@@ -10,7 +11,7 @@ export class ProgressService {
   async weekly(userId: string, startDate?: string) {
     const start = startDate
       ? new Date(`${startDate}T00:00:00.000Z`)
-      : this.startOfWeek(new Date());
+      : startOfWeek(new Date());
     const endExclusive = new Date(start);
     endExclusive.setUTCDate(start.getUTCDate() + 7);
     const endInclusive = new Date(endExclusive.getTime() - 1);
@@ -91,15 +92,5 @@ export class ProgressService {
         (a, b) => b.volume - a.volume,
       ),
     };
-  }
-
-  private startOfWeek(date: Date): Date {
-    const copy = new Date(
-      Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
-    );
-    const day = copy.getUTCDay();
-    const diff = day === 0 ? -6 : 1 - day;
-    copy.setUTCDate(copy.getUTCDate() + diff);
-    return copy;
   }
 }

@@ -85,4 +85,14 @@ describe('MlClientService', () => {
       { x: 4 },
     );
   });
+
+  it('normalizes trailing slash in ML_SERVICE_URL', async () => {
+    const { service, httpService } = createService('https://ml.example.com/');
+    httpService.get.mockReturnValue(of({ data: { status: 'ok' } }));
+
+    await expect(service.health()).resolves.toEqual({ status: 'ok' });
+    expect(httpService.get).toHaveBeenCalledWith(
+      'https://ml.example.com/health',
+    );
+  });
 });

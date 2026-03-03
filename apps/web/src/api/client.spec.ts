@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { apiFetch, resolveApiBaseUrl } from './client';
+import { apiFetch, buildApiUrl, resolveApiBaseUrl } from './client';
 
 describe('resolveApiBaseUrl', () => {
   it('uses configured API URL when it is non-empty', () => {
@@ -36,6 +36,23 @@ describe('apiFetch', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(apiFetch('/health')).resolves.toEqual(payload);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:3000/api/v1/health',
+      {
+        headers: { 'Content-Type': 'application/json' },
+      },
+    );
+  });
+
+  it('normalizes paths that omit the leading slash', async () => {
+    const payload = { ok: true };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue(payload),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(apiFetch('health')).resolves.toEqual(payload);
     expect(fetchMock).toHaveBeenCalledWith(
       'http://localhost:3000/api/v1/health',
       {
@@ -121,6 +138,20 @@ describe('apiFetch', () => {
 
     await expect(apiFetch('/sessions/s1')).rejects.toThrow(
       'Request failed (500)',
+    );
+  });
+});
+
+describe('buildApiUrl', () => {
+  it('joins base and slash-prefixed paths without duplication', () => {
+    expect(buildApiUrl('https://api.irontrack.local/v1/', '/health')).toBe(
+      'https://api.irontrack.local/v1/health',
+    );
+  });
+
+  it('prepends slash when path is relative', () => {
+    expect(buildApiUrl('https://api.irontrack.local/v1', 'health')).toBe(
+      'https://api.irontrack.local/v1/health',
     );
   });
 });

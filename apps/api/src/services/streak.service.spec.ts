@@ -155,6 +155,56 @@ describe('StreakService', () => {
     });
   });
 
+  it('resets checklist streak when completion is non-consecutive', async () => {
+    const prismaMock = {
+      user: {
+        findUnique: jest.fn(async () => ({
+          id: 'user-1',
+          timezone: 'Asia/Tokyo',
+        })),
+      },
+      userStreak: {
+        findUnique: jest.fn(async () => ({
+          id: 'streak-1',
+          userId: 'user-1',
+          currentStreakDays: 5,
+          longestStreakDays: 7,
+          lastCompletedDate: new Date('2024-01-01T00:00:00.000Z'),
+        })),
+        update: jest.fn(async ({ data }) => data),
+      },
+      checklistItem: {
+        findMany: jest.fn(async () =>
+          Array.from({ length: 4 }, (_, index) => ({
+            id: `item-${index}`,
+            userId: 'user-1',
+            date: new Date('2024-01-03T00:00:00.000Z'),
+            isCompleted: true,
+          })),
+        ),
+      },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        StreakService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(StreakService);
+    await service.onChecklistCompleted('user-1', '2024-01-03');
+
+    expect(prismaMock.userStreak.update).toHaveBeenCalledWith({
+      where: { id: 'streak-1' },
+      data: {
+        currentStreakDays: 1,
+        longestStreakDays: 7,
+        lastCompletedDate: new Date('2024-01-03T00:00:00.000Z'),
+      },
+    });
+  });
+
   it('does not increment checklist streak when fewer than four items are completed', async () => {
     const prismaMock = {
       user: {
@@ -229,5 +279,41 @@ describe('StreakService', () => {
         }),
       }),
     );
+  });
+
+  it('does not update workout streak when completion falls on the same local day', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2024-01-02T16:00:00.000Z'));
+
+    const prismaMock = {
+      user: {
+        findUnique: jest.fn(async () => ({
+          id: 'user-1',
+          timezone: 'America/Los_Angeles',
+        })),
+      },
+      userStreak: {
+        findUnique: jest.fn(async () => ({
+          id: 'streak-1',
+          userId: 'user-1',
+          currentStreakDays: 6,
+          longestStreakDays: 10,
+          lastCompletedDate: new Date('2024-01-02T00:00:00.000Z'),
+        })),
+        update: jest.fn(async ({ data }) => data),
+      },
+      checklistItem: { findMany: jest.fn(async () => []) },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        StreakService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(StreakService);
+    await service.onSessionFinished('user-1');
+
+    expect(prismaMock.userStreak.update).not.toHaveBeenCalled();
   });
 });

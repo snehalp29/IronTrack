@@ -10,11 +10,19 @@ export function resolveApiBaseUrl(
     : DEFAULT_API_BASE_URL;
 }
 
+export function buildApiUrl(baseUrl: string, path: string): string {
+  const normalizedBaseUrl = baseUrl.endsWith('/')
+    ? baseUrl.slice(0, -1)
+    : baseUrl;
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  return `${normalizedBaseUrl}${normalizedPath}`;
+}
+
 export async function apiFetch<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(buildApiUrl(API_BASE_URL, path), {
     ...init,
     headers: {
       'Content-Type': 'application/json',

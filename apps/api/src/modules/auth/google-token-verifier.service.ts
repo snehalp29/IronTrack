@@ -109,10 +109,12 @@ export class GoogleTokenVerifierService {
 function normalizeOptionalString(
   value: string | undefined,
 ): string | undefined {
-  if (!value) {
+  if (value === undefined) {
     return undefined;
   }
-  return value;
+
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : undefined;
 }
 
 function normalizeEmailVerified(value: boolean | string): boolean {

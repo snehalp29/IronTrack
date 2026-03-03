@@ -17,6 +17,20 @@ describe('user schemas', () => {
     });
   });
 
+  it('trims optional strings and treats blank values as missing', () => {
+    expect(
+      updateMeSchema.parse({
+        name: '  User Name  ',
+        timezone: '  America/New_York  ',
+        avatarUrl: '   ',
+      }),
+    ).toEqual({
+      name: 'User Name',
+      timezone: 'America/New_York',
+      avatarUrl: undefined,
+    });
+  });
+
   it('rejects invalid enum and url values', () => {
     expect(() => updateMeSchema.parse({ unitPreference: 'UNKNOWN' })).toThrow();
     expect(() => updateMeSchema.parse({ avatarUrl: 'not-url' })).toThrow();
