@@ -9,6 +9,16 @@ if [[ ! -f ".env" ]]; then
   exit 1
 fi
 
+if [[ ! -f "infra/docker/.env.docker" ]]; then
+  if [[ -f "infra/docker/.env.docker.example" ]]; then
+    cp infra/docker/.env.docker.example infra/docker/.env.docker
+    echo "[irontrack] Created infra/docker/.env.docker from .env.docker.example."
+  else
+    echo "[irontrack] Missing infra/docker/.env.docker and .env.docker.example."
+    exit 1
+  fi
+fi
+
 if ! command -v pnpm >/dev/null 2>&1; then
   echo "[irontrack] pnpm is required but was not found in PATH."
   exit 1

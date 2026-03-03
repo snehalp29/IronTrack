@@ -64,6 +64,7 @@ pnpm docker:up
 ## Docker
 
 ```bash
+cp infra/docker/.env.docker.example infra/docker/.env.docker
 docker compose -f infra/docker/docker-compose.yml up -d --build
 ```
 
@@ -74,7 +75,8 @@ One-command setup:
 ```
 
 `setup.sh` installs dependencies, starts Docker services, waits for health checks,
-applies Prisma migrations, and seeds the database.
+applies Prisma migrations, and seeds the database. If `infra/docker/.env.docker`
+is missing, it is created from `infra/docker/.env.docker.example`.
 
 Reset DB:
 

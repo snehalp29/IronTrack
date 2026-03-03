@@ -62,6 +62,7 @@ yarn-error.log*
 
 # Docker volumes (local dev)
 infra/docker/volumes/
+infra/docker/.env.docker
 
 # Temp
 tmp/

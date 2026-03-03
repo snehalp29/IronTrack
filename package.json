@@ -15,6 +15,7 @@
     "db:studio": "cd apps/api && npx prisma studio",
     "docker:down": "docker compose --env-file .env -f infra/docker/docker-compose.yml down",
     "docker:up": "docker compose --env-file .env -f infra/docker/docker-compose.yml up -d --build",
+    "docker:validate": "bash tools/scripts/validate-docker.sh",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "pnpm run lint:code && pnpm run format:check && pnpm run test",
