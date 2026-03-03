@@ -39,7 +39,7 @@ describe('apiFetch', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       'http://localhost:3000/api/v1/health',
       {
-        headers: { 'Content-Type': 'application/json' },
+        headers: {},
       },
     );
   });
@@ -110,7 +110,27 @@ describe('apiFetch', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       'http://localhost:3000/api/v1/health',
       {
-        headers: { 'Content-Type': 'application/json' },
+        headers: {},
+      },
+    );
+  });
+
+  it('does not add content-type when there is no request body', async () => {
+    const payload = { ok: true };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: vi.fn().mockResolvedValue(JSON.stringify(payload)),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(apiFetch('/health', { method: 'GET' })).resolves.toEqual(
+      payload,
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:3000/api/v1/health',
+      {
+        method: 'GET',
+        headers: {},
       },
     );
   });
@@ -137,6 +157,79 @@ describe('apiFetch', () => {
           'Content-Type': 'application/json',
           Authorization: 'Bearer token',
         },
+      },
+    );
+  });
+
+  it('serializes plain object bodies as JSON and sets content-type', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: vi.fn().mockResolvedValue(JSON.stringify({ ok: true })),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await apiFetch('/sessions', {
+      method: 'POST',
+      body: { name: 'Leg Day' } as unknown as BodyInit,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:3000/api/v1/sessions',
+      {
+        method: 'POST',
+        body: JSON.stringify({ name: 'Leg Day' }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+  });
+
+  it('does not add content-type for FormData bodies', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: vi.fn().mockResolvedValue(JSON.stringify({ ok: true })),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const formData = new FormData();
+    formData.append('title', 'Leg Day');
+
+    await apiFetch('/sessions', {
+      method: 'POST',
+      body: formData,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:3000/api/v1/sessions',
+      {
+        method: 'POST',
+        body: formData,
+        headers: {},
+      },
+    );
+  });
+
+  it('does not add content-type for Blob bodies', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: vi.fn().mockResolvedValue(JSON.stringify({ ok: true })),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const blob = new Blob(['binary']);
+
+    await apiFetch('/sessions', {
+      method: 'POST',
+      body: blob,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:3000/api/v1/sessions',
+      {
+        method: 'POST',
+        body: blob,
+        headers: {},
       },
     );
   });
@@ -221,6 +314,28 @@ describe('apiFetch', () => {
         headers: {
           'content-type': 'text/plain',
         },
+      },
+    );
+  });
+
+  it('does not auto-set JSON content-type for non-JSON string bodies', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: vi.fn().mockResolvedValue(JSON.stringify({ ok: true })),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await apiFetch('/sessions', {
+      method: 'POST',
+      body: 'raw body',
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:3000/api/v1/sessions',
+      {
+        method: 'POST',
+        body: 'raw body',
+        headers: {},
       },
     );
   });

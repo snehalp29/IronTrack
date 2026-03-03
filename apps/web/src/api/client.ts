@@ -23,13 +23,12 @@ export async function apiFetch<T>(
   init?: RequestInit,
 ): Promise<T | undefined> {
   const headers = normalizeHeaders(init?.headers);
-  if (!hasHeader(headers, 'Content-Type')) {
-    headers['Content-Type'] = 'application/json';
-  }
+  const body = normalizeRequestBody(init?.body, headers);
 
   const response = await fetch(buildApiUrl(API_BASE_URL, path), {
     ...init,
     headers,
+    body,
   });
 
   if (!response.ok) {
@@ -110,4 +109,65 @@ function normalizeHeaders(
 function hasHeader(headers: Record<string, string>, name: string): boolean {
   const target = name.toLowerCase();
   return Object.keys(headers).some((key) => key.toLowerCase() === target);
+}
+
+function normalizeRequestBody(
+  body: RequestInit['body'],
+  headers: Record<string, string>,
+): RequestInit['body'] {
+  if (body === undefined || body === null) {
+    return body;
+  }
+
+  if (shouldSerializeBodyAsJson(body, headers)) {
+    headers['Content-Type'] = 'application/json';
+    return JSON.stringify(body);
+  }
+
+  if (shouldAddJsonContentType(body, headers)) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  return body;
+}
+
+function shouldAddJsonContentType(
+  body: RequestInit['body'],
+  headers: Record<string, string>,
+): boolean {
+  if (hasHeader(headers, 'Content-Type')) {
+    return false;
+  }
+
+  return typeof body === 'string' && isJsonString(body);
+}
+
+function shouldSerializeBodyAsJson(
+  body: RequestInit['body'],
+  headers: Record<string, string>,
+): boolean {
+  if (hasHeader(headers, 'Content-Type')) {
+    return false;
+  }
+
+  const unknownBody = body as unknown;
+  return Array.isArray(unknownBody) || isPlainObject(unknownBody);
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function isJsonString(value: string): boolean {
+  try {
+    JSON.parse(value);
+    return true;
+  } catch {
+    return false;
+  }
 }
