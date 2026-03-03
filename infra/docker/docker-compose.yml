@@ -29,7 +29,10 @@ services:
         condition: service_healthy
     healthcheck:
       test:
-        ['CMD-SHELL', 'wget -qO- http://localhost:4000/api/v1/health || exit 1']
+        [
+          'CMD-SHELL',
+          "node -e \"const http=require('node:http'); const port=Number(process.env.API_PORT ?? '4000'); const prefix=(process.env.API_PREFIX ?? 'api/v1').trim().replace(/^\\/+|\\/+$/g, ''); const req=http.get({ host: '127.0.0.1', port, path: '/' + prefix + '/health' }, (res) => { process.exit(res.statusCode && res.statusCode >= 200 && res.statusCode < 400 ? 0 : 1); }); req.on('error', () => process.exit(1)); req.setTimeout(3000, () => { req.destroy(); process.exit(1); });\"",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
