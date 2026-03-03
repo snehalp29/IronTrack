@@ -48,7 +48,9 @@ export class ChecklistService {
       },
     });
 
-    await this.streakService.onChecklistCompleted(userId, input.date);
+    if (input.isCompleted) {
+      await this.streakService.onChecklistCompleted(userId, input.date);
+    }
 
     return item;
   }

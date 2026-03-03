@@ -105,7 +105,7 @@ describe('ChecklistService', () => {
   });
 
   it('upserts incomplete checklist item with null completedAt', async () => {
-    const { service, prismaMock } = createService();
+    const { service, prismaMock, streakServiceMock } = createService();
 
     await service.upsert('user-1', {
       date: '2024-01-10',
@@ -125,5 +125,6 @@ describe('ChecklistService', () => {
         }),
       }),
     );
+    expect(streakServiceMock.onChecklistCompleted).not.toHaveBeenCalled();
   });
 });

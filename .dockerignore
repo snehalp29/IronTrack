@@ -20,7 +20,6 @@ coverage
 .env
 .env.*
 !.env.example
-!apps/api/.env.test
 
 tmp
 **/*.tsbuildinfo
