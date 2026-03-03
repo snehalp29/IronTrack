@@ -58,7 +58,7 @@ repo/
 
 ### Tech Stack
 
-- Node 20
+- Node 24
 - NestJS
 - Prisma ORM
 - PostgreSQL

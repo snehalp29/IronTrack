@@ -1,11 +1,13 @@
-FROM node:24-bookworm-slim AS deps
+ARG NODE_VERSION=24
+
+FROM node:${NODE_VERSION}-bookworm-slim AS deps
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/api/package.json apps/api/package.json
 COPY libs/shared/package.json libs/shared/package.json
 RUN corepack enable && pnpm install --frozen-lockfile
 
-FROM node:24-bookworm-slim AS build
+FROM node:${NODE_VERSION}-bookworm-slim AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/apps/api/node_modules ./apps/api/node_modules
@@ -15,7 +17,7 @@ RUN pnpm --filter @irontrack/api build
 RUN pnpm --filter @irontrack/api deploy --prod --legacy /prod/api
 RUN pnpm --filter @irontrack/api exec prisma generate --schema /prod/api/prisma/schema.prisma
 
-FROM node:24-bookworm-slim AS runtime
+FROM node:${NODE_VERSION}-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 ENV API_PORT=4000

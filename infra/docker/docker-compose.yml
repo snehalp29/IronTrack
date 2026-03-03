@@ -20,6 +20,8 @@ services:
     build:
       context: ../..
       dockerfile: infra/docker/Dockerfile.api
+      args:
+        NODE_VERSION: ${NODE_VERSION:-24}
     env_file:
       - .env.docker
     ports:
@@ -42,6 +44,7 @@ services:
       context: ../..
       dockerfile: infra/docker/Dockerfile.web
       args:
+        NODE_VERSION: ${NODE_VERSION:-24}
         VITE_API_URL: ${DOCKER_VITE_API_URL:-http://localhost:4000/api/v1}
     ports:
       - '${WEB_PORT:-3000}:80'
