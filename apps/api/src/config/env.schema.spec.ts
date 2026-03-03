@@ -3,7 +3,7 @@ import { validateEnv } from './env.schema';
 describe('validateEnv', () => {
   it('parses valid config and applies defaults', () => {
     const parsed = validateEnv({
-      DATABASE_URL: 'https://db.example.com',
+      DATABASE_URL: 'postgresql://user:password@db.example.com:5432/mydb',
       JWT_ACCESS_SECRET: '1234567890abcdef',
       JWT_REFRESH_SECRET: '1234567890abcdef',
     });
@@ -24,6 +24,18 @@ describe('validateEnv', () => {
       }),
     ).toThrow(
       /Invalid environment configuration: DATABASE_URL: Invalid URL, JWT_ACCESS_SECRET: Too small: expected string to have >=16 characters, JWT_REFRESH_SECRET: Too small: expected string to have >=16 characters/,
+    );
+  });
+
+  it('rejects non-postgres database URLs', () => {
+    expect(() =>
+      validateEnv({
+        DATABASE_URL: 'https://db.example.com',
+        JWT_ACCESS_SECRET: '1234567890abcdef',
+        JWT_REFRESH_SECRET: '1234567890abcdef',
+      }),
+    ).toThrow(
+      /Invalid environment configuration: DATABASE_URL: Expected DATABASE_URL to start with postgres:\/\/ or postgresql:\/\//,
     );
   });
 });

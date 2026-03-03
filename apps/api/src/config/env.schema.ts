@@ -4,13 +4,22 @@ const durationSchema = z
   .string()
   .regex(/^\d+[smhd]$/, 'Expected duration format like 15m, 7d, 30s, or 2h');
 
+const postgresConnectionSchema = z
+  .string()
+  .regex(
+    /^postgres(?:ql)?:\/\//i,
+    'Expected DATABASE_URL to start with postgres:// or postgresql://',
+  );
+
+const databaseUrlSchema = z.string().url().pipe(postgresConnectionSchema);
+
 export const envSchema = z.object({
   NODE_ENV: z
     .enum(['development', 'test', 'production'])
     .default('development'),
   API_PORT: z.coerce.number().int().positive().default(3000),
   API_PREFIX: z.string().default('api/v1'),
-  DATABASE_URL: z.string().url(),
+  DATABASE_URL: databaseUrlSchema,
   JWT_ACCESS_SECRET: z.string().min(16),
   JWT_REFRESH_SECRET: z.string().min(16),
   JWT_ACCESS_EXPIRY: durationSchema.default('15m'),
