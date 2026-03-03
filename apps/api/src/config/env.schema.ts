@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 const durationSchema = z
   .string()
+  .trim()
   .regex(/^\d+[smhd]$/, 'Expected duration format like 15m, 7d, 30s, or 2h');
 
 const postgresConnectionSchema = z

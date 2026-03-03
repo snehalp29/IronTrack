@@ -38,4 +38,17 @@ describe('validateEnv', () => {
       /Invalid environment configuration: DATABASE_URL: Expected DATABASE_URL to start with postgres:\/\/ or postgresql:\/\//,
     );
   });
+
+  it('accepts duration values with surrounding whitespace and normalizes them', () => {
+    const parsed = validateEnv({
+      DATABASE_URL: 'postgresql://user:password@db.example.com:5432/mydb',
+      JWT_ACCESS_SECRET: '1234567890abcdef',
+      JWT_REFRESH_SECRET: '1234567890abcdef',
+      JWT_ACCESS_EXPIRY: ' 15m ',
+      JWT_REFRESH_EXPIRY: '\t7d\n',
+    });
+
+    expect(parsed.JWT_ACCESS_EXPIRY).toBe('15m');
+    expect(parsed.JWT_REFRESH_EXPIRY).toBe('7d');
+  });
 });
