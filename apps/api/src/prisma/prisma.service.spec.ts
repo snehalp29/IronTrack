@@ -56,4 +56,32 @@ describe('PrismaService', () => {
     await beforeExitHandler?.();
     expect(app.close).toHaveBeenCalledTimes(1);
   });
+
+  it('registers beforeExit shutdown hook only once', async () => {
+    process.env.DATABASE_URL = 'postgresql://user:pass@localhost:5432/db';
+
+    const service = new PrismaService();
+    const app = {
+      close: jest.fn().mockResolvedValue(undefined),
+    } as unknown as INestApplication;
+
+    let beforeExitHandler: (() => Promise<void>) | undefined;
+    const onceSpy = jest.spyOn(process, 'once').mockImplementation(((
+      event: string,
+      handler: () => Promise<void>,
+    ) => {
+      if (event === 'beforeExit') {
+        beforeExitHandler = handler;
+      }
+      return process;
+    }) as never);
+
+    await service.enableShutdownHooks(app);
+    await service.enableShutdownHooks(app);
+
+    expect(onceSpy).toHaveBeenCalledTimes(1);
+
+    await beforeExitHandler?.();
+    expect(app.close).toHaveBeenCalledTimes(1);
+  });
 });

@@ -4,6 +4,8 @@ import { PrismaClient } from '@prisma/client';
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit {
+  private shutdownHookRegistered = false;
+
   constructor() {
     const connectionString = process.env.DATABASE_URL;
     if (!connectionString) {
@@ -19,8 +21,13 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
   }
 
   async enableShutdownHooks(app: INestApplication): Promise<void> {
-    process.on('beforeExit', async () => {
+    if (this.shutdownHookRegistered) {
+      return;
+    }
+
+    process.once('beforeExit', async () => {
       await app.close();
     });
+    this.shutdownHookRegistered = true;
   }
 }
