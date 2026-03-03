@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtModule, JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import { hash } from 'bcryptjs';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuthService } from './auth.service';
@@ -414,6 +414,78 @@ describe('AuthService', () => {
         refreshToken: 'non-existent-refresh-token',
       }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('rejects refresh token when expiresAt is exactly now', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-03-03T00:00:00.000Z'));
+
+    try {
+      const userId = randomUUID();
+      users.push({
+        id: userId,
+        email: 'expires-now@example.com',
+        passwordHash: 'hash',
+        authProvider: 'LOCAL',
+      });
+
+      const rawRefreshToken = 'refresh-token-expires-now-123';
+      refreshTokens.push({
+        id: randomUUID(),
+        userId,
+        tokenHash: createHash('sha256').update(rawRefreshToken).digest('hex'),
+        revokedAt: null,
+        expiresAt: new Date('2026-03-03T00:00:00.000Z'),
+      });
+
+      await expect(
+        authService.refresh({
+          refreshToken: rawRefreshToken,
+        }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('accepts refresh token when expiresAt is in the future by one millisecond', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-03-03T00:00:00.000Z'));
+
+    try {
+      const signSpy = jest
+        .spyOn(jwtService, 'signAsync')
+        .mockResolvedValueOnce('access-token')
+        .mockResolvedValueOnce('refresh-token');
+      const userId = randomUUID();
+      users.push({
+        id: userId,
+        email: 'expires-future@example.com',
+        passwordHash: 'hash',
+        authProvider: 'LOCAL',
+      });
+
+      const rawRefreshToken = 'refresh-token-future-123';
+      refreshTokens.push({
+        id: randomUUID(),
+        userId,
+        tokenHash: createHash('sha256').update(rawRefreshToken).digest('hex'),
+        revokedAt: null,
+        expiresAt: new Date('2026-03-03T00:00:00.001Z'),
+      });
+
+      await expect(
+        authService.refresh({
+          refreshToken: rawRefreshToken,
+        }),
+      ).resolves.toEqual(
+        expect.objectContaining({
+          accessToken: expect.any(String),
+          refreshToken: expect.any(String),
+        }),
+      );
+      signSpy.mockRestore();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('validates and returns user from JWT payload', async () => {

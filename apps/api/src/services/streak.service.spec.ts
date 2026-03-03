@@ -4,6 +4,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StreakService } from './streak.service';
 
 describe('StreakService', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   it('creates workout streak on first completion', async () => {
     const prismaMock = {
       user: {
@@ -298,6 +302,43 @@ describe('StreakService', () => {
           currentStreakDays: 6,
           longestStreakDays: 10,
           lastCompletedDate: new Date('2024-01-02T00:00:00.000Z'),
+        })),
+        update: jest.fn(async ({ data }) => data),
+      },
+      checklistItem: { findMany: jest.fn(async () => []) },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        StreakService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(StreakService);
+    await service.onSessionFinished('user-1');
+
+    expect(prismaMock.userStreak.update).not.toHaveBeenCalled();
+  });
+
+  it('uses timezone-local day near UTC midnight for workout idempotency', async () => {
+    // 2024-01-02T07:30Z is still 2024-01-01 in America/Los_Angeles.
+    jest.useFakeTimers().setSystemTime(new Date('2024-01-02T07:30:00.000Z'));
+
+    const prismaMock = {
+      user: {
+        findUnique: jest.fn(async () => ({
+          id: 'user-1',
+          timezone: 'America/Los_Angeles',
+        })),
+      },
+      userStreak: {
+        findUnique: jest.fn(async () => ({
+          id: 'streak-1',
+          userId: 'user-1',
+          currentStreakDays: 6,
+          longestStreakDays: 10,
+          lastCompletedDate: new Date('2024-01-01T00:00:00.000Z'),
         })),
         update: jest.fn(async ({ data }) => data),
       },

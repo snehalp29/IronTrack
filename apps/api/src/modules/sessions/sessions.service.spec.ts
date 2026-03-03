@@ -508,6 +508,31 @@ describe('SessionsService', () => {
     );
   });
 
+  it('preserves explicit timezone offsets when building session date bounds', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.workoutSession.findMany as jest.Mock).mockResolvedValue([]);
+    (prismaMock.workoutSession.count as jest.Mock).mockResolvedValue(0);
+
+    await service.listSessions('user-1', {
+      page: 1,
+      pageSize: 10,
+      templateId: undefined,
+      startDate: '2024-01-01T00:00:00-05:00',
+      endDate: '2024-01-01T23:59:59-05:00',
+    });
+
+    expect(prismaMock.workoutSession.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          startedAt: {
+            gte: new Date('2024-01-01T05:00:00.000Z'),
+            lte: new Date('2024-01-02T04:59:59.000Z'),
+          },
+        }),
+      }),
+    );
+  });
+
   it('returns active session', async () => {
     const { service, prismaMock } = createService();
     (prismaMock.workoutSession.findFirst as jest.Mock).mockResolvedValue({
