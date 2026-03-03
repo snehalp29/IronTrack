@@ -70,10 +70,10 @@ const baseCreateSetSchema = z.object({
   isCompleted: z.boolean().optional(),
   completedAt: z.string().datetime().optional(),
   idempotencyKey: z.string().min(6).optional(),
-  weight: z.number().optional(),
-  reps: z.number().int().optional(),
-  durationSeconds: z.number().int().optional(),
-  rpe: z.number().optional(),
+  weight: z.number().finite().nonnegative().optional(),
+  reps: z.number().int().positive().optional(),
+  durationSeconds: z.number().int().positive().optional(),
+  rpe: z.number().finite().min(0).max(10).optional(),
 });
 
 const validateSetCompletionConsistency = (

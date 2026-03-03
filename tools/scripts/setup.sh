@@ -22,16 +22,17 @@ COMPOSE_CMD=(docker compose --env-file .env -f infra/docker/docker-compose.yml)
 wait_for_service() {
   local service="$1"
   local container_id
-  container_id="$("${COMPOSE_CMD[@]}" ps -q "$service")"
-
-  if [[ -z "$container_id" ]]; then
-    echo "[irontrack] Could not find container for service '$service'."
-    exit 1
-  fi
 
   local attempts=0
   local max_attempts=60
   while (( attempts < max_attempts )); do
+    container_id="$("${COMPOSE_CMD[@]}" ps -q "$service")"
+    if [[ -z "$container_id" ]]; then
+      attempts=$((attempts + 1))
+      sleep 2
+      continue
+    fi
+
     local status
     status="$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id" 2>/dev/null || true)"
 
