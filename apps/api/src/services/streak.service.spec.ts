@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import { ChecklistType } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { StreakService } from './streak.service';
@@ -67,6 +68,14 @@ describe('StreakService', () => {
         userId: 'user-1',
         date: new Date('2024-02-03T00:00:00.000Z'),
         isCompleted: true,
+        type: {
+          in: [
+            ChecklistType.WORKOUT,
+            ChecklistType.WARMUP,
+            ChecklistType.MOBILITY,
+            ChecklistType.NOTES,
+          ],
+        },
       },
     });
     expect(checklistFindMany).not.toHaveBeenCalled();

@@ -1,7 +1,14 @@
 import { Injectable } from '@nestjs/common';
-import { StreakType } from '@prisma/client';
+import { ChecklistType, StreakType } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
+
+const REQUIRED_CHECKLIST_TYPES = [
+  ChecklistType.WORKOUT,
+  ChecklistType.WARMUP,
+  ChecklistType.MOBILITY,
+  ChecklistType.NOTES,
+] as const;
 
 @Injectable()
 export class StreakService {
@@ -17,10 +24,11 @@ export class StreakService {
         userId,
         date: new Date(`${date}T00:00:00.000Z`),
         isCompleted: true,
+        type: { in: [...REQUIRED_CHECKLIST_TYPES] },
       },
     });
 
-    if (completedCount >= 4) {
+    if (completedCount === REQUIRED_CHECKLIST_TYPES.length) {
       await this.incrementStreak(userId, StreakType.CHECKLIST, date);
     }
   }
