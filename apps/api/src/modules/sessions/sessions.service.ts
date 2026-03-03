@@ -107,10 +107,7 @@ export class SessionsService {
     });
 
     if (!session) {
-      throw new NotFoundException({
-        code: 'SESSION_NOT_FOUND',
-        message: 'Session not found',
-      });
+      this.throwSessionNotFound();
     }
 
     const interleavedExercises = this.supersetService.interleave(
@@ -141,21 +138,11 @@ export class SessionsService {
     });
 
     if (!existing) {
-      throw new NotFoundException({
-        code: 'SESSION_NOT_FOUND',
-        message: 'Session not found',
-      });
+      this.throwSessionNotFound();
     }
 
     if (existing.version !== input.version) {
-      throw new ConflictException({
-        code: 'SESSION_VERSION_CONFLICT',
-        message: 'Session was updated elsewhere. Refresh and try again.',
-        details: {
-          expectedVersion: existing.version,
-          incomingVersion: input.version,
-        },
-      });
+      this.throwSessionVersionConflict(existing.version, input.version);
     }
 
     return this.prisma.workoutSession.update({
@@ -174,10 +161,7 @@ export class SessionsService {
     });
 
     if (!existing) {
-      throw new NotFoundException({
-        code: 'SESSION_NOT_FOUND',
-        message: 'Session not found',
-      });
+      this.throwSessionNotFound();
     }
 
     const finishedAt = new Date();
@@ -289,10 +273,7 @@ export class SessionsService {
     });
 
     if (!updated.count) {
-      throw new NotFoundException({
-        code: 'SESSION_NOT_FOUND',
-        message: 'Session not found',
-      });
+      this.throwSessionNotFound();
     }
 
     return { success: true };
@@ -332,17 +313,11 @@ export class SessionsService {
     });
 
     if (!target) {
-      throw new NotFoundException({
-        code: 'SESSION_EXERCISE_NOT_FOUND',
-        message: 'Session exercise not found',
-      });
+      this.throwSessionExerciseNotFound();
     }
 
     if (input.version && target.version !== input.version) {
-      throw new ConflictException({
-        code: 'SESSION_EXERCISE_VERSION_CONFLICT',
-        message: 'Session exercise changed elsewhere',
-      });
+      this.throwSessionExerciseVersionConflict();
     }
 
     return this.prisma.sessionExercise.update({
@@ -374,10 +349,7 @@ export class SessionsService {
     });
 
     if (!updated.count) {
-      throw new NotFoundException({
-        code: 'SESSION_EXERCISE_NOT_FOUND',
-        message: 'Session exercise not found',
-      });
+      this.throwSessionExerciseNotFound();
     }
 
     return { success: true };
@@ -423,10 +395,7 @@ export class SessionsService {
     });
 
     if (!exercise) {
-      throw new NotFoundException({
-        code: 'SESSION_EXERCISE_NOT_FOUND',
-        message: 'Session exercise not found',
-      });
+      this.throwSessionExerciseNotFound();
     }
 
     return this.prisma.sessionExercise.update({
@@ -452,10 +421,7 @@ export class SessionsService {
     });
 
     if (!sessionExercise) {
-      throw new NotFoundException({
-        code: 'SESSION_EXERCISE_NOT_FOUND',
-        message: 'Session exercise not found',
-      });
+      this.throwSessionExerciseNotFound();
     }
 
     if (input.idempotencyKey) {
@@ -538,10 +504,7 @@ export class SessionsService {
     });
 
     if (!existing) {
-      throw new NotFoundException({
-        code: 'SET_NOT_FOUND',
-        message: 'Set not found',
-      });
+      this.throwSetNotFound();
     }
 
     const updateData: Prisma.SetUpdateInput = {
@@ -609,10 +572,7 @@ export class SessionsService {
     });
 
     if (!existing) {
-      throw new NotFoundException({
-        code: 'SET_NOT_FOUND',
-        message: 'Set not found',
-      });
+      this.throwSetNotFound();
     }
 
     await this.prisma.set.update({
@@ -657,10 +617,7 @@ export class SessionsService {
     });
 
     if (!existing) {
-      throw new NotFoundException({
-        code: 'SET_NOT_FOUND',
-        message: 'Set not found',
-      });
+      this.throwSetNotFound();
     }
 
     const updated = await this.prisma.set.update({
@@ -708,10 +665,7 @@ export class SessionsService {
     });
 
     if (!session) {
-      throw new ForbiddenException({
-        code: 'SESSION_FORBIDDEN',
-        message: 'Session not found or inaccessible',
-      });
+      this.throwSessionForbidden();
     }
   }
 
@@ -731,10 +685,63 @@ export class SessionsService {
     });
 
     if (!sessionExercise) {
-      throw new ForbiddenException({
-        code: 'SESSION_EXERCISE_FORBIDDEN',
-        message: 'Session exercise not found or inaccessible',
-      });
+      this.throwSessionExerciseForbidden();
     }
+  }
+
+  private throwSessionNotFound(): never {
+    throw new NotFoundException({
+      code: 'SESSION_NOT_FOUND',
+      message: 'Session not found',
+    });
+  }
+
+  private throwSessionExerciseNotFound(): never {
+    throw new NotFoundException({
+      code: 'SESSION_EXERCISE_NOT_FOUND',
+      message: 'Session exercise not found',
+    });
+  }
+
+  private throwSetNotFound(): never {
+    throw new NotFoundException({
+      code: 'SET_NOT_FOUND',
+      message: 'Set not found',
+    });
+  }
+
+  private throwSessionVersionConflict(
+    expectedVersion: number,
+    incomingVersion: number,
+  ): never {
+    throw new ConflictException({
+      code: 'SESSION_VERSION_CONFLICT',
+      message: 'Session was updated elsewhere. Refresh and try again.',
+      details: {
+        expectedVersion,
+        incomingVersion,
+      },
+    });
+  }
+
+  private throwSessionExerciseVersionConflict(): never {
+    throw new ConflictException({
+      code: 'SESSION_EXERCISE_VERSION_CONFLICT',
+      message: 'Session exercise changed elsewhere',
+    });
+  }
+
+  private throwSessionForbidden(): never {
+    throw new ForbiddenException({
+      code: 'SESSION_FORBIDDEN',
+      message: 'Session not found or inaccessible',
+    });
+  }
+
+  private throwSessionExerciseForbidden(): never {
+    throw new ForbiddenException({
+      code: 'SESSION_EXERCISE_FORBIDDEN',
+      message: 'Session exercise not found or inaccessible',
+    });
   }
 }
