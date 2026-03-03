@@ -1,5 +1,6 @@
 import {
   createSetSchema,
+  reorderSessionExercisesSchema,
   startSessionSchema,
   updateSetSchema,
 } from './session.schemas';
@@ -91,5 +92,35 @@ describe('session set schemas', () => {
     });
 
     expect(result.success).toBe(true);
+  });
+
+  it('rejects reorder payloads with no items', () => {
+    const result = reorderSessionExercisesSchema.safeParse({
+      items: [],
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects reorder payloads with duplicate exercise ids', () => {
+    const result = reorderSessionExercisesSchema.safeParse({
+      items: [
+        { id: '11111111-1111-4111-8111-111111111111', orderIndex: 0 },
+        { id: '11111111-1111-4111-8111-111111111111', orderIndex: 1 },
+      ],
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects reorder payloads with duplicate order indexes', () => {
+    const result = reorderSessionExercisesSchema.safeParse({
+      items: [
+        { id: '11111111-1111-4111-8111-111111111111', orderIndex: 0 },
+        { id: '22222222-2222-4222-8222-222222222222', orderIndex: 0 },
+      ],
+    });
+
+    expect(result.success).toBe(false);
   });
 });

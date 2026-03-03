@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 
 import { startOfWeek } from '../../common/utils/dates';
+import { calculateSetVolume } from '../../common/utils/volume';
 import { PrismaService } from '../../prisma/prisma.service';
-import { calculateSetVolumeValue } from '../../services/volume.service';
 
 @Injectable()
 export class ProgressService {
@@ -56,7 +56,7 @@ export class ProgressService {
     const coveredMuscleIds = new Set<string>();
 
     for (const set of sets) {
-      const volume = calculateSetVolumeValue(set);
+      const volume = calculateSetVolume(set);
       const primary = set.sessionExercise.exercise.primaryMuscle;
 
       coveredMuscleIds.add(primary.id);

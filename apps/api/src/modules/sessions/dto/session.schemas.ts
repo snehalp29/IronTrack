@@ -43,13 +43,39 @@ export const updateSessionExerciseSchema = z.object({
   version: z.number().int().positive().optional(),
 });
 
+const reorderSessionExerciseItemSchema = z.object({
+  id: z.string().uuid(),
+  orderIndex: z.number().int().nonnegative(),
+});
+
 export const reorderSessionExercisesSchema = z.object({
-  items: z.array(
-    z.object({
-      id: z.string().uuid(),
-      orderIndex: z.number().int().nonnegative(),
+  items: z
+    .array(reorderSessionExerciseItemSchema)
+    .min(1)
+    .superRefine((items, ctx) => {
+      const seenIds = new Set<string>();
+      const seenOrderIndexes = new Set<number>();
+
+      for (const [index, item] of items.entries()) {
+        if (seenIds.has(item.id)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'Duplicate exercise id in reorder payload',
+            path: [index, 'id'],
+          });
+        }
+        seenIds.add(item.id);
+
+        if (seenOrderIndexes.has(item.orderIndex)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'Duplicate orderIndex in reorder payload',
+            path: [index, 'orderIndex'],
+          });
+        }
+        seenOrderIndexes.add(item.orderIndex);
+      }
     }),
-  ),
 });
 
 export const swapSessionExerciseSchema = z.object({
