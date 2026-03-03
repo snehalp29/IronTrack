@@ -26,31 +26,52 @@ const exerciseTypeSchema = z.enum([
   'BODYWEIGHT_PLUS_WEIGHT',
 ]);
 
-export const createExerciseSchema = z.object({
-  name: z.string().min(2).max(120),
-  description: z.string().max(4000).optional(),
-  exerciseType: exerciseTypeSchema,
-  primaryMuscleGroupId: z.string().uuid(),
-  secondaryMuscleGroupIds: z.array(z.string().uuid()).default([]),
-  equipmentIds: z.array(z.string().uuid()).default([]),
-  defaultSets: z.number().int().positive().optional(),
-  repMin: z.number().int().positive().optional(),
-  repMax: z.number().int().positive().optional(),
-  defaultCues: z.string().max(4000).optional(),
-});
+function validateRepRange(
+  data: { repMin?: number; repMax?: number },
+  ctx: z.RefinementCtx,
+): void {
+  if (
+    typeof data.repMin === 'number' &&
+    typeof data.repMax === 'number' &&
+    data.repMin > data.repMax
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['repMax'],
+      message: 'repMax must be greater than or equal to repMin',
+    });
+  }
+}
 
-export const updateExerciseSchema = z.object({
-  name: z.string().min(2).max(120).optional(),
-  description: z.string().max(4000).optional(),
-  exerciseType: exerciseTypeSchema.optional(),
-  primaryMuscleGroupId: z.string().uuid().optional(),
-  secondaryMuscleGroupIds: z.array(z.string().uuid()).optional(),
-  equipmentIds: z.array(z.string().uuid()).optional(),
-  defaultSets: z.number().int().positive().optional(),
-  repMin: z.number().int().positive().optional(),
-  repMax: z.number().int().positive().optional(),
-  defaultCues: z.string().max(4000).optional(),
-});
+export const createExerciseSchema = z
+  .object({
+    name: z.string().min(2).max(120),
+    description: z.string().max(4000).optional(),
+    exerciseType: exerciseTypeSchema,
+    primaryMuscleGroupId: z.string().uuid(),
+    secondaryMuscleGroupIds: z.array(z.string().uuid()).default([]),
+    equipmentIds: z.array(z.string().uuid()).default([]),
+    defaultSets: z.number().int().positive().optional(),
+    repMin: z.number().int().positive().optional(),
+    repMax: z.number().int().positive().optional(),
+    defaultCues: z.string().max(4000).optional(),
+  })
+  .superRefine(validateRepRange);
+
+export const updateExerciseSchema = z
+  .object({
+    name: z.string().min(2).max(120).optional(),
+    description: z.string().max(4000).optional(),
+    exerciseType: exerciseTypeSchema.optional(),
+    primaryMuscleGroupId: z.string().uuid().optional(),
+    secondaryMuscleGroupIds: z.array(z.string().uuid()).optional(),
+    equipmentIds: z.array(z.string().uuid()).optional(),
+    defaultSets: z.number().int().positive().optional(),
+    repMin: z.number().int().positive().optional(),
+    repMax: z.number().int().positive().optional(),
+    defaultCues: z.string().max(4000).optional(),
+  })
+  .superRefine(validateRepRange);
 
 export const upsertExerciseNoteSchema = z.object({
   note: z.string().min(1).max(4000),
