@@ -54,7 +54,7 @@ describe('apiFetch', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(apiFetch('/health')).resolves.toBeUndefined();
-    expect(textMock).toHaveBeenCalledTimes(1);
+    expect(textMock).not.toHaveBeenCalled();
   });
 
   it('returns undefined when successful response declares zero content length', async () => {
@@ -77,6 +77,19 @@ describe('apiFetch', () => {
       ok: true,
       status: 200,
       headers: { get: vi.fn().mockReturnValue(null) },
+      text: textMock,
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(apiFetch('/health')).resolves.toBeUndefined();
+    expect(textMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns undefined for whitespace-only successful bodies', async () => {
+    const textMock = vi.fn().mockResolvedValue('   \n\t');
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
       text: textMock,
     });
     vi.stubGlobal('fetch', fetchMock);

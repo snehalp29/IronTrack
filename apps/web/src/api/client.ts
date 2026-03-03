@@ -37,12 +37,26 @@ export async function apiFetch<T>(
     );
   }
 
-  const bodyText = await response.text();
-  if (bodyText.trim().length === 0) {
+  if (isEmptySuccessfulResponse(response)) {
     return undefined;
   }
 
-  return JSON.parse(bodyText) as T;
+  return parseJsonIfNotEmpty<T>(response);
+}
+
+async function parseJsonIfNotEmpty<T>(
+  response: Response,
+): Promise<T | undefined> {
+  const text = await response.text();
+  if (text.trim().length === 0) {
+    return undefined;
+  }
+
+  return JSON.parse(text) as T;
+}
+
+function isEmptySuccessfulResponse(response: Response): boolean {
+  return response.status === 204 || response.status === 205;
 }
 
 function getApiErrorMessage(payload: unknown): string | undefined {
