@@ -76,6 +76,52 @@ describe('ProgressService', () => {
     ]);
   });
 
+  it('uses weight x reps when both load data and duration are present', async () => {
+    (prismaMock.set.findMany as jest.Mock).mockResolvedValue([
+      {
+        weight: 100,
+        reps: 5,
+        durationSeconds: 60,
+        sessionExercise: {
+          exercise: {
+            primaryMuscle: { id: 'm1', name: 'Chest' },
+            secondaryMuscles: [],
+          },
+        },
+      },
+    ]);
+    (prismaMock.muscleGroup.count as jest.Mock).mockResolvedValue(1);
+
+    const result = await service.weekly('user-1', '2024-01-01');
+
+    expect(result.perMuscleVolume).toEqual([
+      { id: 'm1', name: 'Chest', volume: 500 },
+    ]);
+  });
+
+  it('returns zero volume when set has no usable load or duration', async () => {
+    (prismaMock.set.findMany as jest.Mock).mockResolvedValue([
+      {
+        weight: 100,
+        reps: null,
+        durationSeconds: null,
+        sessionExercise: {
+          exercise: {
+            primaryMuscle: { id: 'm1', name: 'Chest' },
+            secondaryMuscles: [],
+          },
+        },
+      },
+    ]);
+    (prismaMock.muscleGroup.count as jest.Mock).mockResolvedValue(1);
+
+    const result = await service.weekly('user-1', '2024-01-01');
+
+    expect(result.perMuscleVolume).toEqual([
+      { id: 'm1', name: 'Chest', volume: 0 },
+    ]);
+  });
+
   it('uses startOfWeek when no explicit startDate is provided', async () => {
     jest.useFakeTimers().setSystemTime(new Date('2024-03-10T12:00:00.000Z'));
 

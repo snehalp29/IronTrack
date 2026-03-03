@@ -1,12 +1,13 @@
 import { Module } from '@nestjs/common';
 
-import { StreakService } from '../../services/streak.service';
+import { StreakModule } from '../streak/streak.module';
 import { ChecklistController } from './checklist.controller';
 import { ChecklistService } from './checklist.service';
 
 @Module({
+  imports: [StreakModule],
   controllers: [ChecklistController],
-  providers: [ChecklistService, StreakService],
+  providers: [ChecklistService],
   exports: [ChecklistService],
 })
 export class ChecklistModule {}

@@ -54,8 +54,7 @@ export class ProgressService {
     const coveredMuscleIds = new Set<string>();
 
     for (const set of sets) {
-      const volume =
-        (set.weight ?? 0) * (set.reps ?? 0) + (set.durationSeconds ?? 0);
+      const volume = this.calculateSetVolume(set);
       const primary = set.sessionExercise.exercise.primaryMuscle;
 
       coveredMuscleIds.add(primary.id);
@@ -101,5 +100,21 @@ export class ProgressService {
     const diff = day === 0 ? -6 : 1 - day;
     copy.setUTCDate(copy.getUTCDate() + diff);
     return copy;
+  }
+
+  private calculateSetVolume(set: {
+    weight: number | null;
+    reps: number | null;
+    durationSeconds: number | null;
+  }): number {
+    if (set.weight && set.reps) {
+      return set.weight * set.reps;
+    }
+
+    if (set.durationSeconds) {
+      return set.durationSeconds;
+    }
+
+    return 0;
   }
 }

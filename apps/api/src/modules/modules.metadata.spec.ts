@@ -1,5 +1,6 @@
 import { MODULE_METADATA } from '@nestjs/common/constants';
 
+import { StreakService } from '../services/streak.service';
 import { CatalogController } from './catalog/catalog.controller';
 import { CatalogModule } from './catalog/catalog.module';
 import { CatalogService } from './catalog/catalog.service';
@@ -20,6 +21,7 @@ import { SessionSetsController } from './sessions/session-sets.controller';
 import { SessionsController } from './sessions/sessions.controller';
 import { SessionsModule } from './sessions/sessions.module';
 import { SessionsService } from './sessions/sessions.service';
+import { StreakModule } from './streak/streak.module';
 import { UsersController } from './users/users.controller';
 import { UsersModule } from './users/users.module';
 import { UsersService } from './users/users.service';
@@ -42,8 +44,14 @@ describe('Feature module metadata', () => {
       Reflect.getMetadata(MODULE_METADATA.CONTROLLERS, ChecklistModule),
     ).toEqual([ChecklistController]);
     expect(
-      Reflect.getMetadata(MODULE_METADATA.PROVIDERS, ChecklistModule),
-    ).toContain(ChecklistService);
+      Reflect.getMetadata(MODULE_METADATA.IMPORTS, ChecklistModule),
+    ).toContain(StreakModule);
+    const providers = Reflect.getMetadata(
+      MODULE_METADATA.PROVIDERS,
+      ChecklistModule,
+    );
+    expect(providers).toContain(ChecklistService);
+    expect(providers).not.toContain(StreakService);
   });
 
   it('configures exercises module', () => {
@@ -81,8 +89,14 @@ describe('Feature module metadata', () => {
       Reflect.getMetadata(MODULE_METADATA.CONTROLLERS, SessionsModule),
     ).toEqual([SessionsController, SessionSetsController]);
     expect(
-      Reflect.getMetadata(MODULE_METADATA.PROVIDERS, SessionsModule),
-    ).toContain(SessionsService);
+      Reflect.getMetadata(MODULE_METADATA.IMPORTS, SessionsModule),
+    ).toContain(StreakModule);
+    const providers = Reflect.getMetadata(
+      MODULE_METADATA.PROVIDERS,
+      SessionsModule,
+    );
+    expect(providers).toContain(SessionsService);
+    expect(providers).not.toContain(StreakService);
   });
 
   it('configures users module', () => {
@@ -101,5 +115,14 @@ describe('Feature module metadata', () => {
     expect(
       Reflect.getMetadata(MODULE_METADATA.PROVIDERS, WorkoutTemplatesModule),
     ).toEqual([WorkoutTemplatesService]);
+  });
+
+  it('configures streak module', () => {
+    expect(
+      Reflect.getMetadata(MODULE_METADATA.PROVIDERS, StreakModule),
+    ).toEqual([StreakService]);
+    expect(Reflect.getMetadata(MODULE_METADATA.EXPORTS, StreakModule)).toEqual([
+      StreakService,
+    ]);
   });
 });
