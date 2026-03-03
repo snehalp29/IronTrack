@@ -27,7 +27,46 @@ describe('GoogleStrategy', () => {
           get: jest.fn().mockReturnValue(undefined),
         } as never),
     ).toThrow(
-      'GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are required in production.',
+      'GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_CALLBACK_URL are required in production.',
+    );
+  });
+
+  it('throws in production when callback URL is missing', () => {
+    process.env.NODE_ENV = 'production';
+
+    expect(
+      () =>
+        new GoogleStrategy({
+          get: jest.fn((key: string) => {
+            if (key === 'GOOGLE_CLIENT_ID') {
+              return 'client-id';
+            }
+            if (key === 'GOOGLE_CLIENT_SECRET') {
+              return 'client-secret';
+            }
+            return undefined;
+          }),
+        } as never),
+    ).toThrow(
+      'GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_CALLBACK_URL are required in production.',
+    );
+  });
+
+  it('throws in non-production when only part of Google config is provided', () => {
+    process.env.NODE_ENV = 'development';
+
+    expect(
+      () =>
+        new GoogleStrategy({
+          get: jest.fn((key: string) => {
+            if (key === 'GOOGLE_CLIENT_ID') {
+              return 'client-id';
+            }
+            return undefined;
+          }),
+        } as never),
+    ).toThrow(
+      'Google OAuth config must provide GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_CALLBACK_URL together.',
     );
   });
 

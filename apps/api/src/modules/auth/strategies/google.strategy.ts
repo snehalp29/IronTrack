@@ -14,18 +14,31 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
       .get<string>('GOOGLE_CALLBACK_URL')
       ?.trim();
 
-    if ((!clientID || !clientSecret) && process.env.NODE_ENV === 'production') {
+    const hasAnyConfig = Boolean(clientID || clientSecret || callbackURL);
+    const hasCompleteConfig = Boolean(clientID && clientSecret && callbackURL);
+
+    if (process.env.NODE_ENV === 'production' && !hasCompleteConfig) {
       throw new Error(
-        'GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are required in production.',
+        'GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_CALLBACK_URL are required in production.',
+      );
+    }
+
+    if (
+      process.env.NODE_ENV !== 'production' &&
+      hasAnyConfig &&
+      !hasCompleteConfig
+    ) {
+      throw new Error(
+        'Google OAuth config must provide GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_CALLBACK_URL together.',
       );
     }
 
     super({
       // Keep API bootable in local/dev when Google OAuth is not configured.
-      clientID: clientID || 'local-dev-google-client-id',
-      clientSecret: clientSecret || 'local-dev-google-client-secret',
+      clientID: clientID ?? 'local-dev-google-client-id',
+      clientSecret: clientSecret ?? 'local-dev-google-client-secret',
       callbackURL:
-        callbackURL || 'http://localhost:3000/api/v1/auth/google/callback',
+        callbackURL ?? 'http://localhost:3000/api/v1/auth/google/callback',
       scope: ['email', 'profile'],
     });
   }
