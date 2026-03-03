@@ -7,6 +7,7 @@ import {
   findButtonByLabel,
   findElement,
   findForm,
+  nodeText,
 } from '../testing/react-tree';
 import { ExerciseDetailPage } from './ExerciseDetailPage';
 import { ExerciseWizardPage } from './ExerciseWizardPage';
@@ -69,6 +70,19 @@ describe('interactive pages', () => {
 
     const stepOne = TemplateBuilderPage();
     expect(renderToStaticMarkup(stepOne)).toContain('Template Name');
+    const stepOneLabel = findElement(
+      stepOne,
+      (element) =>
+        element.type === 'label' && element.props.htmlFor === 'template-name',
+    );
+    const stepOneInput = findElement(
+      stepOne,
+      (element) =>
+        element.type === 'input' && element.props.id === 'template-name',
+    );
+    expect(stepOneLabel).toBeDefined();
+    expect(stepOneInput).toBeDefined();
+    expect(stepOneInput?.props['aria-label']).toBe('Template name');
     const backButton = findButtonByLabel(stepOne, 'Back');
     const nextButton = findButtonByLabel(stepOne, 'Next');
     expect(backButton).toBeDefined();
@@ -92,15 +106,51 @@ describe('interactive pages', () => {
       number,
       Dispatch<SetStateAction<number>>,
     ]);
-    expect(renderToStaticMarkup(TemplateBuilderPage())).toContain(
+    const stepTwo = TemplateBuilderPage();
+    expect(renderToStaticMarkup(stepTwo)).toContain(
       'Select exercises and set defaults',
+    );
+    const stepTwoLabel = findElement(
+      stepTwo,
+      (element) =>
+        element.type === 'label' &&
+        element.props.htmlFor === 'template-step-exercises',
+    );
+    const stepTwoTextarea = findElement(
+      stepTwo,
+      (element) =>
+        element.type === 'textarea' &&
+        element.props.id === 'template-step-exercises',
+    );
+    expect(stepTwoLabel).toBeDefined();
+    expect(stepTwoTextarea).toBeDefined();
+    expect(stepTwoTextarea?.props['aria-label']).toBe(
+      'Exercise selection and defaults',
     );
 
     useStateMock.mockReturnValue([3, setStepMock] as unknown as [
       number,
       Dispatch<SetStateAction<number>>,
     ]);
-    expect(renderToStaticMarkup(TemplateBuilderPage())).toContain(
+    const stepThree = TemplateBuilderPage();
+    expect(renderToStaticMarkup(stepThree)).toContain(
+      'Superset and order review',
+    );
+    const stepThreeLabel = findElement(
+      stepThree,
+      (element) =>
+        element.type === 'label' &&
+        element.props.htmlFor === 'template-step-superset',
+    );
+    const stepThreeTextarea = findElement(
+      stepThree,
+      (element) =>
+        element.type === 'textarea' &&
+        element.props.id === 'template-step-superset',
+    );
+    expect(stepThreeLabel).toBeDefined();
+    expect(stepThreeTextarea).toBeDefined();
+    expect(stepThreeTextarea?.props['aria-label']).toBe(
       'Superset and order review',
     );
 
@@ -108,13 +158,38 @@ describe('interactive pages', () => {
       number,
       Dispatch<SetStateAction<number>>,
     ]);
-    expect(renderToStaticMarkup(TemplateBuilderPage())).toContain(
+    const stepFour = TemplateBuilderPage();
+    expect(renderToStaticMarkup(stepFour)).toContain('Final review and notes');
+    const stepFourLabel = findElement(
+      stepFour,
+      (element) =>
+        element.type === 'label' &&
+        element.props.htmlFor === 'template-step-notes',
+    );
+    const stepFourTextarea = findElement(
+      stepFour,
+      (element) =>
+        element.type === 'textarea' &&
+        element.props.id === 'template-step-notes',
+    );
+    expect(stepFourLabel).toBeDefined();
+    expect(stepFourTextarea).toBeDefined();
+    expect(stepFourTextarea?.props['aria-label']).toBe(
       'Final review and notes',
     );
   });
 
   it('ExerciseWizardPage respects step boundaries and updates search params', () => {
     searchParamsState.value = new URLSearchParams();
+    expect(renderToStaticMarkup(ExerciseWizardPage())).toContain('Step 1 of 7');
+
+    searchParamsState.value = new URLSearchParams('step=abc');
+    expect(renderToStaticMarkup(ExerciseWizardPage())).toContain('Step 1 of 7');
+
+    searchParamsState.value = new URLSearchParams('step=999');
+    expect(renderToStaticMarkup(ExerciseWizardPage())).toContain('Step 7 of 7');
+
+    searchParamsState.value = new URLSearchParams('step=-2');
     expect(renderToStaticMarkup(ExerciseWizardPage())).toContain('Step 1 of 7');
 
     searchParamsState.value = new URLSearchParams('step=1');
@@ -135,6 +210,41 @@ describe('interactive pages', () => {
     findButtonByLabel(stepSeven, 'Back')?.props.onClick?.();
     expect(setSearchParamsMock).toHaveBeenNthCalledWith(1, { step: '7' });
     expect(setSearchParamsMock).toHaveBeenNthCalledWith(2, { step: '6' });
+  });
+
+  it('ExerciseWizardPage renders a labeled step field for accessibility', () => {
+    searchParamsState.value = new URLSearchParams('step=1');
+    const stepOne = ExerciseWizardPage();
+    const stepOneLabel = findElement(
+      stepOne,
+      (element) =>
+        element.type === 'label' &&
+        element.props.htmlFor === 'exercise-step-content',
+    );
+    const stepOneTextarea = findElement(
+      stepOne,
+      (element) =>
+        element.type === 'textarea' &&
+        element.props.id === 'exercise-step-content',
+    );
+    expect(stepOneLabel).toBeDefined();
+    expect(stepOneTextarea).toBeDefined();
+    expect(nodeText((stepOneLabel?.props.children ?? null) as ReactNode)).toBe(
+      'Name and description',
+    );
+
+    searchParamsState.value = new URLSearchParams('step=7');
+    const stepSeven = ExerciseWizardPage();
+    const stepSevenLabel = findElement(
+      stepSeven,
+      (element) =>
+        element.type === 'label' &&
+        element.props.htmlFor === 'exercise-step-content',
+    );
+    expect(stepSevenLabel).toBeDefined();
+    expect(
+      nodeText((stepSevenLabel?.props.children ?? null) as ReactNode),
+    ).toBe('Review');
   });
 
   it('ExerciseDetailPage renders both tabs and updates query param', () => {

@@ -7,14 +7,53 @@ export function TemplateBuilderPage() {
     <div className="card">
       <h1>Template Builder</h1>
       <p className="meta">Step {step} of 4</p>
-      {step === 1 && <input placeholder="Template Name" />}
+      {step === 1 && (
+        <>
+          <label htmlFor="template-name">Template Name</label>
+          <input
+            id="template-name"
+            placeholder="Template Name"
+            aria-label="Template name"
+          />
+        </>
+      )}
       {step === 2 && (
-        <textarea placeholder="Select exercises and set defaults" rows={6} />
+        <>
+          <label htmlFor="template-step-exercises">
+            Select exercises and set defaults
+          </label>
+          <textarea
+            id="template-step-exercises"
+            placeholder="Select exercises and set defaults"
+            rows={6}
+            aria-label="Exercise selection and defaults"
+          />
+        </>
       )}
       {step === 3 && (
-        <textarea placeholder="Superset and order review" rows={6} />
+        <>
+          <label htmlFor="template-step-superset">
+            Superset and order review
+          </label>
+          <textarea
+            id="template-step-superset"
+            placeholder="Superset and order review"
+            rows={6}
+            aria-label="Superset and order review"
+          />
+        </>
       )}
-      {step === 4 && <textarea placeholder="Final review and notes" rows={6} />}
+      {step === 4 && (
+        <>
+          <label htmlFor="template-step-notes">Final review and notes</label>
+          <textarea
+            id="template-step-notes"
+            placeholder="Final review and notes"
+            rows={6}
+            aria-label="Final review and notes"
+          />
+        </>
+      )}
       <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
         <button
           className="secondary"
