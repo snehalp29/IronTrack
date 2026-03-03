@@ -126,13 +126,24 @@ describe('session set schemas', () => {
     expect(result.success).toBe(false);
   });
 
-  it('normalizes empty superset group keys to undefined', () => {
+  it('normalizes empty or whitespace superset group keys to undefined', () => {
     expect(
       startSessionSchema.parse({
         exercises: [
           {
             exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
             supersetGroupKey: '',
+          },
+        ],
+      }).exercises[0]?.supersetGroupKey,
+    ).toBeUndefined();
+
+    expect(
+      startSessionSchema.parse({
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            supersetGroupKey: '   ',
           },
         ],
       }).exercises[0]?.supersetGroupKey,
@@ -147,6 +158,14 @@ describe('session set schemas', () => {
     ).toBeUndefined();
 
     expect(
+      addSessionExerciseSchema.parse({
+        exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+        orderIndex: 0,
+        supersetGroupKey: '\n\t ',
+      }).supersetGroupKey,
+    ).toBeUndefined();
+
+    expect(
       updateSessionExerciseSchema.parse({
         supersetGroupKey: '',
       }).supersetGroupKey,
@@ -157,6 +176,12 @@ describe('session set schemas', () => {
         supersetGroupKey: 'A',
       }).supersetGroupKey,
     ).toBe('A');
+
+    expect(
+      updateSessionExerciseSchema.parse({
+        supersetGroupKey: ' group-1 ',
+      }).supersetGroupKey,
+    ).toBe('group-1');
 
     expect(
       updateSessionExerciseSchema.parse({

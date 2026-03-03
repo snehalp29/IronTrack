@@ -1,9 +1,8 @@
 import { z } from 'zod';
 
-const optionalSupersetGroupKeySchema = z.preprocess(
-  (val) => (typeof val === 'string' && val === '' ? undefined : val),
-  z.string().optional(),
-);
+import { optionalTrimmed } from '../../../common/validation/optional-trimmed';
+
+const optionalSupersetGroupKeySchema = optionalTrimmed(z.string());
 
 const templateExerciseSchema = z
   .object({

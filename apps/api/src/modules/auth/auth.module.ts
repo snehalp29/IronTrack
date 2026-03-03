@@ -35,13 +35,18 @@ export class AuthModule {}
 
 function parseDurationToSeconds(value: string): number {
   const pattern = /^(\d+)([smhd])$/;
-  const match = pattern.exec(value.trim());
+  const normalized = value.trim();
+  const match = pattern.exec(normalized);
   if (!match) {
-    return 15 * 60;
+    throw new Error(`Invalid JWT_ACCESS_EXPIRY value: ${value}`);
   }
 
   const amount = Number(match[1]);
   const unit = match[2];
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error(`Invalid JWT_ACCESS_EXPIRY value: ${value}`);
+  }
 
   const unitMap: Record<string, number> = {
     s: 1,

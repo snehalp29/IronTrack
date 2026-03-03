@@ -49,7 +49,7 @@ describe('AuthModule', () => {
     expect(jwtOptions.signOptions.expiresIn).toBe(7200);
   });
 
-  it('falls back to 15 minutes when JWT access expiry is invalid', () => {
+  it('throws when JWT access expiry is invalid', () => {
     const imports =
       Reflect.getMetadata(MODULE_METADATA.IMPORTS, AuthModule) ?? [];
     const jwtDynamicModule = imports.find(
@@ -76,8 +76,40 @@ describe('AuthModule', () => {
       }),
     };
 
-    const jwtOptions = jwtOptionsFactory(configServiceMock);
+    expect(() => jwtOptionsFactory(configServiceMock)).toThrow(
+      'Invalid JWT_ACCESS_EXPIRY value: invalid',
+    );
+  });
 
-    expect(jwtOptions.signOptions.expiresIn).toBe(900);
+  it('throws when JWT access expiry is zero', () => {
+    const imports =
+      Reflect.getMetadata(MODULE_METADATA.IMPORTS, AuthModule) ?? [];
+    const jwtDynamicModule = imports.find(
+      (entry: unknown) => (entry as { module?: unknown }).module === JwtModule,
+    ) as {
+      providers?: Array<{ useFactory?: (...args: unknown[]) => unknown }>;
+    };
+
+    const jwtOptionsFactory = jwtDynamicModule.providers?.find(
+      (provider) => typeof provider.useFactory === 'function',
+    )?.useFactory as (...args: unknown[]) => {
+      signOptions: { expiresIn: number };
+    };
+
+    const configServiceMock = {
+      getOrThrow: jest.fn((key: string) => {
+        if (key === 'JWT_ACCESS_SECRET') {
+          return 'access-secret-1234567890';
+        }
+        if (key === 'JWT_ACCESS_EXPIRY') {
+          return '0m';
+        }
+        throw new Error(`Unexpected key: ${key}`);
+      }),
+    };
+
+    expect(() => jwtOptionsFactory(configServiceMock)).toThrow(
+      'Invalid JWT_ACCESS_EXPIRY value: 0m',
+    );
   });
 });

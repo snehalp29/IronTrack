@@ -62,7 +62,7 @@ describe('workout-template schemas', () => {
     ).toThrow();
   });
 
-  it('normalizes empty superset group keys to undefined', () => {
+  it('normalizes empty or whitespace superset group keys to undefined', () => {
     expect(
       createWorkoutTemplateSchema.parse({
         name: 'Push Day',
@@ -71,6 +71,19 @@ describe('workout-template schemas', () => {
             exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
             orderIndex: 0,
             supersetGroupKey: '',
+          },
+        ],
+      }).exercises[0]?.supersetGroupKey,
+    ).toBeUndefined();
+
+    expect(
+      createWorkoutTemplateSchema.parse({
+        name: 'Push Day',
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            orderIndex: 0,
+            supersetGroupKey: '   ',
           },
         ],
       }).exercises[0]?.supersetGroupKey,
@@ -87,6 +100,45 @@ describe('workout-template schemas', () => {
         ],
       }).exercises?.[0]?.supersetGroupKey,
     ).toBeUndefined();
+
+    expect(
+      updateWorkoutTemplateSchema.parse({
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            orderIndex: 0,
+            supersetGroupKey: '\n\t ',
+          },
+        ],
+      }).exercises?.[0]?.supersetGroupKey,
+    ).toBeUndefined();
+  });
+
+  it('trims superset group key values', () => {
+    expect(
+      createWorkoutTemplateSchema.parse({
+        name: 'Push Day',
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            orderIndex: 0,
+            supersetGroupKey: ' A ',
+          },
+        ],
+      }).exercises[0]?.supersetGroupKey,
+    ).toBe('A');
+
+    expect(
+      updateWorkoutTemplateSchema.parse({
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            orderIndex: 0,
+            supersetGroupKey: '  group-1  ',
+          },
+        ],
+      }).exercises?.[0]?.supersetGroupKey,
+    ).toBe('group-1');
   });
 
   it('validates reorder payload', () => {

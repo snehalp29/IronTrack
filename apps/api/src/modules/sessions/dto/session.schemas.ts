@@ -1,13 +1,11 @@
 import { z } from 'zod';
 
-const optionalSupersetGroupKeySchema = z.preprocess(
-  (val) => (typeof val === 'string' && val === '' ? undefined : val),
-  z.string().optional(),
-);
+import { optionalTrimmed } from '../../../common/validation/optional-trimmed';
 
-const optionalNullableSupersetGroupKeySchema = z.preprocess(
-  (val) => (typeof val === 'string' && val === '' ? undefined : val),
-  z.string().nullable().optional(),
+const optionalSupersetGroupKeySchema = optionalTrimmed(z.string());
+
+const optionalNullableSupersetGroupKeySchema = optionalTrimmed(
+  z.string().nullable(),
 );
 
 export const startSessionSchema = z.object({

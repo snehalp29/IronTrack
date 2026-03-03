@@ -51,4 +51,28 @@ describe('validateEnv', () => {
     expect(parsed.JWT_ACCESS_EXPIRY).toBe('15m');
     expect(parsed.JWT_REFRESH_EXPIRY).toBe('7d');
   });
+
+  it('rejects non-positive JWT duration values', () => {
+    expect(() =>
+      validateEnv({
+        DATABASE_URL: 'postgresql://user:password@db.example.com:5432/mydb',
+        JWT_ACCESS_SECRET: '1234567890abcdef',
+        JWT_REFRESH_SECRET: '1234567890abcdef',
+        JWT_ACCESS_EXPIRY: '0m',
+      }),
+    ).toThrow(
+      /Invalid environment configuration: JWT_ACCESS_EXPIRY: Expected positive duration format like 15m, 7d, 30s, or 2h/,
+    );
+
+    expect(() =>
+      validateEnv({
+        DATABASE_URL: 'postgresql://user:password@db.example.com:5432/mydb',
+        JWT_ACCESS_SECRET: '1234567890abcdef',
+        JWT_REFRESH_SECRET: '1234567890abcdef',
+        JWT_REFRESH_EXPIRY: '0d',
+      }),
+    ).toThrow(
+      /Invalid environment configuration: JWT_REFRESH_EXPIRY: Expected positive duration format like 15m, 7d, 30s, or 2h/,
+    );
+  });
 });
