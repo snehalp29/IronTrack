@@ -1,3 +1,4 @@
+import { IS_PUBLIC_KEY } from '../../common/decorators/public.decorator';
 import { AuthController } from './auth.controller';
 import type { AuthService } from './auth.service';
 
@@ -59,5 +60,21 @@ describe('AuthController', () => {
       controller.logout({ refreshToken: 'refresh-token-123' }),
     ).resolves.toEqual({ success: true });
     expect(authServiceMock.logout).toHaveBeenCalledWith('refresh-token-123');
+  });
+
+  it('marks token-based auth endpoints as public', () => {
+    const methods = [
+      'register',
+      'login',
+      'refresh',
+      'google',
+      'logout',
+    ] as const;
+
+    for (const method of methods) {
+      expect(
+        Reflect.getMetadata(IS_PUBLIC_KEY, AuthController.prototype[method]),
+      ).toBe(true);
+    }
   });
 });
