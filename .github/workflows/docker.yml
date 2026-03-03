@@ -18,8 +18,5 @@ jobs:
       - name: Build API image
         run: docker build -f infra/docker/Dockerfile.api -t irontrack-api:latest .
 
-      - name: Build ML image
-        run: docker build -f infra/docker/Dockerfile.ml -t irontrack-ml:latest .
-
       - name: Build web image
         run: docker build -f infra/docker/Dockerfile.web -t irontrack-web:latest .

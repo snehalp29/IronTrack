@@ -61,7 +61,6 @@ echo "[irontrack] Starting docker services..."
 
 echo "[irontrack] Waiting for services to become healthy..."
 wait_for_service postgres
-wait_for_service ml
 
 echo "[irontrack] Generating Prisma client..."
 cd apps/api

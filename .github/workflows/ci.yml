@@ -32,7 +32,6 @@ jobs:
       API_PORT: 3000
       API_PREFIX: api/v1
       CORS_ORIGINS: http://localhost:3000,http://localhost:8081
-      ML_SERVICE_URL: http://localhost:5000
       PLAYWRIGHT_BROWSERS_PATH: /home/runner/.cache/ms-playwright
     steps:
       - name: Checkout
@@ -96,21 +95,3 @@ jobs:
 
       - name: Build web
         run: pnpm build:web
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install Poetry
-        uses: abatilo/actions-poetry@v4
-        with:
-          poetry-version: '1.8.4'
-
-      - name: Install ML dependencies
-        run: |
-          cd apps/ml
-          poetry install --no-interaction --no-ansi
-
-      - name: Run ML tests
-        run: pnpm test:ml

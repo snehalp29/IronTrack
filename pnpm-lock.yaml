@@ -208,67 +208,6 @@ importers:
         specifier: ~5.9.2
         version: 5.9.3
 
-  apps/mobile:
-    dependencies:
-      '@irontrack/shared':
-        specifier: workspace:*
-        version: link:../../libs/shared
-      '@react-navigation/native':
-        specifier: ^7.1.18
-        version: 7.1.31(react-native@0.82.1(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.4))(react@19.2.4)
-      '@react-navigation/native-stack':
-        specifier: ^7.3.29
-        version: 7.14.2(@react-navigation/native@7.1.31(react-native@0.82.1(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.4))(react@19.2.4))(react-native-safe-area-context@5.7.0(react-native@0.82.1(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.4))(react@19.2.4))(react-native-screens@4.24.0(react-native@0.82.1(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.4))(react@19.2.4))(react-native@0.82.1(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.4))(react@19.2.4)
-      '@tanstack/react-query':
-        specifier: ^5.90.5
-        version: 5.90.21(react@19.2.4)
-      expo:
-        specifier: ^54.0.13
-        version: 54.0.33(@babel/core@7.29.0)(react-native@0.82.1(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.4))(react@19.2.4)
-      expo-auth-session:
-        specifier: ^7.0.8
-        version: 7.0.10(expo@54.0.33(@babel/core@7.29.0)(react-native@0.82.1(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.4))(react@19.2.4))(react-native@0.82.1(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.4))(react@19.2.4)
-      expo-haptics:
-        specifier: ^15.0.7
-        version: 15.0.8(expo@54.0.33(@babel/core@7.29.0)(react-native@0.82.1(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.4))(react@19.2.4))
-      expo-notifications:
-        specifier: ^0.32.12
-        version: 0.32.16(expo@54.0.33(@babel/core@7.29.0)(react-native@0.82.1(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.4))(react@19.2.4))(react-native@0.82.1(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.4))(react@19.2.4)
-      expo-secure-store:
-        specifier: ^15.0.7
-        version: 15.0.8(expo@54.0.33(@babel/core@7.29.0)(react-native@0.82.1(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.4))(react@19.2.4))
-      expo-sqlite:
-        specifier: ^16.0.8
-        version: 16.0.10(expo@54.0.33(@babel/core@7.29.0)(react-native@0.82.1(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.4))(react@19.2.4))(react-native@0.82.1(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.4))(react@19.2.4)
-      react:
-        specifier: ^19.2.0
-        version: 19.2.4
-      react-native:
-        specifier: ^0.82.0
-        version: 0.82.1(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.4)
-      react-native-safe-area-context:
-        specifier: ^5.6.1
-        version: 5.7.0(react-native@0.82.1(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.4))(react@19.2.4)
-      react-native-screens:
-        specifier: ^4.18.0
-        version: 4.24.0(react-native@0.82.1(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.4))(react@19.2.4)
-      zustand:
-        specifier: ^5.0.8
-        version: 5.0.11(@types/react@19.2.14)(react@19.2.4)(use-sync-external-store@1.6.0(react@19.2.4))
-    devDependencies:
-      '@types/react':
-        specifier: ^19.2.2
-        version: 19.2.14
-      '@types/react-native':
-        specifier: ^0.73.0
-        version: 0.73.0(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.4)
-      jest:
-        specifier: ^30.2.0
-        version: 30.2.0(@types/node@22.19.13)(babel-plugin-macros@3.1.0)(ts-node@10.9.2(@swc/core@1.15.17(@swc/helpers@0.5.19))(@types/node@22.19.13)(typescript@5.9.3))
-      typescript:
-        specifier: ~5.9.2
-        version: 5.9.3
-
   apps/web:
     dependencies:
       '@hookform/resolvers':

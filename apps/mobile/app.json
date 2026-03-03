@@ -1,8 +1,0 @@
-{
-  "expo": {
-    "name": "IronTrack",
-    "slug": "irontrack",
-    "scheme": "irontrack",
-    "plugins": ["expo-secure-store", "expo-sqlite"]
-  }
-}
