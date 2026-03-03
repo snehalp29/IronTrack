@@ -21,9 +21,19 @@ export function LoginPage() {
           navigate('/');
         })}
       >
-        <input placeholder="Email" {...register('email')} />
+        <label htmlFor="login-email">Email</label>
         <input
+          id="login-email"
+          type="email"
+          autoComplete="email"
+          placeholder="Email"
+          {...register('email')}
+        />
+        <label htmlFor="login-password">Password</label>
+        <input
+          id="login-password"
           type="password"
+          autoComplete="current-password"
           placeholder="Password"
           {...register('password')}
         />

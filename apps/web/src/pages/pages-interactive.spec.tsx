@@ -3,7 +3,11 @@ import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { findButtonByLabel, findForm } from '../testing/react-tree';
+import {
+  findButtonByLabel,
+  findElement,
+  findForm,
+} from '../testing/react-tree';
 import { ExerciseDetailPage } from './ExerciseDetailPage';
 import { ExerciseWizardPage } from './ExerciseWizardPage';
 import { LoginPage } from './LoginPage';
@@ -172,6 +176,93 @@ describe('interactive pages', () => {
     expect(navigateMock).toHaveBeenCalledWith('/');
     expect(registerMock).toHaveBeenCalledWith('email');
     expect(registerMock).toHaveBeenCalledWith('password');
+  });
+
+  it('LoginPage uses semantic auth input attributes', () => {
+    const view = LoginPage();
+
+    const emailLabel = findElement(
+      view,
+      (element) =>
+        element.type === 'label' && element.props.htmlFor === 'login-email',
+    );
+    const passwordLabel = findElement(
+      view,
+      (element) =>
+        element.type === 'label' && element.props.htmlFor === 'login-password',
+    );
+    const emailInput = findElement(
+      view,
+      (element) =>
+        element.type === 'input' && element.props.id === 'login-email',
+    );
+    const passwordInput = findElement(
+      view,
+      (element) =>
+        element.type === 'input' && element.props.id === 'login-password',
+    );
+
+    expect(emailLabel).toBeDefined();
+    expect(passwordLabel).toBeDefined();
+    expect(emailInput).toBeDefined();
+    expect(passwordInput).toBeDefined();
+
+    expect(emailInput?.props.type).toBe('email');
+    expect(emailInput?.props.autoComplete).toBe('email');
+    expect(passwordInput?.props.type).toBe('password');
+    expect(passwordInput?.props.autoComplete).toBe('current-password');
+  });
+
+  it('RegisterPage uses labels and semantic auth input attributes', () => {
+    const view = RegisterPage();
+
+    const emailLabel = findElement(
+      view,
+      (element) =>
+        element.type === 'label' && element.props.htmlFor === 'register-email',
+    );
+    const passwordLabel = findElement(
+      view,
+      (element) =>
+        element.type === 'label' &&
+        element.props.htmlFor === 'register-password',
+    );
+    const confirmPasswordLabel = findElement(
+      view,
+      (element) =>
+        element.type === 'label' &&
+        element.props.htmlFor === 'register-confirm-password',
+    );
+    const emailInput = findElement(
+      view,
+      (element) =>
+        element.type === 'input' && element.props.id === 'register-email',
+    );
+    const passwordInput = findElement(
+      view,
+      (element) =>
+        element.type === 'input' && element.props.id === 'register-password',
+    );
+    const confirmPasswordInput = findElement(
+      view,
+      (element) =>
+        element.type === 'input' &&
+        element.props.id === 'register-confirm-password',
+    );
+
+    expect(emailLabel).toBeDefined();
+    expect(passwordLabel).toBeDefined();
+    expect(confirmPasswordLabel).toBeDefined();
+    expect(emailInput).toBeDefined();
+    expect(passwordInput).toBeDefined();
+    expect(confirmPasswordInput).toBeDefined();
+
+    expect(emailInput?.props.type).toBe('email');
+    expect(emailInput?.props.autoComplete).toBe('email');
+    expect(passwordInput?.props.type).toBe('password');
+    expect(passwordInput?.props.autoComplete).toBe('new-password');
+    expect(confirmPasswordInput?.props.type).toBe('password');
+    expect(confirmPasswordInput?.props.autoComplete).toBe('new-password');
   });
 
   it('RegisterPage submits form and navigates to dashboard', () => {
