@@ -37,25 +37,12 @@ export async function apiFetch<T>(
     );
   }
 
-  if (isEmptySuccessfulResponse(response)) {
+  const bodyText = await response.text();
+  if (bodyText.trim().length === 0) {
     return undefined;
   }
 
-  return response.json() as Promise<T>;
-}
-
-function isEmptySuccessfulResponse(response: Response): boolean {
-  if (response.status === 204 || response.status === 205) {
-    return true;
-  }
-
-  const headers = (
-    response as unknown as {
-      headers?: { get?: (name: string) => string | null };
-    }
-  ).headers;
-  const contentLength = headers?.get?.('content-length');
-  return contentLength === '0';
+  return JSON.parse(bodyText) as T;
 }
 
 function getApiErrorMessage(payload: unknown): string | undefined {

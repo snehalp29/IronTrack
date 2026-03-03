@@ -31,7 +31,7 @@ describe('apiFetch', () => {
     const payload = { ok: true };
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: vi.fn().mockResolvedValue(payload),
+      text: vi.fn().mockResolvedValue(JSON.stringify(payload)),
     });
     vi.stubGlobal('fetch', fetchMock);
 
@@ -45,42 +45,51 @@ describe('apiFetch', () => {
   });
 
   it('returns undefined for 204 no-content responses', async () => {
-    const jsonMock = vi.fn().mockRejectedValue(new Error('no body'));
+    const textMock = vi.fn().mockResolvedValue('');
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 204,
-      headers: { get: vi.fn().mockReturnValue(null) },
-      json: jsonMock,
+      text: textMock,
     });
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(apiFetch('/health')).resolves.toBeUndefined();
-    expect(jsonMock).not.toHaveBeenCalled();
+    expect(textMock).toHaveBeenCalledTimes(1);
   });
 
   it('returns undefined when successful response declares zero content length', async () => {
-    const jsonMock = vi.fn().mockRejectedValue(new Error('no body'));
+    const textMock = vi.fn().mockResolvedValue('');
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      headers: {
-        get: vi.fn((name: string) =>
-          name.toLowerCase() === 'content-length' ? '0' : null,
-        ),
-      },
-      json: jsonMock,
+      headers: { get: vi.fn().mockReturnValue('0') },
+      text: textMock,
     });
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(apiFetch('/health')).resolves.toBeUndefined();
-    expect(jsonMock).not.toHaveBeenCalled();
+    expect(textMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns undefined for empty successful bodies without content-length', async () => {
+    const textMock = vi.fn().mockResolvedValue('');
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: { get: vi.fn().mockReturnValue(null) },
+      text: textMock,
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(apiFetch('/health')).resolves.toBeUndefined();
+    expect(textMock).toHaveBeenCalledTimes(1);
   });
 
   it('normalizes paths that omit the leading slash', async () => {
     const payload = { ok: true };
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: vi.fn().mockResolvedValue(payload),
+      text: vi.fn().mockResolvedValue(JSON.stringify(payload)),
     });
     vi.stubGlobal('fetch', fetchMock);
 
@@ -96,7 +105,7 @@ describe('apiFetch', () => {
   it('merges custom request options and headers', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: vi.fn().mockResolvedValue({ ok: true }),
+      text: vi.fn().mockResolvedValue(JSON.stringify({ ok: true })),
     });
     vi.stubGlobal('fetch', fetchMock);
 
