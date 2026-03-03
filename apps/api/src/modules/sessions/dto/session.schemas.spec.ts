@@ -151,5 +151,17 @@ describe('session set schemas', () => {
         supersetGroupKey: '',
       }).supersetGroupKey,
     ).toBeUndefined();
+
+    expect(
+      updateSessionExerciseSchema.parse({
+        supersetGroupKey: 'A',
+      }).supersetGroupKey,
+    ).toBe('A');
+
+    expect(
+      updateSessionExerciseSchema.parse({
+        supersetGroupKey: null,
+      }).supersetGroupKey,
+    ).toBeNull();
   });
 });

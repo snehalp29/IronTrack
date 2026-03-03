@@ -26,4 +26,16 @@ describe('SupersetService', () => {
 
     expect(ordered).toEqual(['single-0', 'A-1', 'A-3', 'single-2']);
   });
+
+  it('treats blank superset group keys as ungrouped entries', () => {
+    const service = new SupersetService();
+
+    const ordered = service.interleave<string>([
+      { supersetGroupKey: '   ', orderIndex: 0, item: 'single-0' },
+      { supersetGroupKey: 'A', orderIndex: 1, item: 'A-1' },
+      { supersetGroupKey: 'A', orderIndex: 2, item: 'A-2' },
+    ]);
+
+    expect(ordered).toEqual(['single-0', 'A-1', 'A-2']);
+  });
 });
