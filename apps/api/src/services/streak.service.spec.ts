@@ -35,6 +35,43 @@ describe('StreakService', () => {
     );
   });
 
+  it('counts completed checklist items with UTC-normalized date', async () => {
+    const checklistFindMany = jest.fn(async () => []);
+    const checklistCount = jest.fn(async () => 4);
+    const prismaMock = {
+      user: {
+        findUnique: jest.fn(async () => ({ id: 'user-1', timezone: 'UTC' })),
+      },
+      userStreak: {
+        findUnique: jest.fn(async () => null),
+        create: jest.fn(async ({ data }) => data),
+      },
+      checklistItem: {
+        findMany: checklistFindMany,
+        count: checklistCount,
+      },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        StreakService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(StreakService);
+    await service.onChecklistCompleted('user-1', '2024-02-03');
+
+    expect(checklistCount).toHaveBeenCalledWith({
+      where: {
+        userId: 'user-1',
+        date: new Date('2024-02-03T00:00:00.000Z'),
+        isCompleted: true,
+      },
+    });
+    expect(checklistFindMany).not.toHaveBeenCalled();
+  });
+
   it('does not increment when stored @db.Date matches checklist date in user timezone', async () => {
     const prismaMock = {
       user: {
@@ -55,14 +92,7 @@ describe('StreakService', () => {
         update: jest.fn(async ({ data }) => data),
       },
       checklistItem: {
-        findMany: jest.fn(async () =>
-          Array.from({ length: 4 }, (_, index) => ({
-            id: `item-${index}`,
-            userId: 'user-1',
-            date: new Date('2024-01-02T00:00:00.000Z'),
-            isCompleted: true,
-          })),
-        ),
+        count: jest.fn(async () => 4),
       },
     } as unknown as PrismaService;
 
@@ -128,14 +158,7 @@ describe('StreakService', () => {
         update: jest.fn(async ({ data }) => data),
       },
       checklistItem: {
-        findMany: jest.fn(async () =>
-          Array.from({ length: 4 }, (_, index) => ({
-            id: `item-${index}`,
-            userId: 'user-1',
-            date: new Date('2024-01-02T00:00:00.000Z'),
-            isCompleted: true,
-          })),
-        ),
+        count: jest.fn(async () => 4),
       },
     } as unknown as PrismaService;
 
@@ -178,14 +201,7 @@ describe('StreakService', () => {
         update: jest.fn(async ({ data }) => data),
       },
       checklistItem: {
-        findMany: jest.fn(async () =>
-          Array.from({ length: 4 }, (_, index) => ({
-            id: `item-${index}`,
-            userId: 'user-1',
-            date: new Date('2024-01-03T00:00:00.000Z'),
-            isCompleted: true,
-          })),
-        ),
+        count: jest.fn(async () => 4),
       },
     } as unknown as PrismaService;
 
@@ -220,14 +236,7 @@ describe('StreakService', () => {
         update: jest.fn(),
       },
       checklistItem: {
-        findMany: jest.fn(async () =>
-          Array.from({ length: 3 }, (_, index) => ({
-            id: `item-${index}`,
-            userId: 'user-1',
-            date: new Date('2024-01-02T00:00:00.000Z'),
-            isCompleted: true,
-          })),
-        ),
+        count: jest.fn(async () => 3),
       },
     } as unknown as PrismaService;
 

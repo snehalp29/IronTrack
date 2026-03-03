@@ -12,15 +12,15 @@ export class StreakService {
   }
 
   async onChecklistCompleted(userId: string, date: string): Promise<void> {
-    const checklist = await this.prisma.checklistItem.findMany({
+    const completedCount = await this.prisma.checklistItem.count({
       where: {
         userId,
-        date: new Date(date),
+        date: new Date(`${date}T00:00:00.000Z`),
         isCompleted: true,
       },
     });
 
-    if (checklist.length >= 4) {
+    if (completedCount >= 4) {
       await this.incrementStreak(userId, StreakType.CHECKLIST, date);
     }
   }
