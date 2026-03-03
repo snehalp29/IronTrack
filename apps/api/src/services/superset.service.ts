@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 interface SupersetItem<T> {
-  supersetGroupKey: string | null;
+  supersetGroupKey: string | null | undefined;
   orderIndex: number;
   item: T;
 }
@@ -9,16 +9,21 @@ interface SupersetItem<T> {
 @Injectable()
 export class SupersetService {
   interleave<T>(entries: SupersetItem<T>[]): T[] {
+    const normalizedEntries = entries.map((entry) => ({
+      ...entry,
+      supersetGroupKey: normalizeSupersetGroupKey(entry.supersetGroupKey),
+    }));
+
     const groups = new Map<string, SupersetItem<T>[]>();
-    const singleUnits = entries
-      .filter((entry) => !entry.supersetGroupKey)
+    const singleUnits = normalizedEntries
+      .filter((entry) => entry.supersetGroupKey == null)
       .map((entry) => ({
         orderIndex: entry.orderIndex,
         items: [entry.item],
       }));
 
-    for (const entry of entries) {
-      if (!entry.supersetGroupKey) {
+    for (const entry of normalizedEntries) {
+      if (entry.supersetGroupKey == null) {
         continue;
       }
       groups.set(entry.supersetGroupKey, [
@@ -39,4 +44,15 @@ export class SupersetService {
       .sort((a, b) => a.orderIndex - b.orderIndex)
       .flatMap((unit) => unit.items);
   }
+}
+
+function normalizeSupersetGroupKey(
+  key: string | null | undefined,
+): string | null {
+  if (key == null) {
+    return null;
+  }
+
+  const trimmed = key.trim();
+  return trimmed.length === 0 ? null : trimmed;
 }
