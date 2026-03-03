@@ -13,6 +13,7 @@ COPY . .
 RUN corepack enable && pnpm --filter @irontrack/api prisma:generate
 RUN pnpm --filter @irontrack/api build
 RUN pnpm --filter @irontrack/api deploy --prod --legacy /prod/api
+RUN pnpm --filter @irontrack/api exec prisma generate --schema /prod/api/prisma/schema.prisma
 
 FROM node:20-alpine AS runtime
 WORKDIR /app
