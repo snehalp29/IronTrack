@@ -217,6 +217,22 @@ describe('HttpExceptionFilter', () => {
     });
   });
 
+  it('maps HttpException numeric response by coercing to string', () => {
+    const filter = new HttpExceptionFilter();
+    const { host, response } = createHost({ method: 'GET', url: '/items' });
+
+    const exception = new HttpException(123 as never, HttpStatus.BAD_REQUEST);
+    filter.catch(exception, host as never);
+
+    expect(response.status).toHaveBeenCalledWith(HttpStatus.BAD_REQUEST);
+    expect(response.json).toHaveBeenCalledWith({
+      error: {
+        code: 'HTTP_ERROR',
+        message: '123',
+      },
+    });
+  });
+
   it('defaults code/message for object responses missing those fields', () => {
     const filter = new HttpExceptionFilter();
     const { host, response } = createHost({ method: 'GET', url: '/items' });
