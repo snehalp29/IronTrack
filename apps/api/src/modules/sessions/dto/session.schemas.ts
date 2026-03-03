@@ -7,7 +7,7 @@ export const startSessionSchema = z.object({
     .array(
       z.object({
         exerciseTemplateId: z.string().uuid(),
-        orderIndex: z.number().int().nonnegative(),
+        orderIndex: z.number().int().nonnegative().optional(),
         notes: z.string().optional(),
         supersetGroupKey: z.string().optional(),
       }),

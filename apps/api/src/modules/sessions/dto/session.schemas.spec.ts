@@ -1,6 +1,23 @@
-import { createSetSchema, updateSetSchema } from './session.schemas';
+import {
+  createSetSchema,
+  startSessionSchema,
+  updateSetSchema,
+} from './session.schemas';
 
 describe('session set schemas', () => {
+  it('allows inline exercises without orderIndex for append-style session creation', () => {
+    const result = startSessionSchema.safeParse({
+      notes: 'quick workout',
+      exercises: [
+        {
+          exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+        },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+  });
+
   it('rejects negative numeric set values on create', () => {
     const result = createSetSchema.safeParse({
       orderIndex: 0,

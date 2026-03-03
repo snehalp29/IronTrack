@@ -212,7 +212,6 @@ describe('SessionsService', () => {
       exercises: [
         {
           exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
-          orderIndex: undefined,
           notes: 'first',
         },
       ],
@@ -241,6 +240,7 @@ describe('SessionsService', () => {
 
     await service.startSession('user-1', {
       notes: 'no exercises',
+      exercises: [],
     });
 
     expect(prismaMock.workoutSession.create).toHaveBeenCalledWith(
