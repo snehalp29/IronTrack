@@ -26,10 +26,13 @@ export class SupersetService {
       if (entry.supersetGroupKey == null) {
         continue;
       }
-      groups.set(entry.supersetGroupKey, [
-        ...(groups.get(entry.supersetGroupKey) ?? []),
-        entry,
-      ]);
+      const existingGroup = groups.get(entry.supersetGroupKey);
+      if (existingGroup) {
+        existingGroup.push(entry);
+        continue;
+      }
+
+      groups.set(entry.supersetGroupKey, [entry]);
     }
 
     const groupUnits = Array.from(groups.values()).map((group) => {
