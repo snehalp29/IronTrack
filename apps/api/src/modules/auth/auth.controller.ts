@@ -58,6 +58,8 @@ export class AuthController {
 
   @Post('logout')
   @HttpCode(200)
+  @Public()
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
   async logout(@Body(new ZodValidationPipe(refreshSchema)) body: RefreshDto) {
     return this.authService.logout(body.refreshToken);
   }

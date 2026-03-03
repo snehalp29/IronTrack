@@ -240,14 +240,15 @@ describe('AuthController (e2e)', () => {
     }
   });
 
-  it('logout without bearer token is rejected', async () => {
+  it('logout succeeds without bearer token when refresh token is provided', async () => {
     const response = await request(app.getHttpServer())
       .post('/api/v1/auth/logout')
       .send({
         refreshToken: 'missing-token-12345',
       });
 
-    expect(response.status).toBe(401);
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
   });
 
   it('register -> login -> refresh -> logout', async () => {
