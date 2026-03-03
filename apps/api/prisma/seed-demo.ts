@@ -1,43 +1,13 @@
 import { PrismaPg } from '@prisma/adapter-pg';
 import { ChecklistType, PrismaClient, UnitPreference } from '@prisma/client';
 import { hash } from 'bcryptjs';
-import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 
-function resolveDatabaseUrl(): string | undefined {
-  if (process.env.DATABASE_URL) {
-    return process.env.DATABASE_URL;
-  }
+import {
+  loadWorkspaceEnv,
+  resolveDatabaseUrl,
+} from '../src/common/env/workspace-env';
 
-  const envCandidates = [
-    resolve(process.cwd(), '.env'),
-    resolve(process.cwd(), '../../.env'),
-  ];
-
-  for (const envPath of envCandidates) {
-    if (!existsSync(envPath)) {
-      continue;
-    }
-
-    const contents = readFileSync(envPath, 'utf8');
-    const line = contents
-      .split(/\r?\n/)
-      .find((entry) => entry.startsWith('DATABASE_URL='));
-
-    if (!line) {
-      continue;
-    }
-
-    const value = line.slice('DATABASE_URL='.length).trim();
-    if (!value) {
-      continue;
-    }
-
-    return value.replace(/^['"]|['"]$/g, '');
-  }
-
-  return undefined;
-}
+loadWorkspaceEnv();
 
 const connectionString = resolveDatabaseUrl();
 if (!connectionString) {
