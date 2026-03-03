@@ -1,9 +1,9 @@
-import type { Dispatch, ReactElement, ReactNode, SetStateAction } from 'react';
-import { isValidElement } from 'react';
+import type { Dispatch, ReactNode, SetStateAction } from 'react';
 
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { findButtonByLabel, findForm } from '../testing/react-tree';
 import { ExerciseDetailPage } from './ExerciseDetailPage';
 import { ExerciseWizardPage } from './ExerciseWizardPage';
 import { LoginPage } from './LoginPage';
@@ -49,56 +49,6 @@ vi.mock('react-router-dom', () => ({
 vi.mock('react-hook-form', () => ({
   useForm: useFormMock,
 }));
-
-function findElement(
-  node: ReactNode,
-  predicate: (element: ReactElement) => boolean,
-): ReactElement | undefined {
-  if (!isValidElement(node)) {
-    return undefined;
-  }
-
-  if (predicate(node)) {
-    return node;
-  }
-
-  const children = node.props.children as ReactNode;
-  if (!children) {
-    return undefined;
-  }
-
-  const queue = Array.isArray(children) ? children : [children];
-  for (const child of queue) {
-    const nested = findElement(child, predicate);
-    if (nested) {
-      return nested;
-    }
-  }
-
-  return undefined;
-}
-
-function findButtonByLabel(
-  node: ReactNode,
-  label: string,
-): ReactElement<{ onClick?: () => void }> | undefined {
-  return findElement(
-    node,
-    (element) => element.type === 'button' && element.props.children === label,
-  ) as ReactElement<{ onClick?: () => void }> | undefined;
-}
-
-function findForm(node: ReactNode):
-  | ReactElement<{
-      onSubmit?: (event?: { preventDefault?: () => void }) => void;
-    }>
-  | undefined {
-  return findElement(node, (element) => element.type === 'form') as
-    | ReactElement<{
-        onSubmit?: (event?: { preventDefault?: () => void }) => void;
-      }>
-    | undefined;
-}
 
 describe('interactive pages', () => {
   beforeEach(() => {

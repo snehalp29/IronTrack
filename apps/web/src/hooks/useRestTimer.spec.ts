@@ -32,6 +32,10 @@ function mockStoreState(active: boolean, tick: () => void) {
   );
 }
 
+function isCleanupFn(value: unknown): value is () => void {
+  return typeof value === 'function';
+}
+
 describe('useRestTimer', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -44,8 +48,10 @@ describe('useRestTimer', () => {
   it('does not schedule interval when timer is not active', () => {
     const tick = vi.fn();
     mockStoreState(false, tick);
-    const setIntervalMock = vi.fn();
-    const clearIntervalMock = vi.fn();
+    const setIntervalMock = vi.fn<
+      (handler: () => void, delay?: number) => number
+    >(() => 123);
+    const clearIntervalMock = vi.fn<(id: number) => void>();
     vi.stubGlobal('window', {
       setInterval: setIntervalMock,
       clearInterval: clearIntervalMock,
@@ -66,8 +72,10 @@ describe('useRestTimer', () => {
     const tick = vi.fn();
     mockStoreState(true, tick);
 
-    const setIntervalMock = vi.fn(() => 321);
-    const clearIntervalMock = vi.fn();
+    const setIntervalMock = vi.fn<
+      (handler: () => void, delay?: number) => number
+    >(() => 321);
+    const clearIntervalMock = vi.fn<(id: number) => void>();
     vi.stubGlobal('window', {
       setInterval: setIntervalMock,
       clearInterval: clearIntervalMock,
@@ -76,14 +84,15 @@ describe('useRestTimer', () => {
     let cleanup: (() => void) | undefined;
     useEffectMock.mockImplementation((effect: () => unknown) => {
       const result = effect();
-      cleanup = typeof result === 'function' ? result : undefined;
+      cleanup = isCleanupFn(result) ? result : undefined;
     });
 
     useRestTimer();
 
     expect(setIntervalMock).toHaveBeenCalledWith(expect.any(Function), 1000);
-    const intervalCallback = setIntervalMock.mock.calls[0]?.[0] as () => void;
-    intervalCallback();
+    const intervalCallback = setIntervalMock.mock.calls[0]?.[0];
+    expect(intervalCallback).toBeDefined();
+    intervalCallback?.();
     expect(tick).toHaveBeenCalledTimes(1);
 
     expect(cleanup).toBeDefined();

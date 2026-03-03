@@ -1,9 +1,10 @@
-import type { ReactElement, ReactNode } from 'react';
-import { isValidElement } from 'react';
-
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+  findButtonByLabel,
+  findButtonsByTextIncludes,
+} from '../testing/react-tree';
 import { ActiveWorkoutPage } from './ActiveWorkoutPage';
 
 const useStateMock = vi.hoisted(() => vi.fn());
@@ -12,17 +13,34 @@ const useNavigateMock = vi.hoisted(() => vi.fn());
 const useRestTimerMock = vi.hoisted(() => vi.fn());
 const useActiveWorkoutStoreMock = vi.hoisted(() => vi.fn());
 
+type SimpleModalProps = {
+  open: boolean;
+  onClose: () => void;
+};
+
+type IncompleteModalProps = SimpleModalProps & {
+  onConfirm: () => void;
+};
+
 const overflowModalMock = vi.hoisted(() =>
-  vi.fn(() => <div data-modal="overflow" />),
+  vi.fn((props: SimpleModalProps) => (
+    <div data-modal="overflow" data-open={String(props.open)} />
+  )),
 );
 const reorderModalMock = vi.hoisted(() =>
-  vi.fn(() => <div data-modal="reorder" />),
+  vi.fn((props: SimpleModalProps) => (
+    <div data-modal="reorder" data-open={String(props.open)} />
+  )),
 );
 const supersetModalMock = vi.hoisted(() =>
-  vi.fn(() => <div data-modal="superset" />),
+  vi.fn((props: SimpleModalProps) => (
+    <div data-modal="superset" data-open={String(props.open)} />
+  )),
 );
 const incompleteModalMock = vi.hoisted(() =>
-  vi.fn(() => <div data-modal="incomplete" />),
+  vi.fn((props: IncompleteModalProps) => (
+    <div data-modal="incomplete" data-open={String(props.open)} />
+  )),
 );
 
 vi.mock('react', async (importOriginal) => {
@@ -88,99 +106,6 @@ type StoreState = {
   }) => void;
   restTimerSeconds: number;
 };
-
-function findElement(
-  node: ReactNode,
-  predicate: (element: ReactElement) => boolean,
-): ReactElement | undefined {
-  if (Array.isArray(node)) {
-    for (const child of node) {
-      const nested = findElement(child, predicate);
-      if (nested) {
-        return nested;
-      }
-    }
-    return undefined;
-  }
-
-  if (!isValidElement(node)) {
-    return undefined;
-  }
-
-  if (predicate(node)) {
-    return node;
-  }
-
-  const children = node.props.children as ReactNode;
-  if (!children) {
-    return undefined;
-  }
-
-  const queue = Array.isArray(children) ? children : [children];
-  for (const child of queue) {
-    const nested = findElement(child, predicate);
-    if (nested) {
-      return nested;
-    }
-  }
-
-  return undefined;
-}
-
-function findAllElements(
-  node: ReactNode,
-  predicate: (element: ReactElement) => boolean,
-): ReactElement[] {
-  if (Array.isArray(node)) {
-    return node.flatMap((child) => findAllElements(child, predicate));
-  }
-
-  if (!isValidElement(node)) {
-    return [];
-  }
-
-  const results: ReactElement[] = [];
-  if (predicate(node)) {
-    results.push(node);
-  }
-
-  const children = node.props.children as ReactNode;
-  if (!children) {
-    return results;
-  }
-
-  const queue = Array.isArray(children) ? children : [children];
-  for (const child of queue) {
-    results.push(...findAllElements(child, predicate));
-  }
-
-  return results;
-}
-
-function nodeText(value: ReactNode): string {
-  if (typeof value === 'string' || typeof value === 'number') {
-    return String(value);
-  }
-  if (Array.isArray(value)) {
-    return value.map((item) => nodeText(item)).join('');
-  }
-  if (isValidElement(value)) {
-    return nodeText(value.props.children as ReactNode);
-  }
-  return '';
-}
-
-function findButtonByLabel(
-  node: ReactNode,
-  label: string,
-): ReactElement<{ onClick?: () => void }> | undefined {
-  return findElement(
-    node,
-    (element) =>
-      element.type === 'button' &&
-      nodeText(element.props.children).includes(label),
-  ) as ReactElement<{ onClick?: () => void }> | undefined;
-}
 
 describe('ActiveWorkoutPage', () => {
   beforeEach(() => {
@@ -296,12 +221,7 @@ describe('ActiveWorkoutPage', () => {
     expect(setReorder).toHaveBeenCalledWith(true);
     expect(setSuperset).toHaveBeenCalledWith(true);
 
-    const setButtons = findAllElements(
-      view,
-      (element) =>
-        element.type === 'button' &&
-        nodeText(element.props.children).includes('Set '),
-    ) as Array<ReactElement<{ onClick?: () => void }>>;
+    const setButtons = findButtonsByTextIncludes(view, 'Set ');
     expect(setButtons).toHaveLength(2);
     setButtons[0]?.props.onClick?.();
     setButtons[1]?.props.onClick?.();
@@ -317,18 +237,10 @@ describe('ActiveWorkoutPage', () => {
     expect(finish).not.toHaveBeenCalled();
     expect(navigate).not.toHaveBeenCalled();
 
-    const overflowProps = overflowModalMock.mock.calls[0]?.[0] as
-      | { open: boolean; onClose: () => void }
-      | undefined;
-    const reorderProps = reorderModalMock.mock.calls[0]?.[0] as
-      | { open: boolean; onClose: () => void }
-      | undefined;
-    const supersetProps = supersetModalMock.mock.calls[0]?.[0] as
-      | { open: boolean; onClose: () => void }
-      | undefined;
-    const incompleteProps = incompleteModalMock.mock.calls[0]?.[0] as
-      | { open: boolean; onClose: () => void; onConfirm: () => void }
-      | undefined;
+    const overflowProps = overflowModalMock.mock.calls[0]?.[0];
+    const reorderProps = reorderModalMock.mock.calls[0]?.[0];
+    const supersetProps = supersetModalMock.mock.calls[0]?.[0];
+    const incompleteProps = incompleteModalMock.mock.calls[0]?.[0];
 
     expect(overflowProps?.open).toBe(false);
     expect(reorderProps?.open).toBe(false);
@@ -399,9 +311,7 @@ describe('ActiveWorkoutPage', () => {
     expect(setIncomplete).toHaveBeenCalledWith(false);
     expect(navigate).toHaveBeenCalledWith('/workout/complete');
 
-    const incompleteProps = incompleteModalMock.mock.calls[0]?.[0] as
-      | { open: boolean; onClose: () => void; onConfirm: () => void }
-      | undefined;
+    const incompleteProps = incompleteModalMock.mock.calls[0]?.[0];
     expect(incompleteProps?.open).toBe(true);
 
     incompleteProps?.onConfirm();

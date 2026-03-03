@@ -1,8 +1,9 @@
-import { type ReactElement, type ReactNode, isValidElement } from 'react';
+import { type ReactElement, type ReactNode } from 'react';
 
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { findButtonByLabel } from '../testing/react-tree';
 import { CompletionMotivationPage } from './CompletionMotivationPage';
 import { CompletionNextPage } from './CompletionNextPage';
 import { CompletionProgressPage } from './CompletionProgressPage';
@@ -52,34 +53,6 @@ vi.mock('../stores/activeWorkoutStore', () => ({
 
 function render(element: ReactElement): string {
   return renderToStaticMarkup(element);
-}
-
-function findButtonByLabel(
-  node: ReactNode,
-  label: string,
-): ReactElement<{ onClick?: () => void }> | undefined {
-  if (!isValidElement(node)) {
-    return undefined;
-  }
-
-  if (node.type === 'button' && node.props.children === label) {
-    return node as ReactElement<{ onClick?: () => void }>;
-  }
-
-  const children = node.props.children as ReactNode;
-  if (!children) {
-    return undefined;
-  }
-
-  const queue = Array.isArray(children) ? children : [children];
-  for (const child of queue) {
-    const nested = findButtonByLabel(child, label);
-    if (nested) {
-      return nested;
-    }
-  }
-
-  return undefined;
 }
 
 describe('static/simple pages', () => {

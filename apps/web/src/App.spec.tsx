@@ -5,8 +5,19 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { App } from './App';
 
+type RouteNode = {
+  path?: string;
+  index?: boolean;
+  children?: RouteNode[];
+};
+
 const routerMock = vi.hoisted(() => ({ kind: 'router' }));
-const createBrowserRouterMock = vi.hoisted(() => vi.fn(() => routerMock));
+const createBrowserRouterMock = vi.hoisted(() =>
+  vi.fn((routes: RouteNode[]) => {
+    void routes;
+    return routerMock;
+  }),
+);
 const routerProviderMock = vi.hoisted(() =>
   vi.fn(({ router }: { router: unknown }) => (
     <div>RouterProvider:{router === routerMock ? 'ok' : 'bad'}</div>
@@ -22,10 +33,14 @@ describe('App', () => {
   it('creates browser router with expected routes and renders provider', () => {
     expect(createBrowserRouterMock).toHaveBeenCalledTimes(1);
 
-    const routes = createBrowserRouterMock.mock.calls[0]?.[0] as Array<{
-      path?: string;
-      children?: Array<{ path?: string; index?: boolean }>;
-    }>;
+    const routerCall = createBrowserRouterMock.mock.calls[0];
+    expect(routerCall).toBeDefined();
+
+    const routes = routerCall?.[0];
+    expect(routes).toBeDefined();
+    if (!routes) {
+      throw new Error('Expected createBrowserRouter to receive routes');
+    }
     expect(routes).toHaveLength(3);
     expect(routes.map((route) => route.path)).toEqual([
       '/login',

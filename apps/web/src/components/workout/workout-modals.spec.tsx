@@ -1,45 +1,13 @@
-import {
-  type ReactElement,
-  type ReactNode,
-  cloneElement,
-  isValidElement,
-} from 'react';
+import { type ReactElement, cloneElement } from 'react';
 
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
+import { findButtonByLabel } from '../../testing/react-tree';
 import { ExerciseOverflowModal } from './ExerciseOverflowModal';
 import { IncompleteWarningModal } from './IncompleteWarningModal';
 import { ReorderModal } from './ReorderModal';
 import { SupersetModal } from './SupersetModal';
-
-function findButtonByLabel(
-  node: ReactNode,
-  label: string,
-): ReactElement<{ onClick?: () => void }> | undefined {
-  if (!isValidElement(node)) {
-    return undefined;
-  }
-
-  if (node.type === 'button' && node.props.children === label) {
-    return node as ReactElement<{ onClick?: () => void }>;
-  }
-
-  const children = node.props.children as ReactNode;
-  if (!children) {
-    return undefined;
-  }
-
-  const queue = Array.isArray(children) ? children : [children];
-  for (const child of queue) {
-    const result = findButtonByLabel(child, label);
-    if (result) {
-      return result;
-    }
-  }
-
-  return undefined;
-}
 
 function render(element: ReactElement): string {
   return renderToStaticMarkup(cloneElement(element));

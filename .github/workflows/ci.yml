@@ -59,14 +59,14 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Run API tests
-        run: pnpm test:api
+      - name: Run API tests with coverage thresholds
+        run: pnpm --filter @irontrack/api test:cov
 
       - name: Run API e2e tests
         run: pnpm test:e2e:api
 
-      - name: Run web tests
-        run: pnpm test:web
+      - name: Run web tests with coverage thresholds
+        run: pnpm --filter @irontrack/web test:cov
 
       - name: Cache Playwright browsers
         id: playwright-cache
