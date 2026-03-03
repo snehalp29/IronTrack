@@ -153,10 +153,12 @@ describe('GoogleTokenVerifierService', () => {
   });
 
   it('rejects when Google token endpoint returns an error', async () => {
+    const jsonSpy = jest.fn().mockResolvedValue({});
     fetchSpy.mockResolvedValue({
       ok: false,
-      json: async () => ({}),
-    } as Response);
+      status: 500,
+      json: jsonSpy,
+    } as unknown as Response);
 
     await expect(
       service.verifyIdToken('invalid-google-id-token-1234567890'),
@@ -165,6 +167,7 @@ describe('GoogleTokenVerifierService', () => {
         code: 'INVALID_GOOGLE_TOKEN',
       },
     });
+    expect(jsonSpy).not.toHaveBeenCalled();
   });
 
   it('rejects when Google auth is not configured', async () => {
@@ -247,6 +250,28 @@ describe('GoogleTokenVerifierService', () => {
       response: {
         code: 'INVALID_GOOGLE_TOKEN',
       },
+    });
+  });
+
+  it('accepts string email_verified values case-insensitively', async () => {
+    fetchSpy.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        aud: 'test-google-client-id',
+        email: 'verified@irontrack.local',
+        email_verified: 'TRUE',
+        iss: 'https://accounts.google.com',
+        sub: 'google-sub-123',
+      }),
+    } as Response);
+
+    await expect(
+      service.verifyIdToken('valid-google-id-token-uppercase-verified'),
+    ).resolves.toEqual({
+      email: 'verified@irontrack.local',
+      googleId: 'google-sub-123',
+      name: undefined,
+      avatarUrl: undefined,
     });
   });
 });
