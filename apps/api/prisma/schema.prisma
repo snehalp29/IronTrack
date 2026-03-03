@@ -169,7 +169,8 @@ model ExerciseTemplate {
   notes            ExerciseNote[]
   prRecords        PRRecord[]
 
-  // Index: expression index for unique lower(name) per user via raw SQL migration (D12)
+  // Indexes: raw SQL expression indexes enforce active lower(name) uniqueness
+  // for global exercises and separately per owner (D12 migration).
   @@index([ownerUserId])
   @@index([primaryMuscleGroupId])
   @@index([exerciseType])
