@@ -32,7 +32,7 @@
     "test:e2e:web": "pnpm --filter @irontrack/web test:e2e",
     "test:e2e:web:headless": "PW_HEADLESS=1 pnpm --filter @irontrack/web test:e2e",
     "test:ml": "cd apps/ml && poetry run pytest",
-    "test:shared": "pnpm --filter @irontrack/shared exec vitest run --config vitest.config.ts",
+    "test:shared": "pnpm --filter @irontrack/shared test",
     "test:web": "pnpm --filter @irontrack/web test",
     "typecheck": "pnpm run typecheck:api && pnpm run typecheck:web && pnpm run typecheck:shared",
     "typecheck:api": "pnpm --filter @irontrack/api run typecheck",

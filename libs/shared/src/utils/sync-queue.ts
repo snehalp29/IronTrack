@@ -3,11 +3,21 @@ export interface SyncResult {
   conflicts: number;
 }
 
+export type SyncOperation = 'CREATE' | 'UPDATE' | 'DELETE';
+
 export interface SyncQueueItem {
   id: number;
   entity_type: string;
   local_id: string;
+  operation: SyncOperation;
   payload: string;
+}
+
+export interface SyncQueueMutation {
+  entityType: string;
+  localId: string;
+  operation: SyncOperation;
+  payload: unknown;
 }
 
 export interface SyncQueueDb {
@@ -20,7 +30,7 @@ export const DUE_SYNC_QUEUE_QUERY =
 
 export async function replaySyncQueueWithDb(
   db: SyncQueueDb,
-  applyRemote: (entityType: string, payload: unknown) => Promise<void>,
+  applyRemote: (mutation: SyncQueueMutation) => Promise<void>,
   now: Date = new Date(),
 ): Promise<SyncResult> {
   const items = db.getAllSync<SyncQueueItem>(DUE_SYNC_QUEUE_QUERY, [
@@ -33,7 +43,12 @@ export async function replaySyncQueueWithDb(
   for (const item of items) {
     try {
       const payload = JSON.parse(item.payload);
-      await applyRemote(item.entity_type, payload);
+      await applyRemote({
+        entityType: item.entity_type,
+        localId: item.local_id,
+        operation: item.operation,
+        payload,
+      });
 
       db.runSync('DELETE FROM sync_queue WHERE id = ?', [item.id]);
       synced += 1;

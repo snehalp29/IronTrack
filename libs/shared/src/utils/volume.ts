@@ -3,8 +3,11 @@ import { WorkoutSet } from '../types';
 export function calculateSetVolume(
   set: Pick<WorkoutSet, 'weight' | 'reps' | 'durationSeconds'>,
 ): number {
-  if ((set.weight ?? 0) > 0 && (set.reps ?? 0) > 0) {
-    return (set.weight ?? 0) * (set.reps ?? 0);
+  const weight = set.weight ?? 0;
+  const reps = set.reps ?? 0;
+
+  if (weight > 0 && reps > 0) {
+    return weight * reps;
   }
 
   return set.durationSeconds ?? 0;

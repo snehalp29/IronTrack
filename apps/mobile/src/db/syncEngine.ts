@@ -1,11 +1,17 @@
-import { type SyncResult, replaySyncQueueWithDb } from '@irontrack/shared';
+import {
+  type SyncOperation,
+  type SyncQueueDb,
+  type SyncQueueMutation,
+  type SyncResult,
+  replaySyncQueueWithDb,
+} from '@irontrack/shared';
 
 import { getDatabase } from './database';
 
 export async function queueMutation(
   entityType: string,
   localId: string,
-  operation: string,
+  operation: SyncOperation,
   payload: unknown,
 ) {
   const db = getDatabase();
@@ -23,12 +29,20 @@ export async function queueMutation(
 
 export async function replaySyncQueue(): Promise<SyncResult> {
   const db = getDatabase();
-  return replaySyncQueueWithDb(db, fakeRemoteApply);
+  return replaySyncQueueWithDb(asSyncQueueDb(db), fakeRemoteApply);
 }
 
-async function fakeRemoteApply(
-  _entityType: string,
-  _payload: unknown,
-): Promise<void> {
+async function fakeRemoteApply(_mutation: SyncQueueMutation): Promise<void> {
   return;
+}
+
+function asSyncQueueDb(db: ReturnType<typeof getDatabase>): SyncQueueDb {
+  return {
+    getAllSync<T>(query: string, params?: unknown[]): T[] {
+      return db.getAllSync<T>(query, (params ?? []) as never);
+    },
+    runSync(query: string, params?: unknown[]): void {
+      db.runSync(query, (params ?? []) as never);
+    },
+  };
 }
