@@ -80,11 +80,11 @@ const validateSetCompletionConsistency = (
   value: { isCompleted?: boolean; completedAt?: string },
   ctx: z.RefinementCtx,
 ) => {
-  if (value.isCompleted === false && value.completedAt !== undefined) {
+  if (value.completedAt !== undefined && value.isCompleted !== true) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'completedAt cannot be provided when isCompleted is false',
-      path: ['completedAt'],
+      message: 'isCompleted must be true when completedAt is provided',
+      path: ['isCompleted'],
     });
   }
 };
