@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  DEFAULT_SYNC_BATCH_SIZE,
   DUE_SYNC_QUEUE_QUERY,
   type SyncQueueDb,
   replaySyncQueueWithDb,
@@ -63,17 +64,17 @@ describe('sync engine core', () => {
     });
 
     expect(db.runSync).toHaveBeenNthCalledWith(
-      1,
+      2,
       'DELETE FROM sync_queue WHERE id = ?',
       [1],
     );
     expect(db.runSync).toHaveBeenNthCalledWith(
-      2,
+      4,
       'DELETE FROM sync_queue WHERE id = ?',
       [2],
     );
     expect(db.runSync).toHaveBeenNthCalledWith(
-      3,
+      6,
       'DELETE FROM sync_queue WHERE id = ?',
       [3],
     );
@@ -112,6 +113,10 @@ describe('sync engine core', () => {
 
     expect(result).toEqual({ synced: 1, conflicts: 1 });
     expect(applyRemote).toHaveBeenCalledTimes(2);
+    expect(db.runSync).toHaveBeenCalledWith(
+      'UPDATE sync_queue SET next_attempt_at = ? WHERE id = ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?)',
+      [expect.any(String), 10, '2026-03-02T10:00:00.000Z'],
+    );
     expect(db.runSync).toHaveBeenCalledWith(
       'UPDATE sync_queue SET attempts = attempts + 1, next_attempt_at = ? WHERE id = ?',
       ['2026-03-02T10:00:30.000Z', 10],
@@ -229,7 +234,12 @@ describe('sync engine core', () => {
 
   it('queries only due queue items using next_attempt_at cutoff', async () => {
     const db: SyncQueueDb = {
-      getAllSync: vi.fn().mockReturnValue([]),
+      getAllSync: vi.fn((query: string) => {
+        if (query === DUE_SYNC_QUEUE_QUERY) {
+          return [];
+        }
+        return [{ id: 1 }];
+      }),
       runSync: vi.fn(),
     };
 
@@ -238,6 +248,7 @@ describe('sync engine core', () => {
 
     expect(db.getAllSync).toHaveBeenCalledWith(DUE_SYNC_QUEUE_QUERY, [
       '2026-03-02T10:00:00.000Z',
+      DEFAULT_SYNC_BATCH_SIZE,
     ]);
   });
 
@@ -259,8 +270,159 @@ describe('sync engine core', () => {
     await replaySyncQueueWithDb(db, vi.fn(), now);
 
     expect(db.runSync).toHaveBeenCalledWith(
+      'UPDATE sync_queue SET next_attempt_at = ? WHERE id = ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?)',
+      [expect.any(String), 7, '2026-03-02T10:00:00.000Z'],
+    );
+    expect(db.runSync).toHaveBeenCalledWith(
       'UPDATE sync_queue SET attempts = attempts + 1, next_attempt_at = ? WHERE id = ?',
       ['2026-03-02T10:00:30.000Z', 7],
     );
+  });
+
+  it('respects custom batch size option when querying due items', async () => {
+    const db: SyncQueueDb = {
+      getAllSync: vi.fn((query: string) => {
+        if (query === DUE_SYNC_QUEUE_QUERY) {
+          return [];
+        }
+        return [{ id: 1 }];
+      }),
+      runSync: vi.fn(),
+    };
+
+    await replaySyncQueueWithDb(
+      db,
+      vi.fn(),
+      new Date('2026-03-02T10:00:00.000Z'),
+      { batchSize: 25 },
+    );
+
+    expect(db.getAllSync).toHaveBeenCalledWith(DUE_SYNC_QUEUE_QUERY, [
+      '2026-03-02T10:00:00.000Z',
+      25,
+    ]);
+  });
+
+  it('skips applying item when claim verification indicates another runner claimed it', async () => {
+    const db: SyncQueueDb = {
+      getAllSync: vi.fn((query: string) => {
+        if (query === DUE_SYNC_QUEUE_QUERY) {
+          return [
+            {
+              id: 101,
+              entity_type: 'session',
+              local_id: 'session-local-101',
+              operation: 'UPDATE',
+              payload: '{"name":"Push Day"}',
+            },
+          ];
+        }
+        return [];
+      }),
+      runSync: vi.fn(),
+    };
+    const applyRemote = vi.fn().mockResolvedValue(undefined);
+
+    const result = await replaySyncQueueWithDb(
+      db,
+      applyRemote,
+      new Date('2026-03-02T10:00:00.000Z'),
+    );
+
+    expect(result).toEqual({ synced: 0, conflicts: 0 });
+    expect(applyRemote).not.toHaveBeenCalled();
+    expect(db.runSync).not.toHaveBeenCalledWith(
+      'DELETE FROM sync_queue WHERE id = ?',
+      [101],
+    );
+  });
+
+  it('uses custom claim lease and retry delay options', async () => {
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0);
+    const db: SyncQueueDb = {
+      getAllSync: vi.fn((query: string) => {
+        if (query === DUE_SYNC_QUEUE_QUERY) {
+          return [
+            {
+              id: 5,
+              entity_type: 'set',
+              local_id: 'set-local-5',
+              operation: 'UPDATE',
+              payload: '{"reps":12}',
+            },
+          ];
+        }
+        return [{ id: 5 }];
+      }),
+      runSync: vi.fn(),
+    };
+    const applyRemote = vi.fn().mockRejectedValueOnce({ status: 500 });
+
+    try {
+      const result = await replaySyncQueueWithDb(
+        db,
+        applyRemote,
+        new Date('2026-03-02T10:00:00.000Z'),
+        { claimLeaseMs: 90_000, retryDelayMs: 45_000 },
+      );
+
+      expect(result).toEqual({ synced: 0, conflicts: 0 });
+      expect(db.runSync).toHaveBeenCalledWith(
+        'UPDATE sync_queue SET next_attempt_at = ? WHERE id = ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?)',
+        ['2026-03-02T10:01:30.001Z', 5, '2026-03-02T10:00:00.000Z'],
+      );
+      expect(db.runSync).toHaveBeenCalledWith(
+        'UPDATE sync_queue SET attempts = attempts + 1, next_attempt_at = ? WHERE id = ?',
+        ['2026-03-02T10:00:45.000Z', 5],
+      );
+    } finally {
+      randomSpy.mockRestore();
+    }
+  });
+
+  it('falls back to defaults when integer options are non-positive', async () => {
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0);
+    const db: SyncQueueDb = {
+      getAllSync: vi.fn((query: string) => {
+        if (query === DUE_SYNC_QUEUE_QUERY) {
+          return [
+            {
+              id: 6,
+              entity_type: 'set',
+              local_id: 'set-local-6',
+              operation: 'UPDATE',
+              payload: '{"reps":8}',
+            },
+          ];
+        }
+        return [{ id: 6 }];
+      }),
+      runSync: vi.fn(),
+    };
+    const applyRemote = vi.fn().mockRejectedValueOnce({ status: 500 });
+
+    try {
+      await replaySyncQueueWithDb(
+        db,
+        applyRemote,
+        new Date('2026-03-02T10:00:00.000Z'),
+        { batchSize: 0, claimLeaseMs: 0, retryDelayMs: 0 },
+      );
+
+      expect(db.getAllSync).toHaveBeenCalledWith(DUE_SYNC_QUEUE_QUERY, [
+        '2026-03-02T10:00:00.000Z',
+        DEFAULT_SYNC_BATCH_SIZE,
+      ]);
+      expect(db.runSync).toHaveBeenCalledWith(
+        'UPDATE sync_queue SET next_attempt_at = ? WHERE id = ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?)',
+        ['2026-03-02T10:01:00.001Z', 6, '2026-03-02T10:00:00.000Z'],
+      );
+      expect(db.runSync).toHaveBeenCalledWith(
+        'UPDATE sync_queue SET attempts = attempts + 1, next_attempt_at = ? WHERE id = ?',
+        ['2026-03-02T10:00:30.000Z', 6],
+      );
+    } finally {
+      randomSpy.mockRestore();
+    }
   });
 });
