@@ -37,4 +37,18 @@ describe('checklist schemas', () => {
       }),
     ).toThrow();
   });
+
+  it('rejects impossible calendar dates', () => {
+    expect(() => checklistQuerySchema.parse({ date: '2024-99-99' })).toThrow();
+    expect(() =>
+      checklistWeekQuerySchema.parse({ startDate: '2024-02-30' }),
+    ).toThrow();
+    expect(() =>
+      upsertChecklistSchema.parse({
+        date: '2024-04-31',
+        type: 'WORKOUT',
+        isCompleted: true,
+      }),
+    ).toThrow();
+  });
 });

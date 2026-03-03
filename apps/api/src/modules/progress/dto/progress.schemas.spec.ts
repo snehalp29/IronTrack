@@ -13,4 +13,13 @@ describe('progress schemas', () => {
       weeklyProgressQuerySchema.parse({ startDate: '01-01-2024' }),
     ).toThrow();
   });
+
+  it('rejects impossible calendar dates', () => {
+    expect(() =>
+      weeklyProgressQuerySchema.parse({ startDate: '2024-99-99' }),
+    ).toThrow();
+    expect(() =>
+      weeklyProgressQuerySchema.parse({ startDate: '2024-02-30' }),
+    ).toThrow();
+  });
 });
