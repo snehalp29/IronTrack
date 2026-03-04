@@ -18,9 +18,16 @@ export function ExerciseWizardPage() {
     : 1;
   const currentStepLabel = steps[step - 1];
 
-  const next = () =>
-    setSearchParams({ step: String(Math.min(steps.length, step + 1)) });
-  const prev = () => setSearchParams({ step: String(Math.max(1, step - 1)) });
+  const next = () => {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('step', String(Math.min(steps.length, step + 1)));
+    setSearchParams(nextParams);
+  };
+  const prev = () => {
+    const prevParams = new URLSearchParams(searchParams);
+    prevParams.set('step', String(Math.max(1, step - 1)));
+    setSearchParams(prevParams);
+  };
 
   return (
     <div className="card">
