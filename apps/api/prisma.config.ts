@@ -2,7 +2,7 @@ import { defineConfig } from 'prisma/config';
 
 import {
   loadWorkspaceEnv,
-  resolveDatabaseUrl,
+  requireDatabaseUrl,
 } from './src/common/env/workspace-env';
 
 loadWorkspaceEnv();
@@ -14,6 +14,6 @@ export default defineConfig({
     seed: 'tsx prisma/seed.ts',
   },
   datasource: {
-    url: resolveDatabaseUrl(),
+    url: requireDatabaseUrl(),
   },
 });

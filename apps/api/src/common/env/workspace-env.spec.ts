@@ -1,6 +1,7 @@
 import {
   loadEnvFiles,
   loadWorkspaceEnv,
+  requireDatabaseUrl,
   resolveDatabaseUrl,
 } from './workspace-env';
 
@@ -117,6 +118,29 @@ describe('workspace env loader', () => {
     try {
       process.env.DATABASE_URL = 'postgres://from-env';
       expect(resolveDatabaseUrl()).toBe('postgres://from-env');
+    } finally {
+      process.env.DATABASE_URL = original;
+    }
+  });
+
+  it('requires a non-empty DATABASE_URL for prisma datasource config', () => {
+    expect(requireDatabaseUrl({ DATABASE_URL: ' postgresql://db-url ' })).toBe(
+      'postgresql://db-url',
+    );
+
+    expect(() => requireDatabaseUrl({ DATABASE_URL: '   ' })).toThrow(
+      'DATABASE_URL is required for Prisma datasource configuration.',
+    );
+    expect(() => requireDatabaseUrl({})).toThrow(
+      'DATABASE_URL is required for Prisma datasource configuration.',
+    );
+  });
+
+  it('reads DATABASE_URL from process.env by default when requiring datasource url', () => {
+    const original = process.env.DATABASE_URL;
+    try {
+      process.env.DATABASE_URL = '  postgresql://from-env  ';
+      expect(requireDatabaseUrl()).toBe('postgresql://from-env');
     } finally {
       process.env.DATABASE_URL = original;
     }
