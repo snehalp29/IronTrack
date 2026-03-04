@@ -13,7 +13,10 @@ import { ExerciseDetailPage } from './ExerciseDetailPage';
 import { ExerciseWizardPage } from './ExerciseWizardPage';
 import { LoginPage } from './LoginPage';
 import { RegisterPage } from './RegisterPage';
-import { TemplateBuilderPage } from './TemplateBuilderPage';
+import {
+  TOTAL_TEMPLATE_STEPS,
+  TemplateBuilderPage,
+} from './TemplateBuilderPage';
 
 const useStateMock = vi.hoisted(() => vi.fn());
 const navigateMock = vi.hoisted(() => vi.fn());
@@ -70,6 +73,9 @@ describe('interactive pages', () => {
 
     const stepOne = TemplateBuilderPage();
     expect(renderToStaticMarkup(stepOne)).toContain('Template Name');
+    expect(renderToStaticMarkup(stepOne)).toContain(
+      `Step 1 of ${TOTAL_TEMPLATE_STEPS}`,
+    );
     const stepOneLabel = findElement(
       stepOne,
       (element) =>
@@ -99,7 +105,7 @@ describe('interactive pages', () => {
       | undefined;
     expect(backUpdater?.(1)).toBe(1);
     expect(backUpdater?.(3)).toBe(2);
-    expect(nextUpdater?.(4)).toBe(4);
+    expect(nextUpdater?.(TOTAL_TEMPLATE_STEPS)).toBe(TOTAL_TEMPLATE_STEPS);
     expect(nextUpdater?.(2)).toBe(3);
 
     useStateMock.mockReturnValue([2, setStepMock] as unknown as [
@@ -150,10 +156,10 @@ describe('interactive pages', () => {
     expect(stepThreeTextarea).toBeDefined();
     expect(stepThreeTextarea?.props['aria-label']).toBeUndefined();
 
-    useStateMock.mockReturnValue([4, setStepMock] as unknown as [
-      number,
-      Dispatch<SetStateAction<number>>,
-    ]);
+    useStateMock.mockReturnValue([
+      TOTAL_TEMPLATE_STEPS,
+      setStepMock,
+    ] as unknown as [number, Dispatch<SetStateAction<number>>]);
     const stepFour = TemplateBuilderPage();
     expect(renderToStaticMarkup(stepFour)).toContain('Final review and notes');
     const stepFourLabel = findElement(
@@ -192,8 +198,14 @@ describe('interactive pages', () => {
 
     findButtonByLabel(stepOne, 'Back')?.props.onClick?.();
     findButtonByLabel(stepOne, 'Next')?.props.onClick?.();
-    expect(setSearchParamsMock).toHaveBeenNthCalledWith(1, { step: '1' });
-    expect(setSearchParamsMock).toHaveBeenNthCalledWith(2, { step: '2' });
+    const firstStepOneParams = setSearchParamsMock.mock
+      .calls[0]?.[0] as URLSearchParams;
+    const secondStepOneParams = setSearchParamsMock.mock
+      .calls[1]?.[0] as URLSearchParams;
+    expect(firstStepOneParams).toBeInstanceOf(URLSearchParams);
+    expect(firstStepOneParams.get('step')).toBe('1');
+    expect(secondStepOneParams).toBeInstanceOf(URLSearchParams);
+    expect(secondStepOneParams.get('step')).toBe('2');
 
     setSearchParamsMock.mockClear();
     searchParamsState.value = new URLSearchParams('step=7');
@@ -202,8 +214,14 @@ describe('interactive pages', () => {
 
     findButtonByLabel(stepSeven, 'Next')?.props.onClick?.();
     findButtonByLabel(stepSeven, 'Back')?.props.onClick?.();
-    expect(setSearchParamsMock).toHaveBeenNthCalledWith(1, { step: '7' });
-    expect(setSearchParamsMock).toHaveBeenNthCalledWith(2, { step: '6' });
+    const firstStepSevenParams = setSearchParamsMock.mock
+      .calls[0]?.[0] as URLSearchParams;
+    const secondStepSevenParams = setSearchParamsMock.mock
+      .calls[1]?.[0] as URLSearchParams;
+    expect(firstStepSevenParams).toBeInstanceOf(URLSearchParams);
+    expect(firstStepSevenParams.get('step')).toBe('7');
+    expect(secondStepSevenParams).toBeInstanceOf(URLSearchParams);
+    expect(secondStepSevenParams.get('step')).toBe('6');
   });
 
   it('ExerciseWizardPage renders a labeled step field for accessibility', () => {
