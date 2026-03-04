@@ -50,18 +50,18 @@ test.describe('Onboarding Flow', () => {
     await expect(
       page.getByRole('heading', { name: 'Template Builder' }),
     ).toBeVisible();
-    await page.getByLabel('Template name').fill('Push Day A');
+    await page.getByLabel('Template Name', { exact: true }).fill('Push Day A');
     await page.getByRole('button', { name: 'Next' }).click();
     await page
-      .getByLabel('Exercise selection and defaults')
+      .getByLabel('Select exercises and set defaults', { exact: true })
       .fill('Bench Press 4x8\nIncline Press 3x10');
     await page.getByRole('button', { name: 'Next' }).click();
     await page
-      .getByLabel('Superset and order review')
+      .getByLabel('Superset and order review', { exact: true })
       .fill('No supersets for first template');
     await page.getByRole('button', { name: 'Next' }).click();
     await page
-      .getByLabel('Final review and notes')
+      .getByLabel('Final review and notes', { exact: true })
       .fill('Focus on controlled tempo and full range');
 
     await page.getByRole('link', { name: 'Dashboard' }).click();
