@@ -7,15 +7,15 @@ import { ExerciseType, PrismaClient } from '@prisma/client';
 
 import {
   loadWorkspaceEnv,
-  resolveDatabaseUrl,
+  requireDatabaseUrl,
 } from '../src/common/env/workspace-env';
 
 loadWorkspaceEnv();
 
-const connectionString = resolveDatabaseUrl();
-if (!connectionString) {
-  throw new Error('DATABASE_URL is required to run seed script.');
-}
+const connectionString = requireDatabaseUrl(
+  process.env,
+  'DATABASE_URL is required to run seed script.',
+);
 
 const adapter = new PrismaPg({ connectionString });
 const prisma = new PrismaClient({ adapter });

@@ -18,6 +18,14 @@ describe('PrismaService', () => {
     );
   });
 
+  it('throws when DATABASE_URL is blank after trimming', () => {
+    process.env.DATABASE_URL = '   ';
+
+    expect(() => new PrismaService()).toThrow(
+      'DATABASE_URL is required to initialize Prisma.',
+    );
+  });
+
   it('connects on module init', async () => {
     process.env.DATABASE_URL = 'postgresql://user:pass@localhost:5432/db';
 

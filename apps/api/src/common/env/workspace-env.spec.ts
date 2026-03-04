@@ -136,6 +136,15 @@ describe('workspace env loader', () => {
     );
   });
 
+  it('supports custom required DATABASE_URL error messages', () => {
+    expect(() =>
+      requireDatabaseUrl(
+        { DATABASE_URL: '   ' },
+        'DATABASE_URL is required to initialize Prisma.',
+      ),
+    ).toThrow('DATABASE_URL is required to initialize Prisma.');
+  });
+
   it('reads DATABASE_URL from process.env by default when requiring datasource url', () => {
     const original = process.env.DATABASE_URL;
     try {

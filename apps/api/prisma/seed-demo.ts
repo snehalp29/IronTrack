@@ -4,15 +4,15 @@ import { hash } from 'bcryptjs';
 
 import {
   loadWorkspaceEnv,
-  resolveDatabaseUrl,
+  requireDatabaseUrl,
 } from '../src/common/env/workspace-env';
 
 loadWorkspaceEnv();
 
-const connectionString = resolveDatabaseUrl();
-if (!connectionString) {
-  throw new Error('DATABASE_URL is required to run demo seed script.');
-}
+const connectionString = requireDatabaseUrl(
+  process.env,
+  'DATABASE_URL is required to run demo seed script.',
+);
 
 const adapter = new PrismaPg({ connectionString });
 const prisma = new PrismaClient({ adapter });

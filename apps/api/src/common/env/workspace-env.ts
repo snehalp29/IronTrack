@@ -50,12 +50,11 @@ export function resolveDatabaseUrl(
 
 export function requireDatabaseUrl(
   env: NodeJS.ProcessEnv = process.env,
+  errorMessage = 'DATABASE_URL is required for Prisma datasource configuration.',
 ): string {
   const value = resolveDatabaseUrl(env);
   if (!value) {
-    throw new Error(
-      'DATABASE_URL is required for Prisma datasource configuration.',
-    );
+    throw new Error(errorMessage);
   }
   return value;
 }
