@@ -82,7 +82,7 @@ describe('interactive pages', () => {
     );
     expect(stepOneLabel).toBeDefined();
     expect(stepOneInput).toBeDefined();
-    expect(stepOneInput?.props['aria-label']).toBe('Template name');
+    expect(stepOneInput?.props['aria-label']).toBeUndefined();
     const backButton = findButtonByLabel(stepOne, 'Back');
     const nextButton = findButtonByLabel(stepOne, 'Next');
     expect(backButton).toBeDefined();
@@ -124,9 +124,7 @@ describe('interactive pages', () => {
     );
     expect(stepTwoLabel).toBeDefined();
     expect(stepTwoTextarea).toBeDefined();
-    expect(stepTwoTextarea?.props['aria-label']).toBe(
-      'Exercise selection and defaults',
-    );
+    expect(stepTwoTextarea?.props['aria-label']).toBeUndefined();
 
     useStateMock.mockReturnValue([3, setStepMock] as unknown as [
       number,
@@ -150,9 +148,7 @@ describe('interactive pages', () => {
     );
     expect(stepThreeLabel).toBeDefined();
     expect(stepThreeTextarea).toBeDefined();
-    expect(stepThreeTextarea?.props['aria-label']).toBe(
-      'Superset and order review',
-    );
+    expect(stepThreeTextarea?.props['aria-label']).toBeUndefined();
 
     useStateMock.mockReturnValue([4, setStepMock] as unknown as [
       number,
@@ -174,9 +170,7 @@ describe('interactive pages', () => {
     );
     expect(stepFourLabel).toBeDefined();
     expect(stepFourTextarea).toBeDefined();
-    expect(stepFourTextarea?.props['aria-label']).toBe(
-      'Final review and notes',
-    );
+    expect(stepFourTextarea?.props['aria-label']).toBeUndefined();
   });
 
   it('ExerciseWizardPage respects step boundaries and updates search params', () => {

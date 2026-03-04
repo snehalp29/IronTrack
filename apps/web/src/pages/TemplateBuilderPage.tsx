@@ -10,11 +10,7 @@ export function TemplateBuilderPage() {
       {step === 1 && (
         <>
           <label htmlFor="template-name">Template Name</label>
-          <input
-            id="template-name"
-            placeholder="Template Name"
-            aria-label="Template name"
-          />
+          <input id="template-name" placeholder="Template Name" />
         </>
       )}
       {step === 2 && (
@@ -26,7 +22,6 @@ export function TemplateBuilderPage() {
             id="template-step-exercises"
             placeholder="Select exercises and set defaults"
             rows={6}
-            aria-label="Exercise selection and defaults"
           />
         </>
       )}
@@ -39,7 +34,6 @@ export function TemplateBuilderPage() {
             id="template-step-superset"
             placeholder="Superset and order review"
             rows={6}
-            aria-label="Superset and order review"
           />
         </>
       )}
@@ -50,7 +44,6 @@ export function TemplateBuilderPage() {
             id="template-step-notes"
             placeholder="Final review and notes"
             rows={6}
-            aria-label="Final review and notes"
           />
         </>
       )}
