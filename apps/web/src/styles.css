@@ -5,6 +5,8 @@
   --muted: #756a5b;
   --accent: #d54d16;
   --accent-2: #0f766e;
+  --danger: #9a3412;
+  --modal-border-accent: #c27f56;
 }
 
 * {
@@ -78,6 +80,11 @@ button.secondary {
   background: var(--accent-2);
 }
 
+button.danger,
+a.button-link.danger {
+  background: var(--danger);
+}
+
 a.button-link {
   display: inline-flex;
   align-items: center;
@@ -127,4 +134,21 @@ h3 {
   font-size: 12px;
   font-weight: 600;
   background: #f8dbc9;
+}
+
+.modal {
+  border-color: var(--modal-border-accent);
+}
+
+.modal--accent {
+  border-color: var(--modal-border-accent);
+}
+
+.modal--warning {
+  border-color: var(--danger);
+}
+
+.modal__actions {
+  display: flex;
+  gap: 8px;
 }

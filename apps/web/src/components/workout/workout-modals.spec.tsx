@@ -20,7 +20,13 @@ describe('workout modals', () => {
     const onClose = vi.fn();
     const view = ExerciseOverflowModal({ open: true, onClose });
     expect(view).not.toBeNull();
-    expect(render(view as ReactElement)).toContain('Exercise Actions');
+    const html = render(view as ReactElement);
+    expect(html).toContain('Exercise Actions');
+    expect(html).toContain('class="card modal modal--accent"');
+    expect(html).toContain('role="dialog"');
+    expect(html).toContain('aria-modal="true"');
+    expect(html).toContain('aria-labelledby="exercise-overflow-title"');
+    expect(html).toContain('class="danger"');
 
     const closeButton = findButtonByLabel(view, 'Close');
     expect(closeButton).toBeDefined();
@@ -45,7 +51,15 @@ describe('workout modals', () => {
       onConfirm,
     });
     expect(view).not.toBeNull();
-    expect(render(view as ReactElement)).toContain('Incomplete Workout');
+    const html = render(view as ReactElement);
+    expect(html).toContain('Incomplete Workout');
+    expect(html).toContain('class="card modal modal--warning"');
+    expect(html).toContain('role="alertdialog"');
+    expect(html).toContain('aria-modal="true"');
+    expect(html).toContain('aria-labelledby="incomplete-warning-title"');
+    expect(html).toContain('aria-describedby="incomplete-warning-description"');
+    expect(html).toContain('class="modal__actions"');
+    expect(html).toContain('class="danger"');
 
     const confirmButton = findButtonByLabel(view, 'Finish Anyway');
     const continueButton = findButtonByLabel(view, 'Continue Workout');
@@ -65,7 +79,12 @@ describe('workout modals', () => {
     const onClose = vi.fn();
     const view = ReorderModal({ open: true, onClose });
     expect(view).not.toBeNull();
-    expect(render(view as ReactElement)).toContain('Reorder Exercises');
+    const html = render(view as ReactElement);
+    expect(html).toContain('Reorder Exercises');
+    expect(html).toContain('class="card modal modal--accent"');
+    expect(html).toContain('role="dialog"');
+    expect(html).toContain('aria-modal="true"');
+    expect(html).toContain('aria-labelledby="reorder-modal-title"');
 
     const doneButton = findButtonByLabel(view, 'Done');
     expect(doneButton).toBeDefined();
@@ -79,7 +98,12 @@ describe('workout modals', () => {
     const onClose = vi.fn();
     const view = SupersetModal({ open: true, onClose });
     expect(view).not.toBeNull();
-    expect(render(view as ReactElement)).toContain('Superset Builder');
+    const html = render(view as ReactElement);
+    expect(html).toContain('Superset Builder');
+    expect(html).toContain('class="card modal modal--accent"');
+    expect(html).toContain('role="dialog"');
+    expect(html).toContain('aria-modal="true"');
+    expect(html).toContain('aria-labelledby="superset-modal-title"');
 
     const applyButton = findButtonByLabel(view, 'Apply');
     expect(applyButton).toBeDefined();
