@@ -50,7 +50,10 @@ export const envSchema = z
     GOOGLE_CLIENT_ID: optionalTrimmedStringSchema,
     GOOGLE_CLIENT_SECRET: optionalTrimmedStringSchema,
     GOOGLE_CALLBACK_URL: optionalTrimmedUrlSchema,
-    ML_SERVICE_URL: z.string().url().default('http://localhost:5000'),
+    ML_SERVICE_URL: z.preprocess(
+      trimStringOrUndefined,
+      z.string().url().default('http://localhost:5000'),
+    ),
     CORS_ORIGINS: z.preprocess(
       trimStringOrUndefined,
       z
