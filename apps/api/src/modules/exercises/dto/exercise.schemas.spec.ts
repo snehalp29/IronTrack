@@ -30,6 +30,15 @@ describe('exercise schemas', () => {
     ).toThrow();
   });
 
+  it('accepts boolean values for isGlobal without string coercion', () => {
+    expect(listExercisesQuerySchema.parse({ isGlobal: true }).isGlobal).toBe(
+      true,
+    );
+    expect(listExercisesQuerySchema.parse({ isGlobal: false }).isGlobal).toBe(
+      false,
+    );
+  });
+
   it('validates exercise create payload and keeps omitted update relations undefined', () => {
     const payload = {
       name: 'Back Squat',
