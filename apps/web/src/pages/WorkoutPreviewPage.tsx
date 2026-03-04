@@ -1,7 +1,7 @@
 import { Link, useParams } from 'react-router-dom';
 
 export function WorkoutPreviewPage() {
-  const { templateId } = useParams<{ templateId: string }>();
+  const { templateId } = useParams<'templateId'>();
 
   if (!templateId) {
     return (
