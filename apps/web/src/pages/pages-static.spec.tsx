@@ -18,6 +18,7 @@ import { WorkoutPreviewPage } from './WorkoutPreviewPage';
 
 const useActiveWorkoutStoreMock = vi.hoisted(() => vi.fn());
 const clearMock = vi.hoisted(() => vi.fn());
+const navigateMock = vi.hoisted(() => vi.fn());
 const summaryState = vi.hoisted(() => ({
   value: undefined as
     | {
@@ -45,6 +46,7 @@ vi.mock('react-router-dom', () => ({
     </a>
   ),
   useParams: () => ({ templateId: 'tpl-42' }),
+  useNavigate: () => navigateMock,
 }));
 
 vi.mock('../stores/activeWorkoutStore', () => ({
@@ -58,6 +60,7 @@ function render(element: ReactElement): string {
 describe('static/simple pages', () => {
   beforeEach(() => {
     clearMock.mockReset();
+    navigateMock.mockReset();
     summaryState.value = undefined;
     useActiveWorkoutStoreMock.mockImplementation(
       (
@@ -165,5 +168,6 @@ describe('static/simple pages', () => {
 
     button?.props.onClick?.();
     expect(clearMock).toHaveBeenCalledTimes(1);
+    expect(navigateMock).toHaveBeenCalledWith('/');
   });
 });
