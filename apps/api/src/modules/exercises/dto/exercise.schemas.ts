@@ -1,5 +1,20 @@
 import { z } from 'zod';
 
+const optionalQueryBooleanSchema = z
+  .preprocess((value) => {
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (normalized === 'true') {
+        return true;
+      }
+      if (normalized === 'false') {
+        return false;
+      }
+    }
+    return value;
+  }, z.boolean())
+  .optional();
+
 export const listExercisesQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),
@@ -15,7 +30,7 @@ export const listExercisesQuerySchema = z.object({
     ])
     .optional(),
   search: z.string().optional(),
-  isGlobal: z.coerce.boolean().optional(),
+  isGlobal: optionalQueryBooleanSchema,
 });
 
 const exerciseTypeSchema = z.enum([

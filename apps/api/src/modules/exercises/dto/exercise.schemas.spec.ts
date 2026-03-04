@@ -14,6 +14,22 @@ describe('exercise schemas', () => {
     });
   });
 
+  it('parses boolean query strings for isGlobal explicitly', () => {
+    expect(listExercisesQuerySchema.parse({ isGlobal: 'false' }).isGlobal).toBe(
+      false,
+    );
+    expect(listExercisesQuerySchema.parse({ isGlobal: 'true' }).isGlobal).toBe(
+      true,
+    );
+    expect(
+      listExercisesQuerySchema.parse({ isGlobal: '  FALSE  ' }).isGlobal,
+    ).toBe(false);
+
+    expect(() =>
+      listExercisesQuerySchema.parse({ isGlobal: 'not-a-boolean' }),
+    ).toThrow();
+  });
+
   it('validates exercise create payload and keeps omitted update relations undefined', () => {
     const payload = {
       name: 'Back Squat',
