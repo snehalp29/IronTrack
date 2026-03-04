@@ -19,6 +19,9 @@ import { WorkoutPreviewPage } from './WorkoutPreviewPage';
 const useActiveWorkoutStoreMock = vi.hoisted(() => vi.fn());
 const clearMock = vi.hoisted(() => vi.fn());
 const navigateMock = vi.hoisted(() => vi.fn());
+const routeParamsState = vi.hoisted(() => ({
+  value: { templateId: 'tpl-42' } as { templateId?: string },
+}));
 const summaryState = vi.hoisted(() => ({
   value: undefined as
     | {
@@ -45,7 +48,7 @@ vi.mock('react-router-dom', () => ({
       {children}
     </a>
   ),
-  useParams: () => ({ templateId: 'tpl-42' }),
+  useParams: () => routeParamsState.value,
   useNavigate: () => navigateMock,
 }));
 
@@ -61,6 +64,7 @@ describe('static/simple pages', () => {
   beforeEach(() => {
     clearMock.mockReset();
     navigateMock.mockReset();
+    routeParamsState.value = { templateId: 'tpl-42' };
     summaryState.value = undefined;
     useActiveWorkoutStoreMock.mockImplementation(
       (
@@ -112,6 +116,15 @@ describe('static/simple pages', () => {
     expect(html).toContain('Workout Preview');
     expect(html).toContain('Template ID: tpl-42');
     expect(html).toContain('href="/workout/active"');
+  });
+
+  it('renders a fallback message when templateId is missing', () => {
+    routeParamsState.value = {};
+
+    const html = render(<WorkoutPreviewPage />);
+    expect(html).toContain('Workout Preview');
+    expect(html).toContain('Template not found.');
+    expect(html).toContain('href="/"');
   });
 
   it('renders not-found view', () => {

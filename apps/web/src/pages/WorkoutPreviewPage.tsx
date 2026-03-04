@@ -1,7 +1,19 @@
 import { Link, useParams } from 'react-router-dom';
 
 export function WorkoutPreviewPage() {
-  const { templateId } = useParams();
+  const { templateId } = useParams<{ templateId: string }>();
+
+  if (!templateId) {
+    return (
+      <div className="card">
+        <h1>Workout Preview</h1>
+        <p className="meta">Template not found.</p>
+        <Link to="/" className="button-link">
+          Back to Dashboard
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="card">
