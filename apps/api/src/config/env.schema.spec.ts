@@ -163,7 +163,7 @@ describe('validateEnv', () => {
     expect(isValidCorsOrigin('')).toBe(false);
   });
 
-  it('normalizes whitespace for DATABASE_URL and API_PREFIX', () => {
+  it('normalizes whitespace around DATABASE_URL', () => {
     const parsed = validateEnv(
       createBaseConfig({
         DATABASE_URL: '  postgresql://user:password@db.example.com:5432/mydb  ',
@@ -174,8 +174,44 @@ describe('validateEnv', () => {
     );
 
     expect(parsed.DATABASE_URL).toBe(VALID_DATABASE_URL);
+  });
+
+  it('normalizes API_PREFIX by trimming whitespace and slashes', () => {
+    const parsed = validateEnv(
+      createBaseConfig({
+        DATABASE_URL: '  postgresql://user:password@db.example.com:5432/mydb  ',
+        API_PREFIX: '  /api/v2/  ',
+        JWT_ACCESS_SECRET: '  access-secret-for-testing-only  ',
+        JWT_REFRESH_SECRET: '  refresh-secret-for-testing-only  ',
+      }),
+    );
+
     expect(parsed.API_PREFIX).toBe('api/v2');
+  });
+
+  it('normalizes whitespace around JWT_ACCESS_SECRET', () => {
+    const parsed = validateEnv(
+      createBaseConfig({
+        DATABASE_URL: '  postgresql://user:password@db.example.com:5432/mydb  ',
+        API_PREFIX: '  /api/v2/  ',
+        JWT_ACCESS_SECRET: '  access-secret-for-testing-only  ',
+        JWT_REFRESH_SECRET: '  refresh-secret-for-testing-only  ',
+      }),
+    );
+
     expect(parsed.JWT_ACCESS_SECRET).toBe(VALID_ACCESS_SECRET);
+  });
+
+  it('normalizes whitespace around JWT_REFRESH_SECRET', () => {
+    const parsed = validateEnv(
+      createBaseConfig({
+        DATABASE_URL: '  postgresql://user:password@db.example.com:5432/mydb  ',
+        API_PREFIX: '  /api/v2/  ',
+        JWT_ACCESS_SECRET: '  access-secret-for-testing-only  ',
+        JWT_REFRESH_SECRET: '  refresh-secret-for-testing-only  ',
+      }),
+    );
+
     expect(parsed.JWT_REFRESH_SECRET).toBe(VALID_REFRESH_SECRET);
   });
 
@@ -251,7 +287,7 @@ describe('validateEnv', () => {
     );
   });
 
-  it('accepts duration values with surrounding whitespace and normalizes them', () => {
+  it('accepts JWT_ACCESS_EXPIRY values with surrounding whitespace and normalizes them', () => {
     const parsed = validateEnv(
       createBaseConfig({
         JWT_ACCESS_EXPIRY: ' 15m ',
@@ -260,6 +296,16 @@ describe('validateEnv', () => {
     );
 
     expect(parsed.JWT_ACCESS_EXPIRY).toBe('15m');
+  });
+
+  it('accepts JWT_REFRESH_EXPIRY values with surrounding whitespace and normalizes them', () => {
+    const parsed = validateEnv(
+      createBaseConfig({
+        JWT_ACCESS_EXPIRY: ' 15m ',
+        JWT_REFRESH_EXPIRY: '\t7d\n',
+      }),
+    );
+
     expect(parsed.JWT_REFRESH_EXPIRY).toBe('7d');
   });
 
@@ -299,7 +345,7 @@ describe('validateEnv', () => {
     );
   });
 
-  it('does not add cross-expiry errors when access expiry already fails max bound validation', () => {
+  it('keeps access-expiry max-bound error when access expiry already fails max bound validation', () => {
     const message = getValidationErrorMessage(
       createBaseConfig({
         JWT_ACCESS_EXPIRY: '25h',
@@ -310,12 +356,22 @@ describe('validateEnv', () => {
     expect(message).toContain(
       'JWT_ACCESS_EXPIRY: JWT_ACCESS_EXPIRY must be less than or equal to 24h',
     );
+  });
+
+  it('omits cross-expiry errors when access expiry already fails max bound validation', () => {
+    const message = getValidationErrorMessage(
+      createBaseConfig({
+        JWT_ACCESS_EXPIRY: '25h',
+        JWT_REFRESH_EXPIRY: '1h',
+      }),
+    );
+
     expect(message).not.toContain(
       'JWT_ACCESS_EXPIRY must be shorter than JWT_REFRESH_EXPIRY',
     );
   });
 
-  it('does not add cross-expiry errors when refresh expiry already fails max bound validation', () => {
+  it('keeps refresh-expiry max-bound error when refresh expiry already fails max bound validation', () => {
     const message = getValidationErrorMessage(
       createBaseConfig({
         JWT_ACCESS_EXPIRY: '24h',
@@ -326,6 +382,16 @@ describe('validateEnv', () => {
     expect(message).toContain(
       'JWT_REFRESH_EXPIRY: JWT_REFRESH_EXPIRY must be less than or equal to 365d',
     );
+  });
+
+  it('omits cross-expiry errors when refresh expiry already fails max bound validation', () => {
+    const message = getValidationErrorMessage(
+      createBaseConfig({
+        JWT_ACCESS_EXPIRY: '24h',
+        JWT_REFRESH_EXPIRY: '366d',
+      }),
+    );
+
     expect(message).not.toContain(
       'JWT_ACCESS_EXPIRY must be shorter than JWT_REFRESH_EXPIRY',
     );
@@ -402,7 +468,7 @@ describe('validateEnv', () => {
     );
   });
 
-  it('accepts cross-unit durations when access expiry is shorter', () => {
+  it('accepts cross-unit JWT_ACCESS_EXPIRY values when access expiry is shorter', () => {
     const parsed = validateEnv(
       createBaseConfig({
         JWT_ACCESS_EXPIRY: '59m',
@@ -411,10 +477,20 @@ describe('validateEnv', () => {
     );
 
     expect(parsed.JWT_ACCESS_EXPIRY).toBe('59m');
+  });
+
+  it('accepts cross-unit JWT_REFRESH_EXPIRY values when access expiry is shorter', () => {
+    const parsed = validateEnv(
+      createBaseConfig({
+        JWT_ACCESS_EXPIRY: '59m',
+        JWT_REFRESH_EXPIRY: '1h',
+      }),
+    );
+
     expect(parsed.JWT_REFRESH_EXPIRY).toBe('1h');
   });
 
-  it('accepts JWT_ACCESS_EXPIRY values that are shorter than JWT_REFRESH_EXPIRY', () => {
+  it('accepts JWT_ACCESS_EXPIRY values that are shorter than JWT_REFRESH_EXPIRY (access field)', () => {
     const parsed = validateEnv(
       createBaseConfig({
         JWT_ACCESS_EXPIRY: '1h',
@@ -423,6 +499,16 @@ describe('validateEnv', () => {
     );
 
     expect(parsed.JWT_ACCESS_EXPIRY).toBe('1h');
+  });
+
+  it('accepts JWT_ACCESS_EXPIRY values that are shorter than JWT_REFRESH_EXPIRY (refresh field)', () => {
+    const parsed = validateEnv(
+      createBaseConfig({
+        JWT_ACCESS_EXPIRY: '1h',
+        JWT_REFRESH_EXPIRY: '2h',
+      }),
+    );
+
     expect(parsed.JWT_REFRESH_EXPIRY).toBe('2h');
   });
 
@@ -484,6 +570,16 @@ describe('validateEnv', () => {
         }),
       ),
     ).toThrow(/Invalid environment configuration: API_PORT:/);
+  });
+
+  it('accepts API_PORT at the 65535 boundary', () => {
+    const parsed = validateEnv(
+      createBaseConfig({
+        API_PORT: 65535,
+      }),
+    );
+
+    expect(parsed.API_PORT).toBe(65535);
   });
 
   it('reports missing GOOGLE_CLIENT_ID when Google OAuth config is absent in production', () => {
@@ -589,28 +685,34 @@ describe('validateEnv', () => {
   });
 
   it('rejects partial Google OAuth config in test mode', () => {
-    expect(() =>
-      validateEnv(
-        createBaseConfig({
-          NODE_ENV: 'test',
-          GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
-        }),
-      ),
-    ).toThrow(
-      /Invalid environment configuration: GOOGLE_CLIENT_SECRET: GOOGLE_CLIENT_SECRET must be provided with GOOGLE_CLIENT_ID and GOOGLE_CALLBACK_URL, GOOGLE_CALLBACK_URL: GOOGLE_CALLBACK_URL must be provided with GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET/,
+    const message = getValidationErrorMessage(
+      createBaseConfig({
+        NODE_ENV: 'test',
+        GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
+      }),
+    );
+
+    expect(message).toContain(
+      'GOOGLE_CLIENT_SECRET: GOOGLE_CLIENT_SECRET must be provided with GOOGLE_CLIENT_ID and GOOGLE_CALLBACK_URL',
+    );
+    expect(message).toContain(
+      'GOOGLE_CALLBACK_URL: GOOGLE_CALLBACK_URL must be provided with GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET',
     );
   });
 
   it('rejects partial Google OAuth config outside production', () => {
-    expect(() =>
-      validateEnv(
-        createBaseConfig({
-          NODE_ENV: 'development',
-          GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
-        }),
-      ),
-    ).toThrow(
-      /Invalid environment configuration: GOOGLE_CLIENT_SECRET: GOOGLE_CLIENT_SECRET must be provided with GOOGLE_CLIENT_ID and GOOGLE_CALLBACK_URL, GOOGLE_CALLBACK_URL: GOOGLE_CALLBACK_URL must be provided with GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET/,
+    const message = getValidationErrorMessage(
+      createBaseConfig({
+        NODE_ENV: 'development',
+        GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
+      }),
+    );
+
+    expect(message).toContain(
+      'GOOGLE_CLIENT_SECRET: GOOGLE_CLIENT_SECRET must be provided with GOOGLE_CLIENT_ID and GOOGLE_CALLBACK_URL',
+    );
+    expect(message).toContain(
+      'GOOGLE_CALLBACK_URL: GOOGLE_CALLBACK_URL must be provided with GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET',
     );
   });
 
@@ -628,7 +730,7 @@ describe('validateEnv', () => {
     );
   });
 
-  it('accepts complete Google OAuth config in production', () => {
+  it('accepts GOOGLE_CLIENT_ID in complete Google OAuth config for production', () => {
     const parsed = validateEnv(
       createBaseConfig({
         NODE_ENV: 'production',
@@ -640,7 +742,33 @@ describe('validateEnv', () => {
     );
 
     expect(parsed.GOOGLE_CLIENT_ID).toBe(VALID_GOOGLE_CLIENT_ID);
+  });
+
+  it('accepts GOOGLE_CLIENT_SECRET in complete Google OAuth config for production', () => {
+    const parsed = validateEnv(
+      createBaseConfig({
+        NODE_ENV: 'production',
+        GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
+        GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
+        GOOGLE_CALLBACK_URL: VALID_GOOGLE_CALLBACK_URL,
+        ML_SERVICE_URL: 'https://ml.example.com',
+      }),
+    );
+
     expect(parsed.GOOGLE_CLIENT_SECRET).toBe(VALID_GOOGLE_CLIENT_SECRET);
+  });
+
+  it('accepts GOOGLE_CALLBACK_URL in complete Google OAuth config for production', () => {
+    const parsed = validateEnv(
+      createBaseConfig({
+        NODE_ENV: 'production',
+        GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
+        GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
+        GOOGLE_CALLBACK_URL: VALID_GOOGLE_CALLBACK_URL,
+        ML_SERVICE_URL: 'https://ml.example.com',
+      }),
+    );
+
     expect(parsed.GOOGLE_CALLBACK_URL).toBe(VALID_GOOGLE_CALLBACK_URL);
   });
 
@@ -934,6 +1062,22 @@ describe('validateEnv', () => {
     );
   });
 
+  it('rejects non-http non-https ML_SERVICE_URL values in production', () => {
+    expect(() =>
+      validateEnv(
+        createBaseConfig({
+          NODE_ENV: 'production',
+          GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
+          GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
+          GOOGLE_CALLBACK_URL: VALID_GOOGLE_CALLBACK_URL,
+          ML_SERVICE_URL: 'ftp://ml.internal:5000',
+        }),
+      ),
+    ).toThrow(
+      /Invalid environment configuration: ML_SERVICE_URL: ML_SERVICE_URL must use https when NODE_ENV=production/,
+    );
+  });
+
   it('rejects uppercase-scheme ML_SERVICE_URL values in production', () => {
     expect(() =>
       validateEnv(
@@ -958,6 +1102,38 @@ describe('validateEnv', () => {
           GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
           GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
           GOOGLE_CALLBACK_URL: 'http://api.example.com/auth/google/callback',
+          ML_SERVICE_URL: 'https://ml.internal:5000',
+        }),
+      ),
+    ).toThrow(
+      /Invalid environment configuration: GOOGLE_CALLBACK_URL: GOOGLE_CALLBACK_URL must use https when NODE_ENV=production/,
+    );
+  });
+
+  it('rejects uppercase-scheme GOOGLE_CALLBACK_URL values in production', () => {
+    expect(() =>
+      validateEnv(
+        createBaseConfig({
+          NODE_ENV: 'production',
+          GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
+          GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
+          GOOGLE_CALLBACK_URL: 'HTTP://api.example.com/auth/google/callback',
+          ML_SERVICE_URL: 'https://ml.internal:5000',
+        }),
+      ),
+    ).toThrow(
+      /Invalid environment configuration: GOOGLE_CALLBACK_URL: GOOGLE_CALLBACK_URL must use https when NODE_ENV=production/,
+    );
+  });
+
+  it('rejects non-http non-https GOOGLE_CALLBACK_URL values in production', () => {
+    expect(() =>
+      validateEnv(
+        createBaseConfig({
+          NODE_ENV: 'production',
+          GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
+          GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
+          GOOGLE_CALLBACK_URL: 'ftp://api.example.com/auth/google/callback',
           ML_SERVICE_URL: 'https://ml.internal:5000',
         }),
       ),

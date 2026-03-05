@@ -51,7 +51,7 @@ async function bootstrap() {
   const prismaService = app.get(PrismaService);
   await prismaService.enableShutdownHooks(app);
 
-  const port = configService.get<number>('API_PORT') ?? 3000;
+  const port = configService.getOrThrow<number>('API_PORT');
   await app.listen(port);
 
   logger.log(`API running on http://localhost:${port}/${prefix}`);

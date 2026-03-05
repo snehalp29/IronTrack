@@ -204,7 +204,7 @@ export const envSchema = z
 
     if (
       env.NODE_ENV === 'production' &&
-      new URL(env.ML_SERVICE_URL).protocol === 'http:'
+      new URL(env.ML_SERVICE_URL).protocol !== 'https:'
     ) {
       ctx.addIssue({
         code: 'custom',
@@ -216,7 +216,7 @@ export const envSchema = z
     if (
       env.NODE_ENV === 'production' &&
       env.GOOGLE_CALLBACK_URL &&
-      new URL(env.GOOGLE_CALLBACK_URL).protocol === 'http:'
+      new URL(env.GOOGLE_CALLBACK_URL).protocol !== 'https:'
     ) {
       ctx.addIssue({
         code: 'custom',
