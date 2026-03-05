@@ -131,6 +131,50 @@ describe('validateEnv', () => {
     );
   });
 
+  it('rejects JWT_ACCESS_EXPIRY values greater than 24h', () => {
+    expect(() =>
+      validateEnv(
+        createBaseConfig({
+          JWT_ACCESS_EXPIRY: '25h',
+        }),
+      ),
+    ).toThrow(
+      /Invalid environment configuration: JWT_ACCESS_EXPIRY: JWT_ACCESS_EXPIRY must be less than or equal to 24h/,
+    );
+  });
+
+  it('accepts JWT_ACCESS_EXPIRY at the 24h limit', () => {
+    const parsed = validateEnv(
+      createBaseConfig({
+        JWT_ACCESS_EXPIRY: '24h',
+      }),
+    );
+
+    expect(parsed.JWT_ACCESS_EXPIRY).toBe('24h');
+  });
+
+  it('rejects JWT_REFRESH_EXPIRY values greater than 365d', () => {
+    expect(() =>
+      validateEnv(
+        createBaseConfig({
+          JWT_REFRESH_EXPIRY: '366d',
+        }),
+      ),
+    ).toThrow(
+      /Invalid environment configuration: JWT_REFRESH_EXPIRY: JWT_REFRESH_EXPIRY must be less than or equal to 365d/,
+    );
+  });
+
+  it('accepts JWT_REFRESH_EXPIRY at the 365d limit', () => {
+    const parsed = validateEnv(
+      createBaseConfig({
+        JWT_REFRESH_EXPIRY: '365d',
+      }),
+    );
+
+    expect(parsed.JWT_REFRESH_EXPIRY).toBe('365d');
+  });
+
   it('coerces API_PORT string values into numbers', () => {
     const parsed = validateEnv(
       createBaseConfig({

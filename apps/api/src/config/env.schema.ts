@@ -11,6 +11,8 @@ const CORS_EMPTY_ENTRIES_MESSAGE =
   'CORS_ORIGINS must not contain empty entries';
 const CORS_INVALID_ORIGIN_MESSAGE =
   'CORS_ORIGINS entries must be valid HTTP or HTTPS origins (no path, query, or fragment)';
+const ACCESS_TOKEN_MAX_DURATION_SECONDS = 24 * 60 * 60;
+const REFRESH_TOKEN_MAX_DURATION_SECONDS = 365 * 24 * 60 * 60;
 
 const durationSchema = z
   .string()
@@ -19,6 +21,42 @@ const durationSchema = z
     /^[1-9]\d*[smhd]$/,
     'Expected positive duration format like 15m, 7d, 30s, or 2h',
   );
+
+const durationUnitInSeconds = {
+  s: 1,
+  m: 60,
+  h: 60 * 60,
+  d: 24 * 60 * 60,
+} as const;
+
+type DurationUnit = keyof typeof durationUnitInSeconds;
+
+function durationToSeconds(duration: string): number {
+  const match = duration.match(/^([1-9]\d*)([smhd])$/);
+  if (!match) {
+    return Number.NaN;
+  }
+
+  const amount = Number(match[1]);
+  const unit = match[2] as DurationUnit;
+  return amount * durationUnitInSeconds[unit];
+}
+
+const accessExpirySchema = durationSchema.refine(
+  (duration) =>
+    durationToSeconds(duration) <= ACCESS_TOKEN_MAX_DURATION_SECONDS,
+  {
+    message: 'JWT_ACCESS_EXPIRY must be less than or equal to 24h',
+  },
+);
+
+const refreshExpirySchema = durationSchema.refine(
+  (duration) =>
+    durationToSeconds(duration) <= REFRESH_TOKEN_MAX_DURATION_SECONDS,
+  {
+    message: 'JWT_REFRESH_EXPIRY must be less than or equal to 365d',
+  },
+);
 
 const postgresConnectionSchema = z
   .string()
@@ -84,8 +122,8 @@ export const envSchema = z
     DATABASE_URL: z.preprocess(trimString, databaseUrlSchema),
     JWT_ACCESS_SECRET: jwtSecretSchema,
     JWT_REFRESH_SECRET: jwtSecretSchema,
-    JWT_ACCESS_EXPIRY: durationSchema.default('15m'),
-    JWT_REFRESH_EXPIRY: durationSchema.default('7d'),
+    JWT_ACCESS_EXPIRY: accessExpirySchema.default('15m'),
+    JWT_REFRESH_EXPIRY: refreshExpirySchema.default('7d'),
     GOOGLE_CLIENT_ID: optionalTrimmedStringSchema,
     GOOGLE_CLIENT_SECRET: optionalTrimmedGoogleClientSecretSchema,
     GOOGLE_CALLBACK_URL: optionalTrimmedUrlSchema,
