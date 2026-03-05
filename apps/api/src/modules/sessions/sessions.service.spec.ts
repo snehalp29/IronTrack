@@ -361,7 +361,10 @@ describe('SessionsService', () => {
     expect(result.totalVolume).toBe(1200);
     expect(result.newPrs).toEqual([{ id: 'pr1' }]);
     expect(result.warning).toBe('Workout has incomplete sets');
-    expect(streakMock.onSessionFinished).toHaveBeenCalledWith('user-1');
+    expect(streakMock.onSessionFinished).toHaveBeenCalledWith(
+      'user-1',
+      expect.any(Date),
+    );
   });
 
   it('finishes a session without warning when workout is fully complete', async () => {

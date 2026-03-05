@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 interface ExerciseSetInput {
   id: string;
   exerciseTemplateId: string;
+  sessionId: string | null;
   weight: number | null;
   reps: number | null;
   completedAt: Date | null;
@@ -46,14 +47,17 @@ export class PrDetectionService {
       const record: ExerciseSetInput = {
         id: set.id,
         exerciseTemplateId,
+        sessionId,
         weight: set.weight,
         reps: set.reps,
         completedAt: set.completedAt,
       };
-      grouped.set(exerciseTemplateId, [
-        ...(grouped.get(exerciseTemplateId) ?? []),
-        record,
-      ]);
+      const existingGroup = grouped.get(exerciseTemplateId);
+      if (existingGroup) {
+        existingGroup.push(record);
+      } else {
+        grouped.set(exerciseTemplateId, [record]);
+      }
     }
 
     const createdPrs = [] as Array<{
@@ -91,6 +95,7 @@ export class PrDetectionService {
         record.value,
       ]),
     );
+    const upserts: Array<ReturnType<typeof this.prisma.pRRecord.upsert>> = [];
 
     for (const [exerciseTemplateId, sets] of grouped.entries()) {
       const candidateMap = this.calculateCandidates(sets);
@@ -103,30 +108,32 @@ export class PrDetectionService {
         const existingValue = existingValueByKey.get(prKey);
 
         if (existingValue === undefined || candidate.value > existingValue) {
-          await this.prisma.pRRecord.upsert({
-            where: {
-              userId_exerciseTemplateId_prType: {
+          upserts.push(
+            this.prisma.pRRecord.upsert({
+              where: {
+                userId_exerciseTemplateId_prType: {
+                  userId,
+                  exerciseTemplateId,
+                  prType,
+                },
+              },
+              update: {
+                value: candidate.value,
+                achievedAt: candidate.achievedAt,
+                setId: candidate.setId,
+                sessionId,
+              },
+              create: {
                 userId,
                 exerciseTemplateId,
                 prType,
+                value: candidate.value,
+                achievedAt: candidate.achievedAt,
+                setId: candidate.setId,
+                sessionId,
               },
-            },
-            update: {
-              value: candidate.value,
-              achievedAt: candidate.achievedAt,
-              setId: candidate.setId,
-              sessionId,
-            },
-            create: {
-              userId,
-              exerciseTemplateId,
-              prType,
-              value: candidate.value,
-              achievedAt: candidate.achievedAt,
-              setId: candidate.setId,
-              sessionId,
-            },
-          });
+            }),
+          );
           existingValueByKey.set(prKey, candidate.value);
 
           createdPrs.push({
@@ -136,6 +143,10 @@ export class PrDetectionService {
           });
         }
       }
+    }
+
+    if (upserts.length > 0) {
+      await this.prisma.$transaction(upserts);
     }
 
     return createdPrs;
@@ -158,13 +169,23 @@ export class PrDetectionService {
         weight: true,
         reps: true,
         completedAt: true,
+        sessionExercise: {
+          select: {
+            sessionId: true,
+          },
+        },
       },
       orderBy: { completedAt: 'asc' },
     });
 
     const candidates = this.calculateCandidates(
-      allSets.map((set) => ({ ...set, exerciseTemplateId })),
+      allSets.map((set) => ({
+        ...set,
+        exerciseTemplateId,
+        sessionId: set.sessionExercise.sessionId,
+      })),
     );
+    const nullPrTypes: PrType[] = [];
 
     for (const prType of [
       PrType.MAX_WEIGHT,
@@ -174,6 +195,7 @@ export class PrDetectionService {
     ]) {
       const candidate = candidates.get(prType);
       if (!candidate) {
+        nullPrTypes.push(prType);
         continue;
       }
 
@@ -189,6 +211,7 @@ export class PrDetectionService {
           value: candidate.value,
           achievedAt: candidate.achievedAt,
           setId: candidate.setId,
+          sessionId: candidate.sessionId,
         },
         create: {
           userId,
@@ -197,6 +220,17 @@ export class PrDetectionService {
           value: candidate.value,
           achievedAt: candidate.achievedAt,
           setId: candidate.setId,
+          sessionId: candidate.sessionId,
+        },
+      });
+    }
+
+    if (nullPrTypes.length > 0) {
+      await this.prisma.pRRecord.deleteMany({
+        where: {
+          userId,
+          exerciseTemplateId,
+          prType: { in: nullPrTypes },
         },
       });
     }
@@ -205,7 +239,12 @@ export class PrDetectionService {
   private calculateCandidates(sets: ExerciseSetInput[]) {
     const candidates = new Map<
       PrType,
-      { value: number; achievedAt: Date; setId: string } | null
+      {
+        value: number;
+        achievedAt: Date;
+        setId: string;
+        sessionId: string | null;
+      } | null
     >([
       [PrType.MAX_WEIGHT, null],
       [PrType.MAX_REPS, null],
@@ -214,7 +253,13 @@ export class PrDetectionService {
     ]);
 
     for (const set of sets) {
-      const achievedAt = set.completedAt ?? new Date();
+      // Completed sets without completedAt are a data integrity issue.
+      // Skip these rows instead of inventing an incorrect timestamp.
+      if (!set.completedAt) {
+        continue;
+      }
+
+      const achievedAt = set.completedAt;
       const weight = set.weight ?? 0;
       const reps = set.reps ?? 0;
       const volume = weight * reps;
@@ -226,6 +271,7 @@ export class PrDetectionService {
         weight,
         achievedAt,
         set.id,
+        set.sessionId,
       );
       this.replaceIfHigher(
         candidates,
@@ -233,6 +279,7 @@ export class PrDetectionService {
         reps,
         achievedAt,
         set.id,
+        set.sessionId,
       );
       this.replaceIfHigher(
         candidates,
@@ -240,6 +287,7 @@ export class PrDetectionService {
         volume,
         achievedAt,
         set.id,
+        set.sessionId,
       );
       this.replaceIfHigher(
         candidates,
@@ -247,6 +295,7 @@ export class PrDetectionService {
         oneRm,
         achievedAt,
         set.id,
+        set.sessionId,
       );
     }
 
@@ -256,12 +305,18 @@ export class PrDetectionService {
   private replaceIfHigher(
     candidates: Map<
       PrType,
-      { value: number; achievedAt: Date; setId: string } | null
+      {
+        value: number;
+        achievedAt: Date;
+        setId: string;
+        sessionId: string | null;
+      } | null
     >,
     key: PrType,
     value: number,
     achievedAt: Date,
     setId: string,
+    sessionId: string | null,
   ) {
     if (value <= 0) {
       return;
@@ -269,7 +324,7 @@ export class PrDetectionService {
 
     const current = candidates.get(key);
     if (!current || value > current.value) {
-      candidates.set(key, { value, achievedAt, setId });
+      candidates.set(key, { value, achievedAt, setId, sessionId });
     }
   }
 

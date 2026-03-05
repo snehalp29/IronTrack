@@ -186,7 +186,7 @@ export class SessionsService {
       userId,
       session.id,
     );
-    await this.streakService.onSessionFinished(userId);
+    await this.streakService.onSessionFinished(userId, finishedAt);
     const completion = await this.completionService.calculate(session.id);
 
     return {

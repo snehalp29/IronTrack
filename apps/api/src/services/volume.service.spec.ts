@@ -4,7 +4,7 @@ import { VolumeService } from './volume.service';
 describe('VolumeService', () => {
   const prismaMock = {
     set: { findMany: jest.fn() },
-    workoutSession: { update: jest.fn() },
+    workoutSession: { updateMany: jest.fn() },
   } as unknown as PrismaService;
 
   const service = new VolumeService(prismaMock);
@@ -59,12 +59,31 @@ describe('VolumeService', () => {
     (prismaMock.set.findMany as jest.Mock).mockResolvedValue([
       { weight: 50, reps: 10, durationSeconds: null },
     ]);
-    (prismaMock.workoutSession.update as jest.Mock).mockResolvedValue({});
+    (prismaMock.workoutSession.updateMany as jest.Mock).mockResolvedValue({
+      count: 1,
+    });
 
     await expect(service.cacheSessionVolume('session-1')).resolves.toBe(500);
-    expect(prismaMock.workoutSession.update).toHaveBeenCalledWith({
+    expect(prismaMock.workoutSession.updateMany).toHaveBeenCalledWith({
       where: { id: 'session-1' },
       data: { totalVolume: 500 },
+    });
+  });
+
+  it('returns computed volume even when no session rows are updated', async () => {
+    (prismaMock.set.findMany as jest.Mock).mockResolvedValue([
+      { weight: 40, reps: 8, durationSeconds: null },
+    ]);
+    (prismaMock.workoutSession.updateMany as jest.Mock).mockResolvedValue({
+      count: 0,
+    });
+
+    await expect(service.cacheSessionVolume('missing-session')).resolves.toBe(
+      320,
+    );
+    expect(prismaMock.workoutSession.updateMany).toHaveBeenCalledWith({
+      where: { id: 'missing-session' },
+      data: { totalVolume: 320 },
     });
   });
 });

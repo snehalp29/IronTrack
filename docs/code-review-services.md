@@ -1,0 +1,263 @@
+# Code Review — Domain Services
+
+**Branch:** `phase_one`
+**Date:** 2026-03-05
+**Scope:**
+
+- `apps/api/src/services/completion.service.ts` + `.spec.ts`
+- `apps/api/src/services/pr-detection.service.ts` + `.spec.ts`
+- `apps/api/src/services/streak.service.ts` + `.spec.ts`
+- `apps/api/src/services/superset.service.ts` + `.spec.ts`
+- `apps/api/src/services/volume.service.ts` + `.spec.ts`
+- `apps/api/src/common/utils/volume.ts`
+
+---
+
+## Summary
+
+Five domain services reviewed: `CompletionService` (36 lines), `PrDetectionService` (279 lines), `StreakService` (120 lines), `SupersetService` (61 lines), `VolumeService` (43 lines). Most logic is correct. The two most significant issues are in `PrDetectionService`: sequential upserts without a transaction (P1) and provenance data loss in `recalculateForExercise` (P2).
+
+---
+
+## Findings
+
+### P1 — Must Fix
+
+#### 1. `PrDetectionService.detectForSession` — N sequential upserts without a transaction (`pr-detection.service.ts:106–129`)
+
+```ts
+for (const [exerciseTemplateId, sets] of grouped.entries()) {
+  const candidateMap = this.calculateCandidates(sets);
+  for (const [prType, candidate] of candidateMap.entries()) {
+    if (!candidate) continue;
+    // ...
+    await this.prisma.pRRecord.upsert({ ... }); // ← one round-trip per PR improvement
+    existingValueByKey.set(prKey, candidate.value);
+    createdPrs.push({ ... });
+  }
+}
+```
+
+Each PR improvement is committed individually. If a transient DB error occurs after the third upsert of eight, the first three exercises have updated PRs in the DB and the remaining five do not. The function throws, the caller sees an error, and the PR table is left in a half-updated state with no way to determine which exercises were processed.
+
+There is also no transaction boundary protecting the `existingValueByKey` in-memory map: it is partially advanced, so a retry within the same call stack would operate on stale in-memory state.
+
+**Fix:** Collect all upsert operations into an array and run them in a single `prisma.$transaction([...])`:
+
+```ts
+const upserts: ReturnType<typeof this.prisma.pRRecord.upsert>[] = [];
+
+for (const [exerciseTemplateId, sets] of grouped.entries()) {
+  const candidateMap = this.calculateCandidates(sets);
+  for (const [prType, candidate] of candidateMap.entries()) {
+    if (!candidate) continue;
+    const prKey = this.getPrKey(exerciseTemplateId, prType);
+    const existingValue = existingValueByKey.get(prKey);
+    if (existingValue === undefined || candidate.value > existingValue) {
+      upserts.push(this.prisma.pRRecord.upsert({ ... }));
+      createdPrs.push({ ... });
+    }
+  }
+}
+
+await this.prisma.$transaction(upserts);
+```
+
+---
+
+### P2 — Should Fix
+
+#### 2. `PrDetectionService.recalculateForExercise` — `sessionId` absent from both `update` and `create` payloads (`pr-detection.service.ts:188–200`)
+
+```ts
+// recalculateForExercise (L188–200)
+update: {
+  value: candidate.value,
+  achievedAt: candidate.achievedAt,
+  setId: candidate.setId,
+  // ← sessionId missing
+},
+create: {
+  userId,
+  exerciseTemplateId,
+  prType,
+  value: candidate.value,
+  achievedAt: candidate.achievedAt,
+  setId: candidate.setId,
+  // ← sessionId missing
+},
+
+// detectForSession (L113–128) — correct
+update: { value, achievedAt, setId, sessionId },
+create: { userId, exerciseTemplateId, prType, value, achievedAt, setId, sessionId },
+```
+
+`sessionId` is `String? @db.Uuid` in the `PRRecord` schema, so this does not cause a runtime error. However:
+
+- **`create`**: New PR records created by `recalculateForExercise` have `sessionId: null`, silently losing the provenance link to the session where the PR was achieved.
+- **`update`**: When a recalculation updates an existing record, the `sessionId` retains its old value — potentially pointing to a different session than the one that actually contains the best set.
+
+`detectForSession` consistently populates `sessionId`. The omission in `recalculateForExercise` appears unintentional.
+
+**Fix:** Pass `sessionId` to both `update` and `create` in `recalculateForExercise`. The method already receives `exerciseTemplateId` but not `sessionId` — it would need to be fetched from the best set's session or passed as a parameter. Since `recalculateForExercise` works across all sets (not a single session), the appropriate value is the `sessionId` of the set that produced the winning candidate for each PR type.
+
+---
+
+#### 3. `PrDetectionService.recalculateForExercise` — stale PR records never deleted when all candidates are invalid (`pr-detection.service.ts:169–202`)
+
+```ts
+for (const prType of [PrType.MAX_WEIGHT, PrType.MAX_REPS, PrType.MAX_VOLUME, PrType.MAX_1RM_EST]) {
+  const candidate = candidates.get(prType);
+  if (!candidate) {
+    continue; // ← stale DB record left untouched
+  }
+  await this.prisma.pRRecord.upsert({ ... });
+}
+```
+
+When a user deletes all sets for an exercise, or all remaining sets have `weight: 0` and `reps: 0`, `calculateCandidates` returns all-null candidates. Every PR type hits `continue` and no DB write occurs. Existing `PRRecord` rows for that exercise persist with stale values that no longer reflect the user's data.
+
+**Fix:** Add a `deleteMany` for PR types where `candidate` is null:
+
+```ts
+const nullTypes = [...candidates.entries()]
+  .filter(([, c]) => !c)
+  .map(([type]) => type);
+
+if (nullTypes.length > 0) {
+  await this.prisma.pRRecord.deleteMany({
+    where: { userId, exerciseTemplateId, prType: { in: nullTypes } },
+  });
+}
+```
+
+---
+
+#### 4. `StreakService.onSessionFinished` — streak date derived from server wall clock, not session completion time (`streak.service.ts:18`, `48`)
+
+```ts
+async onSessionFinished(userId: string): Promise<void> {
+  await this.incrementStreak(userId, StreakType.WORKOUT);
+  // ← no session timestamp passed
+}
+
+// inside incrementStreak:
+const localDate = forcedDate ?? this.formatDateInTimezone(new Date(), timezone);
+//                                                         ^^^^^^^^^^^
+//                                                         current server time
+```
+
+`onSessionFinished` takes only a `userId`. `incrementStreak` uses `new Date()` (the server's current time) to determine which calendar day counts for the streak. If the method is called asynchronously after a delay — e.g., from a background job, after an offline sync, or via a retry queue — the streak records the day the job ran rather than the day the session was completed. A session finished at 23:58 could have its streak credit recorded on the following day if the job runs after midnight.
+
+The `checklist` path already has the correct pattern: `onChecklistCompleted(userId, date)` passes the date explicitly, which is passed as `forcedDate` to `incrementStreak`.
+
+**Fix:** Add an optional `completedAt?: Date` parameter to `onSessionFinished` and forward it as `forcedDate` after converting to the user's timezone:
+
+```ts
+async onSessionFinished(userId: string, completedAt?: Date): Promise<void> {
+  await this.incrementStreak(userId, StreakType.WORKOUT, completedAt);
+}
+```
+
+---
+
+#### 5. `VolumeService.cacheSessionVolume` — unhandled Prisma P2025 when session does not exist (`volume.service.ts:36–38`)
+
+```ts
+await this.prisma.workoutSession.update({
+  where: { id: sessionId },
+  data: { totalVolume },
+});
+```
+
+If `sessionId` does not exist in the DB (deleted, wrong ID, or race condition), Prisma throws `PrismaClientKnownRequestError` with code `P2025` ("An operation failed because it depends on one or more records that were required but not found"). The error is uncaught and propagates to the caller as an unhandled exception. If `cacheSessionVolume` is called in a fire-and-forget context, the rejection is silently swallowed; if called in a request handler, it surfaces as a 500.
+
+**Fix:** Either use `updateMany` (which silently no-ops on missing records) or add explicit error handling:
+
+```ts
+await this.prisma.workoutSession.updateMany({
+  where: { id: sessionId },
+  data: { totalVolume },
+});
+```
+
+---
+
+### P3 — Nice to Have
+
+#### 6. `PrDetectionService.calculateCandidates` — O(n²) array allocation in grouped accumulation (`pr-detection.service.ts:53–56`)
+
+```ts
+grouped.set(exerciseTemplateId, [
+  ...(grouped.get(exerciseTemplateId) ?? []),
+  record,
+]);
+```
+
+Spread on every push creates a new array for each set, O(n²) for n sets per exercise. Should initialize with `[]` and push in place:
+
+```ts
+if (!grouped.has(exerciseTemplateId)) {
+  grouped.set(exerciseTemplateId, []);
+}
+grouped.get(exerciseTemplateId)!.push(record);
+```
+
+---
+
+#### 7. `PrDetectionService.calculateCandidates` — `completedAt ?? new Date()` silently uses current time for completed sets with null timestamp (`pr-detection.service.ts:217`)
+
+```ts
+const achievedAt = set.completedAt ?? new Date();
+```
+
+The query that feeds `calculateCandidates` filters `isCompleted: true`. A completed set should always have a `completedAt` value — `null` here indicates a data integrity problem, not a normal case. Silently substituting `new Date()` records the PR as achieved at the current server time, which is incorrect and undetectable in the audit trail.
+
+**Fix:** Log a warning or surface the anomaly rather than silently substituting:
+
+```ts
+if (!set.completedAt) {
+  // Data integrity issue: completed set has no completedAt timestamp.
+  // Log and skip to avoid recording a misleading PR timestamp.
+  continue;
+}
+const achievedAt = set.completedAt;
+```
+
+---
+
+#### 8. `SupersetService.interleave` — non-deterministic ordering when two groups share the same minimum `orderIndex` (`superset.service.ts:46–48`)
+
+```ts
+return [...singleUnits, ...groupUnits]
+  .sort((a, b) => a.orderIndex - b.orderIndex)
+  .flatMap((unit) => unit.items);
+```
+
+If two superset groups both have their first item at the same `orderIndex`, their relative position in the output depends on insertion order in the `Map` and the stability of the runtime's sort algorithm. JavaScript's `Array.prototype.sort` is stable in V8 since Node 11, but the behaviour is undefined by the spec when comparator returns 0. Untested and undocumented.
+
+---
+
+#### 9. `CompletionService.calculate` — `completionPercent` not rounded (`completion.service.ts:26–27`)
+
+```ts
+const completionPercent =
+  totalSets === 0 ? 0 : (completedSets / totalSets) * 100;
+```
+
+Returns a raw floating-point value for non-exact divisions (e.g., 1 completed of 3 total → `33.333...`). If this value is stored in the DB or returned in an API response without rounding, consumers receive inconsistent precision. The spec only tests exact-division cases (0/0, 6/8).
+
+---
+
+#### 10. Missing test coverage across services
+
+| Service              | Missing scenario                                                                                             |
+| -------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `CompletionService`  | `completedSets === totalSets` with `totalSets > 0` (all sets complete, `isIncomplete: false`, non-zero case) |
+| `PrDetectionService` | `existingValue === undefined` branch in `detectForSession` (new PR with no prior record for that type)       |
+| `PrDetectionService` | Multiple exercises in a single session (grouping logic)                                                      |
+| `PrDetectionService` | `detectForSession` with both improving and non-improving PR types in the same session                        |
+| `StreakService`      | `currentStreakDays` exceeds `longestStreakDays` — `longestStreakDays` is updated to the new count            |
+| `StreakService`      | `daysBetween` called with `prev > next` (returns negative — `isConsecutive = false`)                         |
+| `SupersetService`    | Empty input array                                                                                            |
+| `SupersetService`    | Multiple independent superset groups in one call                                                             |

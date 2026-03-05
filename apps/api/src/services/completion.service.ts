@@ -24,7 +24,11 @@ export class CompletionService {
     ]);
 
     const completionPercent =
-      totalSets === 0 ? 0 : (completedSets / totalSets) * 100;
+      totalSets === 0
+        ? 0
+        : Math.round(
+            ((completedSets / totalSets) * 100 + Number.EPSILON) * 100,
+          ) / 100;
 
     return {
       totalSets,

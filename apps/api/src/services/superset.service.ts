@@ -6,19 +6,34 @@ interface SupersetItem<T> {
   item: T;
 }
 
+interface OrderedUnit<T> {
+  orderIndex: number;
+  sequence: number;
+  items: T[];
+}
+
+type NormalizedSupersetItem<T> = SupersetItem<T> & {
+  supersetGroupKey: string | null;
+  sequence: number;
+};
+
 @Injectable()
 export class SupersetService {
   interleave<T>(entries: SupersetItem<T>[]): T[] {
-    const normalizedEntries = entries.map((entry) => ({
-      ...entry,
-      supersetGroupKey: normalizeSupersetGroupKey(entry.supersetGroupKey),
-    }));
+    const normalizedEntries: NormalizedSupersetItem<T>[] = entries.map(
+      (entry, sequence) => ({
+        ...entry,
+        sequence,
+        supersetGroupKey: normalizeSupersetGroupKey(entry.supersetGroupKey),
+      }),
+    );
 
-    const groups = new Map<string, SupersetItem<T>[]>();
-    const singleUnits = normalizedEntries
+    const groups = new Map<string, NormalizedSupersetItem<T>[]>();
+    const singleUnits: OrderedUnit<T>[] = normalizedEntries
       .filter((entry) => entry.supersetGroupKey == null)
       .map((entry) => ({
         orderIndex: entry.orderIndex,
+        sequence: entry.sequence,
         items: [entry.item],
       }));
 
@@ -35,16 +50,23 @@ export class SupersetService {
       groups.set(entry.supersetGroupKey, [entry]);
     }
 
-    const groupUnits = Array.from(groups.values()).map((group) => {
-      const sorted = [...group].sort((a, b) => a.orderIndex - b.orderIndex);
-      return {
-        orderIndex: sorted[0]!.orderIndex,
-        items: sorted.map((entry) => entry.item),
-      };
-    });
+    const groupUnits: OrderedUnit<T>[] = Array.from(groups.values()).map(
+      (group) => {
+        const sorted = [...group].sort((a, b) => a.orderIndex - b.orderIndex);
+        return {
+          orderIndex: sorted[0]!.orderIndex,
+          sequence: Math.min(...sorted.map((entry) => entry.sequence)),
+          items: sorted.map((entry) => entry.item),
+        };
+      },
+    );
 
     return [...singleUnits, ...groupUnits]
-      .sort((a, b) => a.orderIndex - b.orderIndex)
+      .sort((a, b) =>
+        a.orderIndex !== b.orderIndex
+          ? a.orderIndex - b.orderIndex
+          : a.sequence - b.sequence,
+      )
       .flatMap((unit) => unit.items);
   }
 }

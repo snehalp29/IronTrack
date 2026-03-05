@@ -33,7 +33,7 @@ export class VolumeService {
   async cacheSessionVolume(sessionId: string): Promise<number> {
     const totalVolume = await this.calculateSessionVolume(sessionId);
 
-    await this.prisma.workoutSession.update({
+    await this.prisma.workoutSession.updateMany({
       where: { id: sessionId },
       data: { totalVolume },
     });

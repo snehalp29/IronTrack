@@ -1,6 +1,12 @@
 import { SupersetService } from './superset.service';
 
 describe('SupersetService', () => {
+  it('returns an empty list when no entries are provided', () => {
+    const service = new SupersetService();
+
+    expect(service.interleave<string>([])).toEqual([]);
+  });
+
   it('keeps superset groups aligned to overall orderIndex flow', () => {
     const service = new SupersetService();
 
@@ -37,5 +43,19 @@ describe('SupersetService', () => {
     ]);
 
     expect(ordered).toEqual(['single-0', 'A-1', 'A-2']);
+  });
+
+  it('uses first appearance order to break ties when orderIndex is equal', () => {
+    const service = new SupersetService();
+
+    const ordered = service.interleave<string>([
+      { supersetGroupKey: 'B', orderIndex: 1, item: 'B-1' },
+      { supersetGroupKey: null, orderIndex: 1, item: 'single-1' },
+      { supersetGroupKey: 'A', orderIndex: 1, item: 'A-1' },
+      { supersetGroupKey: 'B', orderIndex: 2, item: 'B-2' },
+      { supersetGroupKey: 'A', orderIndex: 2, item: 'A-2' },
+    ]);
+
+    expect(ordered).toEqual(['B-1', 'B-2', 'single-1', 'A-1', 'A-2']);
   });
 });

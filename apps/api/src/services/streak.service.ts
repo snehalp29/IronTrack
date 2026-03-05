@@ -14,8 +14,8 @@ const REQUIRED_CHECKLIST_TYPES = [
 export class StreakService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async onSessionFinished(userId: string): Promise<void> {
-    await this.incrementStreak(userId, StreakType.WORKOUT);
+  async onSessionFinished(userId: string, completedAt?: Date): Promise<void> {
+    await this.incrementStreak(userId, StreakType.WORKOUT, completedAt);
   }
 
   async onChecklistCompleted(userId: string, date: string): Promise<void> {
@@ -36,7 +36,7 @@ export class StreakService {
   private async incrementStreak(
     userId: string,
     streakType: StreakType,
-    forcedDate?: string,
+    forcedDate?: string | Date,
   ): Promise<void> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
@@ -45,7 +45,9 @@ export class StreakService {
 
     const timezone = user.timezone ?? 'UTC';
     const localDate =
-      forcedDate ?? this.formatDateInTimezone(new Date(), timezone);
+      typeof forcedDate === 'string'
+        ? forcedDate
+        : this.formatDateInTimezone(forcedDate ?? new Date(), timezone);
     const dateValue = new Date(`${localDate}T00:00:00.000Z`);
 
     const streak = await this.prisma.userStreak.findUnique({

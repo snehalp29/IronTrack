@@ -46,4 +46,32 @@ describe('CompletionService', () => {
       isIncomplete: true,
     });
   });
+
+  it('returns complete metrics when all sets are completed', async () => {
+    (prismaMock.set.count as jest.Mock)
+      .mockReturnValueOnce('count-total')
+      .mockReturnValueOnce('count-completed');
+    (prismaMock.$transaction as jest.Mock).mockResolvedValue([5, 5]);
+
+    await expect(service.calculate('session-3')).resolves.toEqual({
+      totalSets: 5,
+      completedSets: 5,
+      completionPercent: 100,
+      isIncomplete: false,
+    });
+  });
+
+  it('rounds completion percent to two decimal places for non-even ratios', async () => {
+    (prismaMock.set.count as jest.Mock)
+      .mockReturnValueOnce('count-total')
+      .mockReturnValueOnce('count-completed');
+    (prismaMock.$transaction as jest.Mock).mockResolvedValue([3, 1]);
+
+    await expect(service.calculate('session-4')).resolves.toEqual({
+      totalSets: 3,
+      completedSets: 1,
+      completionPercent: 33.33,
+      isIncomplete: true,
+    });
+  });
 });

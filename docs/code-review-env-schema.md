@@ -2095,12 +2095,13 @@ The non-Error branch (`return \`validateEnv threw a non-Error: ${String(error)}\
 
 **Scope:** `apps/api/src/config/env.schema.ts`, `apps/api/src/config/env.schema.spec.ts`
 
-| #   | Finding                                                             | Status   | Notes                                                                                                                      |
-| --- | ------------------------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------- |
-| 83  | JWT expiry whitespace tests duplicate config across two `it` blocks | ✅ Fixed | `parseWithWhitespacedJwtExpiries()` helper extracted at `spec.ts:38–45`; both tests use it                                 |
-| 84  | Blank Google OAuth tests duplicate config across three `it` blocks  | ✅ Fixed | `parseWithBlankGoogleOAuthFields()` helper extracted at `spec.ts:47–56`; all three tests use it                            |
-| 85  | Only one "two-of-three present" partial OAuth permutation tested    | ✅ Fixed | All three permutations covered: client-id-missing (L832–844), secret-missing (L846–858), callback-missing (L860–872)       |
-| 86  | `formats non-Error throws` test inside `validateEnv` describe       | ✅ Fixed | Moved to dedicated `describe('getValidationErrorMessageFrom', ...)` block at `spec.ts:77–85`; `createBaseConfig()` removed |
+| #   | Finding                                                             | Status   | Notes                                                                                                                                                       |
+| --- | ------------------------------------------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 83  | JWT expiry whitespace tests duplicate config across two `it` blocks | ✅ Fixed | `parseWithWhitespacedJwtExpiries()` helper extracted at `spec.ts:38–45`; both tests use it                                                                  |
+| 84  | Blank Google OAuth tests duplicate config across three `it` blocks  | ✅ Fixed | `parseWithBlankGoogleOAuthFields()` helper extracted at `spec.ts:47–56`; all three tests use it                                                             |
+| 85  | Only one "two-of-three present" partial OAuth permutation tested    | ✅ Fixed | All three permutations covered: client-id-missing (L832–844), secret-missing (L846–858), callback-missing (L860–872)                                        |
+| 86  | `formats non-Error throws` test inside `validateEnv` describe       | ✅ Fixed | Moved to dedicated `describe('getValidationErrorMessageFrom', ...)` block at `spec.ts:77–85`; `createBaseConfig()` removed                                  |
+| 87  | `new URL()` crash in `superRefine` for invalid URL field values     | ✅ Fixed | `getProtocolOrUndefined()` helper at `env.schema.ts:111–117` wraps `new URL()` in try/catch; both production checks gate on `!== undefined`; 140 tests pass |
 
 ---
 
