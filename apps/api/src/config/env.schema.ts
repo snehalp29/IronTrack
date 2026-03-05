@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { normalizeApiPrefix } from '../common/utils/api-prefix';
 import {
   trimString,
   trimStringOrUndefined,
@@ -13,16 +14,17 @@ const CORS_INVALID_ORIGIN_MESSAGE =
   'CORS_ORIGINS entries must be valid HTTP or HTTPS origins (no path, query, or fragment)';
 const ACCESS_TOKEN_MAX_DURATION_SECONDS = 24 * 60 * 60;
 const REFRESH_TOKEN_MAX_DURATION_SECONDS = 365 * 24 * 60 * 60;
-const durationUnitInSeconds = {
+const DURATION_UNITS = ['s', 'm', 'h', 'd'] as const;
+type DurationUnit = (typeof DURATION_UNITS)[number];
+
+const durationUnitInSeconds: Record<DurationUnit, number> = {
   s: 1,
   m: 60,
   h: 60 * 60,
   d: 24 * 60 * 60,
-} as const;
+};
 
-const DURATION_UNITS_CHARACTER_CLASS = Object.keys(durationUnitInSeconds).join(
-  '',
-);
+const DURATION_UNITS_CHARACTER_CLASS = DURATION_UNITS.join('');
 const durationRegex = new RegExp(
   `^[1-9]\\d*[${DURATION_UNITS_CHARACTER_CLASS}]$`,
 );
@@ -38,9 +40,7 @@ const durationSchema = z
     'Expected positive duration format like 15m, 7d, 30s, or 2h',
   );
 
-type DurationUnit = keyof typeof durationUnitInSeconds;
-
-function durationToSeconds(duration: string): number {
+export function durationToSeconds(duration: string): number {
   // Defensive guard: Zod may still execute refine callbacks after regex failure.
   const match = duration.match(durationCaptureRegex);
   if (!match) {
@@ -77,9 +77,9 @@ const postgresConnectionSchema = z
 
 const databaseUrlSchema = z.string().url().pipe(postgresConnectionSchema);
 
-const optionalTrimmedStringSchema = z.preprocess(
+const optionalTrimmedGoogleClientIdSchema = z.preprocess(
   trimStringOrUndefined,
-  z.string().optional(),
+  z.string().min(10).optional(),
 );
 
 const optionalTrimmedUrlSchema = z.preprocess(
@@ -94,7 +94,7 @@ const optionalTrimmedGoogleClientSecretSchema = z.preprocess(
 
 const jwtSecretSchema = z.preprocess(trimString, z.string().min(16));
 
-function isValidCorsOrigin(origin: string): boolean {
+export function isValidCorsOrigin(origin: string): boolean {
   try {
     const url = new URL(origin);
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
@@ -127,14 +127,17 @@ export const envSchema = z
     API_PORT: z.coerce.number().int().positive().default(3000),
     API_PREFIX: z.preprocess(
       trimStringOrUndefined,
-      z.string().default('api/v1'),
+      z
+        .string()
+        .default('api/v1')
+        .transform((value) => normalizeApiPrefix(value)),
     ),
     DATABASE_URL: z.preprocess(trimString, databaseUrlSchema),
     JWT_ACCESS_SECRET: jwtSecretSchema,
     JWT_REFRESH_SECRET: jwtSecretSchema,
     JWT_ACCESS_EXPIRY: accessExpirySchema.default('15m'),
     JWT_REFRESH_EXPIRY: refreshExpirySchema.default('7d'),
-    GOOGLE_CLIENT_ID: optionalTrimmedStringSchema,
+    GOOGLE_CLIENT_ID: optionalTrimmedGoogleClientIdSchema,
     GOOGLE_CLIENT_SECRET: optionalTrimmedGoogleClientSecretSchema,
     GOOGLE_CALLBACK_URL: optionalTrimmedUrlSchema,
     ML_SERVICE_URL: z.preprocess(
@@ -200,7 +203,7 @@ export const envSchema = z
 
     if (
       env.NODE_ENV === 'production' &&
-      env.ML_SERVICE_URL.startsWith('http://')
+      new URL(env.ML_SERVICE_URL).protocol === 'http:'
     ) {
       ctx.addIssue({
         code: 'custom',

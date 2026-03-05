@@ -1,4 +1,8 @@
-import { validateEnv } from './env.schema';
+import {
+  durationToSeconds,
+  isValidCorsOrigin,
+  validateEnv,
+} from './env.schema';
 
 const VALID_DATABASE_URL =
   'postgresql://user:password@db.example.com:5432/mydb';
@@ -21,10 +25,20 @@ function createBaseConfig(
 }
 
 function getValidationErrorMessage(config: Record<string, unknown>): string {
+  return getValidationErrorMessageFrom(config, validateEnv);
+}
+
+function getValidationErrorMessageFrom(
+  config: Record<string, unknown>,
+  validator: (input: Record<string, unknown>) => unknown,
+): string {
   try {
-    validateEnv(config);
+    validator(config);
   } catch (error) {
-    return (error as Error).message;
+    if (error instanceof Error) {
+      return error.message;
+    }
+    return `validateEnv threw a non-Error: ${String(error)}`;
   }
   throw new Error('Expected validateEnv to throw');
 }
@@ -35,9 +49,44 @@ describe('validateEnv', () => {
 
     expect(parsed.NODE_ENV).toBe('development');
     expect(parsed.API_PORT).toBe(3000);
+    expect(parsed.API_PREFIX).toBe('api/v1');
     expect(parsed.JWT_ACCESS_EXPIRY).toBe('15m');
     expect(parsed.JWT_REFRESH_EXPIRY).toBe('7d');
     expect(parsed.ML_SERVICE_URL).toBe('http://localhost:5000');
+    expect(parsed.CORS_ORIGINS).toEqual([
+      'http://localhost:3000',
+      'http://localhost:5173',
+      'http://localhost:8081',
+    ]);
+  });
+
+  it('formats non-Error throws in the test helper', () => {
+    const message = getValidationErrorMessageFrom(createBaseConfig(), () => {
+      throw 'boom';
+    });
+
+    expect(message).toBe('validateEnv threw a non-Error: boom');
+  });
+
+  it('converts duration strings to seconds', () => {
+    expect(durationToSeconds('30s')).toBe(30);
+    expect(durationToSeconds('15m')).toBe(900);
+    expect(durationToSeconds('2h')).toBe(7200);
+    expect(durationToSeconds('3d')).toBe(259200);
+  });
+
+  it('returns NaN for unsupported duration strings', () => {
+    expect(Number.isNaN(durationToSeconds('0m'))).toBe(true);
+    expect(Number.isNaN(durationToSeconds('abc'))).toBe(true);
+  });
+
+  it('validates CORS origins directly', () => {
+    expect(isValidCorsOrigin('https://app.example.com')).toBe(true);
+    expect(isValidCorsOrigin('http://localhost:3000')).toBe(true);
+    expect(isValidCorsOrigin('ftp://app.example.com')).toBe(false);
+    expect(isValidCorsOrigin('https://app.example.com/path')).toBe(false);
+    expect(isValidCorsOrigin('https://app.example.com?x=1')).toBe(false);
+    expect(isValidCorsOrigin('https://app.example.com#hash')).toBe(false);
   });
 
   it('normalizes whitespace for DATABASE_URL and API_PREFIX', () => {
@@ -51,7 +100,7 @@ describe('validateEnv', () => {
     );
 
     expect(parsed.DATABASE_URL).toBe(VALID_DATABASE_URL);
-    expect(parsed.API_PREFIX).toBe('/api/v2/');
+    expect(parsed.API_PREFIX).toBe('api/v2');
     expect(parsed.JWT_ACCESS_SECRET).toBe(VALID_ACCESS_SECRET);
     expect(parsed.JWT_REFRESH_SECRET).toBe(VALID_REFRESH_SECRET);
   });
@@ -120,7 +169,7 @@ describe('validateEnv', () => {
     expect(parsed.JWT_REFRESH_EXPIRY).toBe('7d');
   });
 
-  it('rejects non-positive JWT duration values', () => {
+  it('rejects non-positive JWT_ACCESS_EXPIRY values', () => {
     expect(() =>
       validateEnv(
         createBaseConfig({
@@ -130,7 +179,9 @@ describe('validateEnv', () => {
     ).toThrow(
       /Invalid environment configuration: JWT_ACCESS_EXPIRY: Expected positive duration format like 15m, 7d, 30s, or 2h/,
     );
+  });
 
+  it('rejects non-positive JWT_REFRESH_EXPIRY values', () => {
     expect(() =>
       validateEnv(
         createBaseConfig({
@@ -164,6 +215,22 @@ describe('validateEnv', () => {
 
     expect(message).toContain(
       'JWT_ACCESS_EXPIRY: JWT_ACCESS_EXPIRY must be less than or equal to 24h',
+    );
+    expect(message).not.toContain(
+      'JWT_ACCESS_EXPIRY must be shorter than JWT_REFRESH_EXPIRY',
+    );
+  });
+
+  it('does not add cross-expiry errors when refresh expiry already fails max bound validation', () => {
+    const message = getValidationErrorMessage(
+      createBaseConfig({
+        JWT_ACCESS_EXPIRY: '24h',
+        JWT_REFRESH_EXPIRY: '366d',
+      }),
+    );
+
+    expect(message).toContain(
+      'JWT_REFRESH_EXPIRY: JWT_REFRESH_EXPIRY must be less than or equal to 365d',
     );
     expect(message).not.toContain(
       'JWT_ACCESS_EXPIRY must be shorter than JWT_REFRESH_EXPIRY',
@@ -367,6 +434,29 @@ describe('validateEnv', () => {
     expect(message).not.toContain('ML_SERVICE_URL');
   });
 
+  it('accepts NODE_ENV=test with base config', () => {
+    const parsed = validateEnv(
+      createBaseConfig({
+        NODE_ENV: 'test',
+      }),
+    );
+
+    expect(parsed.NODE_ENV).toBe('test');
+  });
+
+  it('rejects partial Google OAuth config in test mode', () => {
+    expect(() =>
+      validateEnv(
+        createBaseConfig({
+          NODE_ENV: 'test',
+          GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
+        }),
+      ),
+    ).toThrow(
+      /Invalid environment configuration: GOOGLE_CLIENT_SECRET: GOOGLE_CLIENT_SECRET must be provided with GOOGLE_CLIENT_ID and GOOGLE_CALLBACK_URL, GOOGLE_CALLBACK_URL: GOOGLE_CALLBACK_URL must be provided with GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET/,
+    );
+  });
+
   it('rejects partial Google OAuth config outside production', () => {
     expect(() =>
       validateEnv(
@@ -425,7 +515,7 @@ describe('validateEnv', () => {
     expect(parsed.GOOGLE_CALLBACK_URL).toBeUndefined();
   });
 
-  it('rejects non-string Google OAuth values', () => {
+  it('rejects non-string GOOGLE_CLIENT_ID values', () => {
     expect(() =>
       validateEnv(
         createBaseConfig({
@@ -435,7 +525,9 @@ describe('validateEnv', () => {
     ).toThrow(
       /Invalid environment configuration: GOOGLE_CLIENT_ID: Invalid input: expected string, received number/,
     );
+  });
 
+  it('rejects non-string GOOGLE_CALLBACK_URL values', () => {
     expect(() =>
       validateEnv(
         createBaseConfig({
@@ -461,7 +553,47 @@ describe('validateEnv', () => {
     );
   });
 
-  it('enforces GOOGLE_CLIENT_SECRET length boundary at 10 characters', () => {
+  it('rejects short GOOGLE_CLIENT_ID values', () => {
+    expect(() =>
+      validateEnv(
+        createBaseConfig({
+          GOOGLE_CLIENT_ID: 'short',
+          GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
+          GOOGLE_CALLBACK_URL: VALID_GOOGLE_CALLBACK_URL,
+        }),
+      ),
+    ).toThrow(
+      /Invalid environment configuration: GOOGLE_CLIENT_ID: Too small: expected string to have >=10 characters/,
+    );
+  });
+
+  it('rejects 9-character GOOGLE_CLIENT_ID values', () => {
+    expect(() =>
+      validateEnv(
+        createBaseConfig({
+          GOOGLE_CLIENT_ID: '123456789',
+          GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
+          GOOGLE_CALLBACK_URL: VALID_GOOGLE_CALLBACK_URL,
+        }),
+      ),
+    ).toThrow(
+      /Invalid environment configuration: GOOGLE_CLIENT_ID: Too small: expected string to have >=10 characters/,
+    );
+  });
+
+  it('accepts 10-character GOOGLE_CLIENT_ID values', () => {
+    const parsed = validateEnv(
+      createBaseConfig({
+        GOOGLE_CLIENT_ID: '1234567890',
+        GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
+        GOOGLE_CALLBACK_URL: VALID_GOOGLE_CALLBACK_URL,
+      }),
+    );
+
+    expect(parsed.GOOGLE_CLIENT_ID).toBe('1234567890');
+  });
+
+  it('rejects 9-character GOOGLE_CLIENT_SECRET values', () => {
     expect(() =>
       validateEnv(
         createBaseConfig({
@@ -473,7 +605,9 @@ describe('validateEnv', () => {
     ).toThrow(
       /Invalid environment configuration: GOOGLE_CLIENT_SECRET: Too small: expected string to have >=10 characters/,
     );
+  });
 
+  it('accepts 10-character GOOGLE_CLIENT_SECRET values', () => {
     const parsed = validateEnv(
       createBaseConfig({
         GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
@@ -603,6 +737,22 @@ describe('validateEnv', () => {
           GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
           GOOGLE_CALLBACK_URL: VALID_GOOGLE_CALLBACK_URL,
           ML_SERVICE_URL: 'http://ml.internal:5000',
+        }),
+      ),
+    ).toThrow(
+      /Invalid environment configuration: ML_SERVICE_URL: ML_SERVICE_URL must use https when NODE_ENV=production/,
+    );
+  });
+
+  it('rejects uppercase-scheme ML_SERVICE_URL values in production', () => {
+    expect(() =>
+      validateEnv(
+        createBaseConfig({
+          NODE_ENV: 'production',
+          GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
+          GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
+          GOOGLE_CALLBACK_URL: VALID_GOOGLE_CALLBACK_URL,
+          ML_SERVICE_URL: 'HTTP://ml.internal:5000',
         }),
       ),
     ).toThrow(
