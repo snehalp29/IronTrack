@@ -5,27 +5,14 @@ import {
   trimStringOrUndefined,
 } from '../common/validation/string-normalization';
 
-const DEFAULT_CORS_ORIGINS = [
-  'http://localhost:3000',
-  'http://localhost:5173',
-  'http://localhost:8081',
-];
-const DEFAULT_CORS_ORIGINS_RAW = DEFAULT_CORS_ORIGINS.join(',');
+const DEFAULT_CORS_ORIGINS_RAW =
+  'http://localhost:3000,http://localhost:5173,http://localhost:8081';
 const CORS_EMPTY_ENTRIES_MESSAGE =
   'CORS_ORIGINS must not contain empty entries';
 const CORS_INVALID_ORIGIN_MESSAGE =
   'CORS_ORIGINS entries must be valid HTTP or HTTPS origins (no path, query, or fragment)';
 const ACCESS_TOKEN_MAX_DURATION_SECONDS = 24 * 60 * 60;
 const REFRESH_TOKEN_MAX_DURATION_SECONDS = 365 * 24 * 60 * 60;
-
-const durationSchema = z
-  .string()
-  .trim()
-  .regex(
-    /^[1-9]\d*[smhd]$/,
-    'Expected positive duration format like 15m, 7d, 30s, or 2h',
-  );
-
 const durationUnitInSeconds = {
   s: 1,
   m: 60,
@@ -33,11 +20,29 @@ const durationUnitInSeconds = {
   d: 24 * 60 * 60,
 } as const;
 
+const DURATION_UNITS_CHARACTER_CLASS = Object.keys(durationUnitInSeconds).join(
+  '',
+);
+const durationRegex = new RegExp(
+  `^[1-9]\\d*[${DURATION_UNITS_CHARACTER_CLASS}]$`,
+);
+const durationCaptureRegex = new RegExp(
+  `^([1-9]\\d*)([${DURATION_UNITS_CHARACTER_CLASS}])$`,
+);
+
+const durationSchema = z
+  .string()
+  .trim()
+  .regex(
+    durationRegex,
+    'Expected positive duration format like 15m, 7d, 30s, or 2h',
+  );
+
 type DurationUnit = keyof typeof durationUnitInSeconds;
 
 function durationToSeconds(duration: string): number {
   // Defensive guard: Zod may still execute refine callbacks after regex failure.
-  const match = duration.match(/^([1-9]\d*)([smhd])$/);
+  const match = duration.match(durationCaptureRegex);
   if (!match) {
     return Number.NaN;
   }
@@ -144,7 +149,15 @@ export const envSchema = z
   .superRefine((env, ctx) => {
     const accessExpirySeconds = durationToSeconds(env.JWT_ACCESS_EXPIRY);
     const refreshExpirySeconds = durationToSeconds(env.JWT_REFRESH_EXPIRY);
-    if (accessExpirySeconds >= refreshExpirySeconds) {
+    const accessExpiryWithinLimit =
+      accessExpirySeconds <= ACCESS_TOKEN_MAX_DURATION_SECONDS;
+    const refreshExpiryWithinLimit =
+      refreshExpirySeconds <= REFRESH_TOKEN_MAX_DURATION_SECONDS;
+    if (
+      accessExpiryWithinLimit &&
+      refreshExpiryWithinLimit &&
+      accessExpirySeconds >= refreshExpirySeconds
+    ) {
       ctx.addIssue({
         code: 'custom',
         path: ['JWT_ACCESS_EXPIRY'],

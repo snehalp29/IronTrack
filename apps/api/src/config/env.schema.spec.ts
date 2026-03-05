@@ -20,6 +20,15 @@ function createBaseConfig(
   };
 }
 
+function getValidationErrorMessage(config: Record<string, unknown>): string {
+  try {
+    validateEnv(config);
+  } catch (error) {
+    return (error as Error).message;
+  }
+  throw new Error('Expected validateEnv to throw');
+}
+
 describe('validateEnv', () => {
   it('parses valid config and applies defaults', () => {
     const parsed = validateEnv(createBaseConfig());
@@ -142,6 +151,22 @@ describe('validateEnv', () => {
       ),
     ).toThrow(
       /Invalid environment configuration: JWT_ACCESS_EXPIRY: JWT_ACCESS_EXPIRY must be less than or equal to 24h/,
+    );
+  });
+
+  it('does not add cross-expiry errors when access expiry already fails max bound validation', () => {
+    const message = getValidationErrorMessage(
+      createBaseConfig({
+        JWT_ACCESS_EXPIRY: '25h',
+        JWT_REFRESH_EXPIRY: '1h',
+      }),
+    );
+
+    expect(message).toContain(
+      'JWT_ACCESS_EXPIRY: JWT_ACCESS_EXPIRY must be less than or equal to 24h',
+    );
+    expect(message).not.toContain(
+      'JWT_ACCESS_EXPIRY must be shorter than JWT_REFRESH_EXPIRY',
     );
   });
 
@@ -291,43 +316,55 @@ describe('validateEnv', () => {
   });
 
   it('requires complete Google OAuth config in production', () => {
-    expect(() =>
-      validateEnv(
-        createBaseConfig({
-          NODE_ENV: 'production',
-        }),
-      ),
-    ).toThrow(
-      /Invalid environment configuration: GOOGLE_CLIENT_ID: GOOGLE_CLIENT_ID is required when NODE_ENV=production, GOOGLE_CLIENT_SECRET: GOOGLE_CLIENT_SECRET is required when NODE_ENV=production, GOOGLE_CALLBACK_URL: GOOGLE_CALLBACK_URL is required when NODE_ENV=production/,
+    const message = getValidationErrorMessage(
+      createBaseConfig({
+        NODE_ENV: 'production',
+        ML_SERVICE_URL: 'https://ml.example.com',
+      }),
     );
+
+    expect(message).toContain(
+      'GOOGLE_CLIENT_ID: GOOGLE_CLIENT_ID is required when NODE_ENV=production',
+    );
+    expect(message).toContain(
+      'GOOGLE_CLIENT_SECRET: GOOGLE_CLIENT_SECRET is required when NODE_ENV=production',
+    );
+    expect(message).toContain(
+      'GOOGLE_CALLBACK_URL: GOOGLE_CALLBACK_URL is required when NODE_ENV=production',
+    );
+    expect(message).not.toContain('ML_SERVICE_URL');
   });
 
   it('reports only missing Google OAuth fields in production when partially configured', () => {
-    expect(() =>
-      validateEnv(
-        createBaseConfig({
-          NODE_ENV: 'production',
-          GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
-          GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
-        }),
-      ),
-    ).toThrow(
-      /Invalid environment configuration: GOOGLE_CALLBACK_URL: GOOGLE_CALLBACK_URL is required when NODE_ENV=production/,
+    const message = getValidationErrorMessage(
+      createBaseConfig({
+        NODE_ENV: 'production',
+        ML_SERVICE_URL: 'https://ml.example.com',
+        GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
+        GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
+      }),
     );
+
+    expect(message).toContain(
+      'GOOGLE_CALLBACK_URL: GOOGLE_CALLBACK_URL is required when NODE_ENV=production',
+    );
+    expect(message).not.toContain('ML_SERVICE_URL');
   });
 
   it('reports missing client id in production when secret and callback are provided', () => {
-    expect(() =>
-      validateEnv(
-        createBaseConfig({
-          NODE_ENV: 'production',
-          GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
-          GOOGLE_CALLBACK_URL: VALID_GOOGLE_CALLBACK_URL,
-        }),
-      ),
-    ).toThrow(
-      /Invalid environment configuration: GOOGLE_CLIENT_ID: GOOGLE_CLIENT_ID is required when NODE_ENV=production/,
+    const message = getValidationErrorMessage(
+      createBaseConfig({
+        NODE_ENV: 'production',
+        ML_SERVICE_URL: 'https://ml.example.com',
+        GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
+        GOOGLE_CALLBACK_URL: VALID_GOOGLE_CALLBACK_URL,
+      }),
     );
+
+    expect(message).toContain(
+      'GOOGLE_CLIENT_ID: GOOGLE_CLIENT_ID is required when NODE_ENV=production',
+    );
+    expect(message).not.toContain('ML_SERVICE_URL');
   });
 
   it('rejects partial Google OAuth config outside production', () => {
