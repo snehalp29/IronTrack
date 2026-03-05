@@ -7,7 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { AuthProvider, User } from '@prisma/client';
 import { compare, hash } from 'bcryptjs';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { durationToSeconds } from '../../config/env.schema';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -192,8 +192,12 @@ export class AuthService {
   ): Promise<AuthTokens> {
     const payload = { sub: userId, email };
     const accessToken = await this.jwtService.signAsync(payload);
+    const refreshPayload = {
+      ...payload,
+      jti: randomUUID(),
+    };
 
-    const refreshToken = await this.jwtService.signAsync(payload, {
+    const refreshToken = await this.jwtService.signAsync(refreshPayload, {
       secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
       expiresIn:
         this.parseDurationToMs(

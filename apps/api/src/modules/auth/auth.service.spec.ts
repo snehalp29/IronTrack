@@ -601,6 +601,33 @@ describe('AuthService', () => {
     }
   });
 
+  it('issues a distinct refresh token on rotation even within the same second', async () => {
+    const registered = await authService.register({
+      email: 'rotation@example.com',
+      password: 'Str0ngPassword!',
+      name: 'Rotation',
+    });
+    const refreshPayload = jwtService.verify<{ iat: number }>(
+      registered.refreshToken,
+      {
+        secret: 'refresh-secret-1234567890',
+      },
+    );
+    const dateNowSpy = jest
+      .spyOn(Date, 'now')
+      .mockReturnValue(refreshPayload.iat * 1000);
+
+    try {
+      const rotated = await authService.refresh({
+        refreshToken: registered.refreshToken,
+      });
+
+      expect(rotated.refreshToken).not.toBe(registered.refreshToken);
+    } finally {
+      dateNowSpy.mockRestore();
+    }
+  });
+
   it('rejects refresh token for soft-deleted users', async () => {
     const userId = randomUUID();
     users.push({

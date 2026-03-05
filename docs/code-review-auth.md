@@ -107,3 +107,24 @@ Schema tests currently focus on `registerSchema` trimming behavior. Boundary tes
 
 - Overall structure is solid: token rotation (`refresh` revocation), JWT guard/public decorator pattern, and Google claim verification are all implemented with good baseline rigor.
 - Main risk to address first is auth-state consistency for deleted accounts and external dependency timeout hardening in Google verification.
+
+---
+
+## Follow-up Pass (2026-03-05)
+
+### P1 — Must Fix
+
+#### 6) Refresh-token rotation can re-issue an identical token when calls happen in the same second
+
+**Files/lines:**
+
+- `apps/api/src/modules/auth/auth.service.ts:189-202` (`issueTokens`)
+
+Refresh tokens are signed from a deterministic payload (`sub`, `email`) with fixed options. JWT signing includes second-resolution `iat` by default, so issuing a new refresh token within the same second can produce the same token string as the old one.
+
+That weakens rotation guarantees because a “rotated” token may be indistinguishable from the prior token in storage (same hash), making single-use semantics brittle.
+
+**Recommended fix:**
+
+- Add a per-issuance unique claim for refresh tokens (for example `jti`/nonce via `randomUUID()`).
+- Add a unit test with frozen time to assert that consecutive refresh token issues are distinct.
