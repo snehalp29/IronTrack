@@ -28,7 +28,7 @@ export class StreakService {
       },
     });
 
-    if (completedCount === REQUIRED_CHECKLIST_TYPES.length) {
+    if (completedCount >= REQUIRED_CHECKLIST_TYPES.length) {
       await this.incrementStreak(userId, StreakType.CHECKLIST, date);
     }
   }
@@ -100,14 +100,23 @@ export class StreakService {
   }
 
   private formatDateInTimezone(date: Date, timezone: string): string {
-    const formatter = new Intl.DateTimeFormat('en-CA', {
-      timeZone: timezone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    });
-
-    return formatter.format(date);
+    try {
+      const formatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: timezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      });
+      return formatter.format(date);
+    } catch {
+      const fallbackFormatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'UTC',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      });
+      return fallbackFormatter.format(date);
+    }
   }
 
   private formatStoredDate(date: Date): string {

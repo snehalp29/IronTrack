@@ -82,12 +82,13 @@ export class AuthService {
   }
 
   async refresh(input: RefreshDto): Promise<AuthTokens> {
+    const now = new Date();
     const refreshTokenHash = this.hashToken(input.refreshToken);
     const stored = await this.prisma.refreshToken.findFirst({
       where: {
         tokenHash: refreshTokenHash,
         revokedAt: null,
-        expiresAt: { gt: new Date() },
+        expiresAt: { gt: now },
       },
       include: { user: true },
     });
@@ -99,10 +100,21 @@ export class AuthService {
       });
     }
 
-    await this.prisma.refreshToken.update({
-      where: { id: stored.id },
-      data: { revokedAt: new Date() },
+    const consumeResult = await this.prisma.refreshToken.updateMany({
+      where: {
+        id: stored.id,
+        revokedAt: null,
+        expiresAt: { gt: now },
+      },
+      data: { revokedAt: now },
     });
+
+    if (consumeResult.count !== 1) {
+      throw new UnauthorizedException({
+        code: 'INVALID_REFRESH_TOKEN',
+        message: 'Refresh token is invalid or expired',
+      });
+    }
 
     return this.issueTokens(stored.user.id, stored.user.email);
   }

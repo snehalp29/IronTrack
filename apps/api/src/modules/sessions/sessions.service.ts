@@ -164,6 +164,10 @@ export class SessionsService {
       this.throwSessionNotFound();
     }
 
+    if (existing.status !== 'IN_PROGRESS') {
+      this.throwSessionAlreadyFinished();
+    }
+
     const finishedAt = new Date();
     const durationSeconds = Math.max(
       1,
@@ -362,7 +366,7 @@ export class SessionsService {
   ) {
     await this.assertSessionOwnership(userId, sessionId);
 
-    await this.prisma.$transaction(
+    const results = await this.prisma.$transaction(
       input.items.map((item) =>
         this.prisma.sessionExercise.updateMany({
           where: {
@@ -376,6 +380,10 @@ export class SessionsService {
         }),
       ),
     );
+
+    if (results.some((result) => result.count === 0)) {
+      this.throwSessionExerciseNotFound();
+    }
 
     return { success: true };
   }
@@ -520,11 +528,13 @@ export class SessionsService {
 
     if (input.isCompleted !== undefined) {
       updateData.isCompleted = input.isCompleted;
-      updateData.completedAt = input.isCompleted
-        ? input.completedAt
-          ? new Date(input.completedAt)
-          : new Date()
-        : null;
+      if (!input.isCompleted) {
+        updateData.completedAt = null;
+      } else if (input.completedAt) {
+        updateData.completedAt = new Date(input.completedAt);
+      } else {
+        updateData.completedAt = existing.completedAt ?? new Date();
+      }
     } else if (input.completedAt !== undefined) {
       updateData.isCompleted = true;
       updateData.completedAt = new Date(input.completedAt);
@@ -624,7 +634,11 @@ export class SessionsService {
       where: { id: setId },
       data: {
         isCompleted: input.isCompleted,
-        completedAt: input.isCompleted ? new Date() : null,
+        completedAt: input.isCompleted
+          ? existing.isCompleted
+            ? (existing.completedAt ?? new Date())
+            : new Date()
+          : null,
       },
     });
 
@@ -728,6 +742,13 @@ export class SessionsService {
     throw new ConflictException({
       code: 'SESSION_EXERCISE_VERSION_CONFLICT',
       message: 'Session exercise changed elsewhere',
+    });
+  }
+
+  private throwSessionAlreadyFinished(): never {
+    throw new ConflictException({
+      code: 'SESSION_ALREADY_FINISHED',
+      message: 'Session is already finished',
     });
   }
 

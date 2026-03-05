@@ -340,6 +340,7 @@ describe('SessionsService', () => {
       id: 'session-1',
       userId: 'user-1',
       startedAt: new Date(Date.now() - 2000),
+      status: 'IN_PROGRESS',
       endedReason: null,
     });
     (prismaMock.workoutSession.update as jest.Mock).mockResolvedValue({
@@ -375,6 +376,7 @@ describe('SessionsService', () => {
       id: 'session-1',
       userId: 'user-1',
       startedAt: new Date(Date.now() - 2000),
+      status: 'IN_PROGRESS',
       endedReason: 'USER_ENDED',
     });
     (prismaMock.workoutSession.update as jest.Mock).mockResolvedValue({
@@ -401,6 +403,22 @@ describe('SessionsService', () => {
     await expect(
       service.finishSession('user-1', 'missing'),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('throws conflict when finishing an already-finished session', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.workoutSession.findFirst as jest.Mock).mockResolvedValue({
+      id: 'session-1',
+      userId: 'user-1',
+      startedAt: new Date(Date.now() - 2000),
+      status: 'FINISHED',
+      endedReason: 'USER_ENDED',
+    });
+
+    await expect(
+      service.finishSession('user-1', 'session-1'),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(prismaMock.workoutSession.update).not.toHaveBeenCalled();
   });
 
   it('lists sessions with pagination and optional date filters', async () => {
@@ -684,6 +702,25 @@ describe('SessionsService', () => {
     });
   });
 
+  it('throws when reorder payload includes missing session exercises', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.workoutSession.findFirst as jest.Mock).mockResolvedValue({
+      id: 'session-1',
+    });
+    (prismaMock.sessionExercise.updateMany as jest.Mock)
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 });
+
+    await expect(
+      service.reorderSessionExercises('user-1', 'session-1', {
+        items: [
+          { id: 'se1', orderIndex: 1 },
+          { id: 'missing', orderIndex: 2 },
+        ],
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
   it('swaps session exercise template', async () => {
     const { service, prismaMock } = createService();
     (prismaMock.sessionExercise.findFirst as jest.Mock).mockResolvedValue({
@@ -851,6 +888,8 @@ describe('SessionsService', () => {
       createService();
     (prismaMock.set.findFirst as jest.Mock).mockResolvedValue({
       id: 'set-1',
+      isCompleted: true,
+      completedAt: new Date('2024-01-01T10:00:00.000Z'),
       sessionExercise: {
         exerciseTemplateId: 'exercise-1',
         session: {
@@ -1069,6 +1108,124 @@ describe('SessionsService', () => {
     const { service, prismaMock } = createService();
     (prismaMock.set.findFirst as jest.Mock).mockResolvedValue({
       id: 'set-1',
+      sessionExercise: {
+        exerciseTemplateId: 'exercise-1',
+      },
+    });
+    (prismaMock.set.update as jest.Mock).mockResolvedValue({
+      id: 'set-1',
+      isCompleted: true,
+    });
+
+    await service.toggleSetCompletion('user-1', 'se1', 'set-1', {
+      isCompleted: true,
+    });
+
+    expect(prismaMock.set.update).toHaveBeenCalledWith({
+      where: { id: 'set-1' },
+      data: {
+        isCompleted: true,
+        completedAt: expect.any(Date),
+      },
+    });
+  });
+
+  it('preserves existing completedAt when updating a completed set without a new timestamp', async () => {
+    const { service, prismaMock } = createService();
+    const existingCompletedAt = new Date('2024-01-01T10:00:00.000Z');
+    (prismaMock.set.findFirst as jest.Mock).mockResolvedValue({
+      id: 'set-1',
+      isCompleted: true,
+      completedAt: existingCompletedAt,
+      sessionExercise: {
+        exerciseTemplateId: 'exercise-1',
+        session: {
+          id: 'session-1',
+          status: 'IN_PROGRESS',
+        },
+      },
+    });
+    (prismaMock.set.update as jest.Mock).mockResolvedValue({ id: 'set-1' });
+
+    await service.updateSet('user-1', 'se1', 'set-1', {
+      isCompleted: true,
+    });
+
+    expect(prismaMock.set.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          isCompleted: true,
+          completedAt: existingCompletedAt,
+        }),
+      }),
+    );
+  });
+
+  it('generates completedAt when updating a completed set that is missing timestamp', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.set.findFirst as jest.Mock).mockResolvedValue({
+      id: 'set-1',
+      isCompleted: true,
+      completedAt: null,
+      sessionExercise: {
+        exerciseTemplateId: 'exercise-1',
+        session: {
+          id: 'session-1',
+          status: 'IN_PROGRESS',
+        },
+      },
+    });
+    (prismaMock.set.update as jest.Mock).mockResolvedValue({ id: 'set-1' });
+
+    await service.updateSet('user-1', 'se1', 'set-1', {
+      isCompleted: true,
+    });
+
+    expect(prismaMock.set.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          isCompleted: true,
+          completedAt: expect.any(Date),
+        }),
+      }),
+    );
+  });
+
+  it('preserves completedAt when toggling an already completed set to true', async () => {
+    const { service, prismaMock } = createService();
+    const existingCompletedAt = new Date('2024-01-01T10:00:00.000Z');
+    (prismaMock.set.findFirst as jest.Mock).mockResolvedValue({
+      id: 'set-1',
+      isCompleted: true,
+      completedAt: existingCompletedAt,
+      sessionExercise: {
+        exerciseTemplateId: 'exercise-1',
+      },
+    });
+    (prismaMock.set.update as jest.Mock).mockResolvedValue({
+      id: 'set-1',
+      isCompleted: true,
+    });
+
+    await service.toggleSetCompletion('user-1', 'se1', 'set-1', {
+      isCompleted: true,
+    });
+
+    expect(prismaMock.set.update).toHaveBeenCalledWith({
+      where: { id: 'set-1' },
+      data: {
+        isCompleted: true,
+        completedAt: existingCompletedAt,
+      },
+    });
+  });
+
+  it('generates completedAt when toggling a completed set that has null timestamp', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.set.findFirst as jest.Mock).mockResolvedValue({
+      id: 'set-1',
+      isCompleted: true,
+      completedAt: null,
       sessionExercise: {
         exerciseTemplateId: 'exercise-1',
       },

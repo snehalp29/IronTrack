@@ -261,3 +261,170 @@ Returns a raw floating-point value for non-exact divisions (e.g., 1 completed of
 | `StreakService`      | `daysBetween` called with `prev > next` (returns negative — `isConsecutive = false`)                         |
 | `SupersetService`    | Empty input array                                                                                            |
 | `SupersetService`    | Multiple independent superset groups in one call                                                             |
+
+---
+
+## Verification Pass 1 — 2026-03-05
+
+496 tests pass across 55 suites (`pnpm test:api`).
+
+| #   | Finding                                                                        | Status   | Notes                                                                                                                                                                          |
+| --- | ------------------------------------------------------------------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | `detectForSession` — sequential upserts without a transaction                  | ✅ Fixed | Upserts collected into `upserts[]` array; `this.prisma.$transaction(upserts)` called once at `pr-detection.service.ts:148–150`                                                 |
+| 2   | `recalculateForExercise` — `sessionId` missing from update/create              | ✅ Fixed | `ExerciseSetInput` gains `sessionId: string \| null`; query selects `sessionExercise.sessionId`; both `update` and `create` payloads include `candidate.sessionId` (L214, 223) |
+| 3   | `recalculateForExercise` — stale PRs not deleted when all candidates are null  | ✅ Fixed | `nullPrTypes[]` collected; `deleteMany` called when non-empty at `pr-detection.service.ts:228–236`                                                                             |
+| 4   | `onSessionFinished` — streak date from wall clock, not session timestamp       | ✅ Fixed | `onSessionFinished(userId, completedAt?: Date)`; `incrementStreak` accepts `string \| Date`; Date inputs formatted via user timezone (L48–50)                                  |
+| 5   | `cacheSessionVolume` — unhandled Prisma P2025 on missing session               | ✅ Fixed | Changed `update` → `updateMany` at `volume.service.ts:36`; no-ops silently on missing session                                                                                  |
+| 6   | O(n²) array spread in grouped accumulation                                     | ✅ Fixed | Now uses `existingGroup.push(record)` pattern at `pr-detection.service.ts:55–60`                                                                                               |
+| 7   | `completedAt ?? new Date()` silently masks data integrity issue                | ✅ Fixed | Sets with null `completedAt` are skipped with an explanatory comment at `pr-detection.service.ts:256–260`                                                                      |
+| 8   | Non-deterministic ordering when two groups share the same minimum `orderIndex` | ✅ Fixed | `sequence` field tracks original insertion index; sort uses `sequence` as tiebreaker at `superset.service.ts:65–69`                                                            |
+| 9   | `completionPercent` not rounded                                                | ✅ Fixed | Rounded to 2 decimal places using epsilon-guard pattern at `completion.service.ts:27–31`                                                                                       |
+| 10  | Missing test coverage across services                                          | ✅ Fixed | New tests added in all five spec files; 496 total tests pass                                                                                                                   |
+
+---
+
+## New Findings — 2026-03-05 (Pass 1)
+
+### P1 — Must Fix
+
+#### 11. `PrDetectionService.recalculateForExercise` — sequential upserts and `deleteMany` not wrapped in a transaction (`pr-detection.service.ts:202–236`)
+
+```ts
+for (const prType of [...]) {
+  const candidate = candidates.get(prType);
+  if (!candidate) {
+    nullPrTypes.push(prType);
+    continue;
+  }
+  await this.prisma.pRRecord.upsert({ ... }); // ← awaited individually in loop
+}
+
+if (nullPrTypes.length > 0) {
+  await this.prisma.pRRecord.deleteMany({ ... }); // ← separate await
+}
+```
+
+The fix for finding #1 wrapped `detectForSession` upserts in a `$transaction`, but `recalculateForExercise` still awaits each upsert individually inside the loop. The same partial-failure risk applies: a transient error after the second upsert leaves some PR types updated and others not. Worse, the `deleteMany` for null PR types runs as a separate operation after the loop — if any upsert throws, the `deleteMany` never executes, leaving stale records that finding #3 was meant to eliminate.
+
+**Fix:** Collect upserts into an array and run them together with `deleteMany` in a single transaction:
+
+```ts
+const upsertOps: Array<ReturnType<typeof this.prisma.pRRecord.upsert>> = [];
+
+for (const prType of [...]) {
+  const candidate = candidates.get(prType);
+  if (!candidate) {
+    nullPrTypes.push(prType);
+    continue;
+  }
+  upsertOps.push(this.prisma.pRRecord.upsert({ ... }));
+}
+
+await this.prisma.$transaction([
+  ...upsertOps,
+  ...(nullPrTypes.length > 0
+    ? [this.prisma.pRRecord.deleteMany({ where: { userId, exerciseTemplateId, prType: { in: nullPrTypes } } })]
+    : []),
+]);
+```
+
+---
+
+## Verification Pass 2 — 2026-03-05
+
+| #   | Finding                                                                           | Status       | Notes                                                                                                                                                                                                                                                                            |
+| --- | --------------------------------------------------------------------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 11  | `recalculateForExercise` — sequential upserts + `deleteMany` not in a transaction | ❌ Not Fixed | `pr-detection.service.ts:202–226` still awaits each `pRRecord.upsert` individually inside the loop; `deleteMany` at L229–236 remains a separate `await`. Spec tests for `recalculateForExercise` also lack a `$transaction` mock, confirming the implementation has not changed. |
+
+---
+
+## New Findings — 2026-03-05 (Pass 2)
+
+### P1 — Must Fix
+
+#### 11. _(Carried from Pass 1 — still open)_ `PrDetectionService.recalculateForExercise` — sequential upserts and `deleteMany` not wrapped in a transaction
+
+See finding #11 above.
+
+---
+
+### P2 — Should Fix
+
+#### 12. `StreakService.formatDateInTimezone` — invalid timezone string throws uncaught `RangeError` (`streak.service.ts:103–111`)
+
+```ts
+const timezone = user.timezone ?? 'UTC';
+// ...
+private formatDateInTimezone(date: Date, timezone: string): string {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone, // ← throws RangeError for invalid strings
+    // ...
+  });
+  return formatter.format(date);
+}
+```
+
+`user.timezone ?? 'UTC'` guards against `null`/`undefined` but not against invalid timezone strings (e.g., `'garbage'`, `'EST5EDT'`, values stored via a legacy or unvalidated code path). `new Intl.DateTimeFormat` with an unrecognised `timeZone` throws `RangeError: Invalid time zone specified`. The error propagates out of `incrementStreak` as an unhandled exception, causing the streak update to fail entirely for that user.
+
+**Fix:** Fall back to `'UTC'` on `RangeError`:
+
+```ts
+private formatDateInTimezone(date: Date, timezone: string): string {
+  let tz = timezone;
+  try {
+    new Intl.DateTimeFormat('en-CA', { timeZone: tz });
+  } catch {
+    tz = 'UTC';
+  }
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
+```
+
+Alternatively, validate timezone at write time (user creation/update DTO) so invalid values never reach the DB.
+
+---
+
+#### 13. `recalculateForExercise` spec tests incompatible with `$transaction` fix (`pr-detection.service.spec.ts:385–584`)
+
+```ts
+// recalculates and upserts current PRs for one exercise (L385–483)
+const prismaMock = {
+  set: { findMany: jest.fn(...) },
+  pRRecord: {
+    upsert: jest.fn(async () => undefined),     // ← direct mock
+    deleteMany: jest.fn(async () => ({ count: 0 })),
+    // ← no $transaction mock
+  },
+} as unknown as PrismaService;
+```
+
+All three `recalculateForExercise` tests mock `pRRecord.upsert` and `pRRecord.deleteMany` directly but do not include a `$transaction` mock. When finding #11 is fixed (operations collected into an array and dispatched via `$transaction`), calling `this.prisma.$transaction(...)` will throw `TypeError: this.prisma.$transaction is not a function`, failing every test in this block.
+
+The existing assertions also target individual `upsert` calls (`expect(prismaMock.pRRecord.upsert).toHaveBeenCalledWith(...)`). After the fix, assertions should instead verify that `$transaction` receives an array of the expected operations.
+
+**Fix:** Add `$transaction: jest.fn(async (ops) => Promise.all(ops))` to each `recalculateForExercise` test mock and update assertions to match the transactional call pattern used in the `detectForSession` tests.
+
+---
+
+### P3 — Nice to Have
+
+#### 14. `StreakService.onChecklistCompleted` — exact equality `=== 4` silently misses when duplicate checklist entries exist (`streak.service.ts:31`)
+
+```ts
+if (completedCount === REQUIRED_CHECKLIST_TYPES.length) {
+```
+
+If the `checklistItem` table lacks a `@@unique([userId, date, type])` constraint, a user can have two completed `WORKOUT` items on the same date. The count would then be 5, and `=== 4` would not fire, silently preventing the streak from incrementing even though all four required types are complete.
+
+**Fix:** Use `>=`:
+
+```ts
+if (completedCount >= REQUIRED_CHECKLIST_TYPES.length) {
+```
+
+This is a no-op when the schema enforces uniqueness but becomes correct if the constraint is ever relaxed.

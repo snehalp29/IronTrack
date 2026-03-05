@@ -261,4 +261,17 @@ describe('WorkoutTemplatesService', () => {
     });
     expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
   });
+
+  it('throws when reorder payload contains inaccessible templates', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.workoutTemplate.updateMany as jest.Mock).mockResolvedValueOnce({
+      count: 0,
+    });
+
+    await expect(
+      service.reorder('user-1', {
+        items: [{ id: 'template-1', orderIndex: 10 }],
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
 });

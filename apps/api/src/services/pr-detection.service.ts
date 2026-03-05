@@ -185,6 +185,10 @@ export class PrDetectionService {
         sessionId: set.sessionExercise.sessionId,
       })),
     );
+    const operations: Array<
+      | ReturnType<typeof this.prisma.pRRecord.upsert>
+      | ReturnType<typeof this.prisma.pRRecord.deleteMany>
+    > = [];
     const nullPrTypes: PrType[] = [];
 
     for (const prType of [
@@ -199,41 +203,47 @@ export class PrDetectionService {
         continue;
       }
 
-      await this.prisma.pRRecord.upsert({
-        where: {
-          userId_exerciseTemplateId_prType: {
+      operations.push(
+        this.prisma.pRRecord.upsert({
+          where: {
+            userId_exerciseTemplateId_prType: {
+              userId,
+              exerciseTemplateId,
+              prType,
+            },
+          },
+          update: {
+            value: candidate.value,
+            achievedAt: candidate.achievedAt,
+            setId: candidate.setId,
+            sessionId: candidate.sessionId,
+          },
+          create: {
             userId,
             exerciseTemplateId,
             prType,
+            value: candidate.value,
+            achievedAt: candidate.achievedAt,
+            setId: candidate.setId,
+            sessionId: candidate.sessionId,
           },
-        },
-        update: {
-          value: candidate.value,
-          achievedAt: candidate.achievedAt,
-          setId: candidate.setId,
-          sessionId: candidate.sessionId,
-        },
-        create: {
-          userId,
-          exerciseTemplateId,
-          prType,
-          value: candidate.value,
-          achievedAt: candidate.achievedAt,
-          setId: candidate.setId,
-          sessionId: candidate.sessionId,
-        },
-      });
+        }),
+      );
     }
 
     if (nullPrTypes.length > 0) {
-      await this.prisma.pRRecord.deleteMany({
-        where: {
-          userId,
-          exerciseTemplateId,
-          prType: { in: nullPrTypes },
-        },
-      });
+      operations.push(
+        this.prisma.pRRecord.deleteMany({
+          where: {
+            userId,
+            exerciseTemplateId,
+            prType: { in: nullPrTypes },
+          },
+        }),
+      );
     }
+
+    await this.prisma.$transaction(operations);
   }
 
   private calculateCandidates(sets: ExerciseSetInput[]) {

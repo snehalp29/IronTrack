@@ -71,7 +71,12 @@ describe('AuthService', () => {
     data: { revokedAt: Date };
   };
   type RefreshTokenUpdateManyArgs = {
-    where: { tokenHash: string; revokedAt: null };
+    where: {
+      tokenHash?: string;
+      id?: string;
+      revokedAt: null;
+      expiresAt?: { gt: Date };
+    };
     data: { revokedAt: Date };
   };
 
@@ -180,8 +185,12 @@ describe('AuthService', () => {
           let count = 0;
           for (const token of refreshTokens) {
             if (
-              token.tokenHash === where.tokenHash &&
-              token.revokedAt === where.revokedAt
+              (where.tokenHash === undefined ||
+                token.tokenHash === where.tokenHash) &&
+              (where.id === undefined || token.id === where.id) &&
+              token.revokedAt === where.revokedAt &&
+              (where.expiresAt === undefined ||
+                token.expiresAt > where.expiresAt.gt)
             ) {
               token.revokedAt = data.revokedAt;
               count += 1;
@@ -412,6 +421,69 @@ describe('AuthService', () => {
     await expect(
       authService.refresh({
         refreshToken: 'non-existent-refresh-token',
+      }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('uses conditional token revocation when refreshing tokens', async () => {
+    const userId = randomUUID();
+    users.push({
+      id: userId,
+      email: 'refresh-guard@example.com',
+      passwordHash: 'hash',
+      authProvider: 'LOCAL',
+    });
+
+    const rawRefreshToken = 'refresh-token-guard-123';
+    const storedTokenId = randomUUID();
+    refreshTokens.push({
+      id: storedTokenId,
+      userId,
+      tokenHash: createHash('sha256').update(rawRefreshToken).digest('hex'),
+      revokedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+
+    await authService.refresh({
+      refreshToken: rawRefreshToken,
+    });
+
+    expect(prismaMock.refreshToken.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: storedTokenId,
+        revokedAt: null,
+        expiresAt: { gt: expect.any(Date) },
+      },
+      data: {
+        revokedAt: expect.any(Date),
+      },
+    });
+  });
+
+  it('rejects refresh when token was concurrently consumed', async () => {
+    const userId = randomUUID();
+    users.push({
+      id: userId,
+      email: 'race@example.com',
+      passwordHash: 'hash',
+      authProvider: 'LOCAL',
+    });
+
+    const rawRefreshToken = 'refresh-token-race-123';
+    refreshTokens.push({
+      id: randomUUID(),
+      userId,
+      tokenHash: createHash('sha256').update(rawRefreshToken).digest('hex'),
+      revokedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    (prismaMock.refreshToken.updateMany as jest.Mock).mockResolvedValueOnce({
+      count: 0,
+    });
+
+    await expect(
+      authService.refresh({
+        refreshToken: rawRefreshToken,
       }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });

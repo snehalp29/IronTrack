@@ -383,6 +383,9 @@ describe('PrDetectionService', () => {
   });
 
   it('recalculates and upserts current PRs for one exercise', async () => {
+    const transaction = jest.fn(async (ops: Array<Promise<unknown>>) =>
+      Promise.all(ops),
+    );
     const prismaMock = {
       set: {
         findMany: jest.fn(async () => [
@@ -409,6 +412,7 @@ describe('PrDetectionService', () => {
           },
         ]),
       },
+      $transaction: transaction,
       pRRecord: {
         upsert: jest.fn(async () => undefined),
         deleteMany: jest.fn(async () => ({ count: 0 })),
@@ -480,9 +484,14 @@ describe('PrDetectionService', () => {
       }),
     );
     expect(prismaMock.pRRecord.deleteMany).not.toHaveBeenCalled();
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(transaction.mock.calls[0]?.[0]).toHaveLength(4);
   });
 
   it('recalculate skips PR types that have no positive candidate', async () => {
+    const transaction = jest.fn(async (ops: Array<Promise<unknown>>) =>
+      Promise.all(ops),
+    );
     const prismaMock = {
       set: {
         findMany: jest.fn(async () => [
@@ -495,6 +504,7 @@ describe('PrDetectionService', () => {
           },
         ]),
       },
+      $transaction: transaction,
       pRRecord: {
         upsert: jest.fn(async () => undefined),
         deleteMany: jest.fn(async () => ({ count: 3 })),
@@ -535,9 +545,14 @@ describe('PrDetectionService', () => {
         },
       },
     });
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(transaction.mock.calls[0]?.[0]).toHaveLength(2);
   });
 
   it('recalculate removes stale PRs when completed sets have no completion timestamp', async () => {
+    const transaction = jest.fn(async (ops: Array<Promise<unknown>>) =>
+      Promise.all(ops),
+    );
     const prismaMock = {
       set: {
         findMany: jest.fn(async () => [
@@ -550,6 +565,7 @@ describe('PrDetectionService', () => {
           },
         ]),
       },
+      $transaction: transaction,
       pRRecord: {
         upsert: jest.fn(async () => undefined),
         deleteMany: jest.fn(async () => ({ count: 4 })),
@@ -581,5 +597,7 @@ describe('PrDetectionService', () => {
         },
       },
     });
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(transaction.mock.calls[0]?.[0]).toHaveLength(1);
   });
 });
