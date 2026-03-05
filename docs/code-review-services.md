@@ -510,3 +510,58 @@ const prismaMock = {
 The "skips candidate types with non-positive values" test omits `$transaction` from the mock. If the `if (upserts.length > 0)` guard were accidentally removed, `$transaction(...)` would throw `TypeError: this.prisma.$transaction is not a function`, surfacing as a cryptic runtime error rather than a clean assertion failure. The pattern in "ignores completed sets without completedAt" (`expect(prismaMock.$transaction).not.toHaveBeenCalled()`) is more explicit and should be applied here too.
 
 **Fix:** Add `$transaction: jest.fn()` to the mock and assert `expect(prismaMock.$transaction).not.toHaveBeenCalled()`.
+
+---
+
+## New Findings — 2026-03-05 (Pass 4)
+
+### P1 — Must Fix
+
+#### 17. Cross-tenant foreign ID references accepted in session/template write paths (`sessions.service.ts`, `workout-templates.service.ts`)
+
+`SessionsService` and `WorkoutTemplatesService` currently persist client-supplied foreign IDs (`workoutTemplateId`, `exerciseTemplateId`) without validating ownership/accessibility of the referenced records. This allows users to bind private resources they do not own if they can guess or obtain UUIDs.
+
+Affected paths:
+
+- `SessionsService.startSession` stores `workoutTemplateId` directly and can build sessions from unverified inline `exerciseTemplateId` values.
+- `SessionsService.addSessionExercise` inserts `exerciseTemplateId` without ownership/global check.
+- `SessionsService.swapSessionExercise` swaps to `toExerciseTemplateId` without ownership/global check.
+- `WorkoutTemplatesService.create` and `WorkoutTemplatesService.update` accept `exerciseTemplateId` arrays without ownership/global checks.
+
+**Fix:** Add explicit accessibility checks (`isGlobal = true` or `ownerUserId = currentUser`) before write operations and reject inaccessible references with `ForbiddenException`.
+
+---
+
+### P2 — Should Fix
+
+#### 18. Finished-session volume cache drifts after set creation/toggle flows (`sessions.service.ts`)
+
+`finishSession` caches total volume, and `updateSet`/`deleteSet` recache for finished sessions. But `createSet`, `batchCreateSets`, and `toggleSetCompletion` do not recache finished-session volume, so `WorkoutSession.totalVolume` becomes stale after post-finish edits.
+
+**Fix:** Recompute cached volume when these mutations affect a session in `FINISHED` status.
+
+---
+
+### P3 — Nice to Have
+
+#### 19. `reorderWorkoutTemplateSchema` does not reject duplicate IDs/order indexes (`workout-template.schemas.ts`)
+
+The reorder DTO validates only shape and minimum size. Duplicate `id` or duplicate `orderIndex` values are accepted, creating ambiguous updates and unstable ordering.
+
+**Fix:** Add `.superRefine(...)` to reject duplicate `id` and duplicate `orderIndex`, matching the defensive validation already used in session reorder schemas.
+
+---
+
+## Verification Pass 4 — 2026-03-05
+
+| #   | Finding                                                                     | Status   | Notes                                                                                                                                                                                                                            |
+| --- | --------------------------------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 17  | Cross-tenant foreign ID references accepted in session/template write paths | ✅ Fixed | Added ownership/access checks in `sessions.service.ts` and `workout-templates.service.ts` before persisting `workoutTemplateId` / `exerciseTemplateId` references; new service tests cover inaccessible template/exercise cases. |
+| 18  | Finished-session volume cache drifts after set creation/toggle flows        | ✅ Fixed | `SessionsService` now recaches volume for finished sessions in `createSet`, `toggleSetCompletion`, and `batchCreateSets`; new tests cover each finished-session path.                                                            |
+| 19  | `reorderWorkoutTemplateSchema` accepts duplicate IDs/order indexes          | ✅ Fixed | Added duplicate-id/orderIndex validation via `.superRefine(...)`; DTO spec now covers both duplicate-id and duplicate-orderIndex failures.                                                                                       |
+
+Validation:
+
+- `pnpm --filter @irontrack/api test -- src/modules/sessions/sessions.service.spec.ts src/modules/workout-templates/workout-templates.service.spec.ts src/modules/workout-templates/dto/workout-template.schemas.spec.ts`
+- `pnpm --filter @irontrack/api typecheck`
+- `pnpm --filter @irontrack/api test:cov` → 100/100/100/100

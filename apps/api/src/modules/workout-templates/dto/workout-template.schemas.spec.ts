@@ -152,4 +152,24 @@ describe('workout-template schemas', () => {
 
     expect(() => reorderWorkoutTemplateSchema.parse({ items: [] })).toThrow();
   });
+
+  it('rejects reorder payloads with duplicate template ids or order indexes', () => {
+    expect(() =>
+      reorderWorkoutTemplateSchema.parse({
+        items: [
+          { id: '11111111-1111-4111-8111-111111111111', orderIndex: 0 },
+          { id: '11111111-1111-4111-8111-111111111111', orderIndex: 1 },
+        ],
+      }),
+    ).toThrow();
+
+    expect(() =>
+      reorderWorkoutTemplateSchema.parse({
+        items: [
+          { id: '11111111-1111-4111-8111-111111111111', orderIndex: 2 },
+          { id: '22222222-2222-4222-8222-222222222222', orderIndex: 2 },
+        ],
+      }),
+    ).toThrow();
+  });
 });

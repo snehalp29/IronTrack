@@ -75,6 +75,11 @@ export class WorkoutTemplatesService {
   }
 
   async create(userId: string, input: CreateWorkoutTemplateDto) {
+    await this.assertExerciseTemplatesAccessible(
+      userId,
+      input.exercises.map((exercise) => exercise.exerciseTemplateId),
+    );
+
     const orderIndex =
       input.orderIndex ??
       (await this.prisma.workoutTemplate.count({
@@ -110,6 +115,12 @@ export class WorkoutTemplatesService {
     input: UpdateWorkoutTemplateDto,
   ) {
     await this.assertOwnership(userId, templateId);
+    if (input.exercises) {
+      await this.assertExerciseTemplatesAccessible(
+        userId,
+        input.exercises.map((exercise) => exercise.exerciseTemplateId),
+      );
+    }
 
     return this.prisma.$transaction(async (tx) => {
       if (input.exercises) {
@@ -185,6 +196,29 @@ export class WorkoutTemplatesService {
       throw new ForbiddenException({
         code: 'TEMPLATE_FORBIDDEN',
         message: 'Template not found or not accessible',
+      });
+    }
+  }
+
+  private async assertExerciseTemplatesAccessible(
+    userId: string,
+    exerciseTemplateIds: string[],
+  ) {
+    const uniqueIds = Array.from(new Set(exerciseTemplateIds));
+
+    const accessibleExercises = await this.prisma.exerciseTemplate.findMany({
+      where: {
+        id: { in: uniqueIds },
+        deletedAt: null,
+        OR: [{ isGlobal: true }, { ownerUserId: userId }],
+      },
+      select: { id: true },
+    });
+
+    if (accessibleExercises.length !== uniqueIds.length) {
+      throw new ForbiddenException({
+        code: 'EXERCISE_FORBIDDEN',
+        message: 'Exercise not found or not accessible',
       });
     }
   }

@@ -38,11 +38,22 @@ export class SessionsService {
   ) {}
 
   async startSession(userId: string, input: StartSessionDto) {
+    if (input.workoutTemplateId) {
+      await this.assertWorkoutTemplateOwnership(
+        userId,
+        input.workoutTemplateId,
+      );
+    } else if (input.exercises.length > 0) {
+      await this.assertExerciseTemplatesAccessible(
+        userId,
+        input.exercises.map((exercise) => exercise.exerciseTemplateId),
+      );
+    }
+
     const templateExercises = input.workoutTemplateId
       ? await this.prisma.workoutTemplateExercise.findMany({
           where: {
             workoutTemplateId: input.workoutTemplateId,
-            template: { userId, deletedAt: null },
           },
           orderBy: { orderIndex: 'asc' },
         })
@@ -289,6 +300,10 @@ export class SessionsService {
     input: AddSessionExerciseDto,
   ) {
     await this.assertSessionOwnership(userId, sessionId);
+    await this.assertExerciseTemplateAccessible(
+      userId,
+      input.exerciseTemplateId,
+    );
 
     return this.prisma.sessionExercise.create({
       data: {
@@ -406,6 +421,11 @@ export class SessionsService {
       this.throwSessionExerciseNotFound();
     }
 
+    await this.assertExerciseTemplateAccessible(
+      userId,
+      input.toExerciseTemplateId,
+    );
+
     return this.prisma.sessionExercise.update({
       where: { id: exercise.id },
       data: {
@@ -430,6 +450,9 @@ export class SessionsService {
         userId,
         createdSet.exerciseTemplateId,
       );
+    }
+    if (createdSet.sessionStatus === 'FINISHED') {
+      await this.volumeService.cacheSessionVolume(createdSet.sessionId);
     }
 
     return createdSet.item;
@@ -492,7 +515,16 @@ export class SessionsService {
       where: { id: setId },
       data: updateData,
       include: {
-        sessionExercise: true,
+        sessionExercise: {
+          include: {
+            session: {
+              select: {
+                id: true,
+                status: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -570,7 +602,16 @@ export class SessionsService {
         },
       },
       include: {
-        sessionExercise: true,
+        sessionExercise: {
+          include: {
+            session: {
+              select: {
+                id: true,
+                status: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -594,6 +635,11 @@ export class SessionsService {
       userId,
       existing.sessionExercise.exerciseTemplateId,
     );
+    if (existing.sessionExercise.session.status === 'FINISHED') {
+      await this.volumeService.cacheSessionVolume(
+        existing.sessionExercise.session.id,
+      );
+    }
 
     return updated;
   }
@@ -629,6 +675,9 @@ export class SessionsService {
         sessionExercise.exerciseTemplateId,
       );
     }
+    if (sessionExercise.session.status === 'FINISHED') {
+      await this.volumeService.cacheSessionVolume(sessionExercise.session.id);
+    }
 
     return {
       items: results,
@@ -650,6 +699,51 @@ export class SessionsService {
     }
   }
 
+  private async assertWorkoutTemplateOwnership(
+    userId: string,
+    workoutTemplateId: string,
+  ) {
+    const template = await this.prisma.workoutTemplate.findFirst({
+      where: {
+        id: workoutTemplateId,
+        userId,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+
+    if (!template) {
+      this.throwTemplateForbidden();
+    }
+  }
+
+  private async assertExerciseTemplatesAccessible(
+    userId: string,
+    exerciseTemplateIds: string[],
+  ) {
+    const uniqueIds = Array.from(new Set(exerciseTemplateIds));
+
+    const accessibleExercises = await this.prisma.exerciseTemplate.findMany({
+      where: {
+        id: { in: uniqueIds },
+        deletedAt: null,
+        OR: [{ isGlobal: true }, { ownerUserId: userId }],
+      },
+      select: { id: true },
+    });
+
+    if (accessibleExercises.length !== uniqueIds.length) {
+      this.throwExerciseForbidden();
+    }
+  }
+
+  private async assertExerciseTemplateAccessible(
+    userId: string,
+    exerciseTemplateId: string,
+  ) {
+    await this.assertExerciseTemplatesAccessible(userId, [exerciseTemplateId]);
+  }
+
   private async assertSessionExerciseOwnership(
     userId: string,
     sessionExerciseId: string,
@@ -666,6 +760,12 @@ export class SessionsService {
       select: {
         id: true,
         exerciseTemplateId: true,
+        session: {
+          select: {
+            id: true,
+            status: true,
+          },
+        },
       },
     });
 
@@ -683,6 +783,10 @@ export class SessionsService {
     existingSessionExercise?: {
       id: string;
       exerciseTemplateId: string;
+      session: {
+        id: string;
+        status: 'IN_PROGRESS' | 'FINISHED';
+      };
     },
   ) {
     const sessionExercise =
@@ -696,6 +800,12 @@ export class SessionsService {
         select: {
           id: true,
           exerciseTemplateId: true,
+          session: {
+            select: {
+              id: true,
+              status: true,
+            },
+          },
         },
       }));
 
@@ -715,6 +825,8 @@ export class SessionsService {
           item: existing,
           wasCreated: false,
           exerciseTemplateId: sessionExercise.exerciseTemplateId,
+          sessionId: sessionExercise.session.id,
+          sessionStatus: sessionExercise.session.status,
         };
       }
     }
@@ -745,6 +857,7 @@ export class SessionsService {
               select: {
                 id: true,
                 userId: true,
+                status: true,
               },
             },
           },
@@ -756,6 +869,8 @@ export class SessionsService {
       item: created,
       wasCreated: true,
       exerciseTemplateId: sessionExercise.exerciseTemplateId,
+      sessionId: created.sessionExercise.session.id,
+      sessionStatus: created.sessionExercise.session.status,
     };
   }
 
@@ -819,6 +934,20 @@ export class SessionsService {
     throw new ForbiddenException({
       code: 'SESSION_EXERCISE_FORBIDDEN',
       message: 'Session exercise not found or inaccessible',
+    });
+  }
+
+  private throwTemplateForbidden(): never {
+    throw new ForbiddenException({
+      code: 'TEMPLATE_FORBIDDEN',
+      message: 'Template not found or inaccessible',
+    });
+  }
+
+  private throwExerciseForbidden(): never {
+    throw new ForbiddenException({
+      code: 'EXERCISE_FORBIDDEN',
+      message: 'Exercise not found or inaccessible',
     });
   }
 }

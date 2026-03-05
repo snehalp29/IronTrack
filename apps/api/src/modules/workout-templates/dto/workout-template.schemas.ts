@@ -49,7 +49,31 @@ export const reorderWorkoutTemplateSchema = z.object({
         orderIndex: z.number().int().nonnegative(),
       }),
     )
-    .min(1),
+    .min(1)
+    .superRefine((items, ctx) => {
+      const seenIds = new Set<string>();
+      const seenOrderIndexes = new Set<number>();
+
+      for (const [index, item] of items.entries()) {
+        if (seenIds.has(item.id)) {
+          ctx.addIssue({
+            code: 'custom',
+            path: [index, 'id'],
+            message: 'Duplicate template id in reorder payload',
+          });
+        }
+        seenIds.add(item.id);
+
+        if (seenOrderIndexes.has(item.orderIndex)) {
+          ctx.addIssue({
+            code: 'custom',
+            path: [index, 'orderIndex'],
+            message: 'Duplicate orderIndex in reorder payload',
+          });
+        }
+        seenOrderIndexes.add(item.orderIndex);
+      }
+    }),
 });
 
 export type CreateWorkoutTemplateDto = z.infer<

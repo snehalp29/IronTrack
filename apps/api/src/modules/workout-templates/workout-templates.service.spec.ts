@@ -16,6 +16,20 @@ describe('WorkoutTemplatesService', () => {
     };
 
     const prismaMock = {
+      exerciseTemplate: {
+        findMany: jest.fn(
+          async (args?: {
+            where?: {
+              id?: {
+                in?: string[];
+              };
+            };
+          }) =>
+            (args?.where?.id?.in ?? []).map((id) => ({
+              id,
+            })),
+        ),
+      },
       workoutTemplate: {
         findMany: jest.fn(),
         findFirst: jest.fn(),
@@ -149,6 +163,31 @@ describe('WorkoutTemplatesService', () => {
     );
   });
 
+  it('throws forbidden when creating template with inaccessible exercises', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.exerciseTemplate.findMany as jest.Mock).mockResolvedValue([
+      { id: '11111111-1111-4111-8111-111111111111' },
+    ]);
+
+    await expect(
+      service.create('user-1', {
+        name: 'Push Day',
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            orderIndex: 0,
+          },
+          {
+            exerciseTemplateId: '22222222-2222-4222-8222-222222222222',
+            orderIndex: 1,
+          },
+        ],
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+
+    expect(prismaMock.workoutTemplate.create).not.toHaveBeenCalled();
+  });
+
   it('updates template and replaces exercises when provided', async () => {
     const { service, prismaMock, tx } = createService();
     (prismaMock.workoutTemplate.findFirst as jest.Mock).mockResolvedValue({
@@ -215,6 +254,35 @@ describe('WorkoutTemplatesService', () => {
         orderIndex: 2,
       },
     });
+  });
+
+  it('throws forbidden when updating template with inaccessible exercises', async () => {
+    const { service, prismaMock, tx } = createService();
+    (prismaMock.workoutTemplate.findFirst as jest.Mock).mockResolvedValue({
+      id: 'template-1',
+    });
+    (prismaMock.exerciseTemplate.findMany as jest.Mock).mockResolvedValue([
+      { id: '11111111-1111-4111-8111-111111111111' },
+    ]);
+
+    await expect(
+      service.update('user-1', 'template-1', {
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            orderIndex: 0,
+          },
+          {
+            exerciseTemplateId: '22222222-2222-4222-8222-222222222222',
+            orderIndex: 1,
+          },
+        ],
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+
+    expect(tx.workoutTemplateExercise.deleteMany).not.toHaveBeenCalled();
+    expect(tx.workoutTemplateExercise.createMany).not.toHaveBeenCalled();
+    expect(tx.workoutTemplate.update).not.toHaveBeenCalled();
   });
 
   it('throws forbidden when updating inaccessible template', async () => {

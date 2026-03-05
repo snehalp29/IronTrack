@@ -15,8 +15,26 @@ import { SessionsService } from './sessions.service';
 describe('SessionsService', () => {
   const createService = () => {
     const prismaMock = {
+      exerciseTemplate: {
+        findFirst: jest.fn(async () => ({ id: 'exercise-1' })),
+        findMany: jest.fn(
+          async (args?: {
+            where?: {
+              id?: {
+                in?: string[];
+              };
+            };
+          }) =>
+            (args?.where?.id?.in ?? []).map((id) => ({
+              id,
+            })),
+        ),
+      },
       workoutTemplateExercise: {
         findMany: jest.fn(),
+      },
+      workoutTemplate: {
+        findFirst: jest.fn(),
       },
       workoutSession: {
         create: jest.fn(),
@@ -90,6 +108,9 @@ describe('SessionsService', () => {
 
   it('starts a session from workout template exercises', async () => {
     const { service, prismaMock } = createService();
+    (prismaMock.workoutTemplate.findFirst as jest.Mock).mockResolvedValue({
+      id: 'template-1',
+    });
     (
       prismaMock.workoutTemplateExercise.findMany as jest.Mock
     ).mockResolvedValue([
@@ -131,6 +152,9 @@ describe('SessionsService', () => {
 
   it('uses template exercise index when orderIndex is missing', async () => {
     const { service, prismaMock } = createService();
+    (prismaMock.workoutTemplate.findFirst as jest.Mock).mockResolvedValue({
+      id: 'template-1',
+    });
     (
       prismaMock.workoutTemplateExercise.findMany as jest.Mock
     ).mockResolvedValue([
@@ -252,6 +276,45 @@ describe('SessionsService', () => {
         }),
       }),
     );
+  });
+
+  it('throws forbidden when starting a session from an inaccessible template', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.workoutTemplate.findFirst as jest.Mock).mockResolvedValue(null);
+
+    await expect(
+      service.startSession('user-1', {
+        workoutTemplateId: 'template-1',
+        exercises: [],
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+
+    expect(prismaMock.workoutSession.create).not.toHaveBeenCalled();
+    expect(prismaMock.workoutTemplateExercise.findMany).not.toHaveBeenCalled();
+  });
+
+  it('throws forbidden when inline session contains inaccessible exercises', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.exerciseTemplate.findMany as jest.Mock).mockResolvedValue([
+      { id: '11111111-1111-4111-8111-111111111111' },
+    ]);
+
+    await expect(
+      service.startSession('user-1', {
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            orderIndex: 0,
+          },
+          {
+            exerciseTemplateId: '22222222-2222-4222-8222-222222222222',
+            orderIndex: 1,
+          },
+        ],
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+
+    expect(prismaMock.workoutSession.create).not.toHaveBeenCalled();
   });
 
   it('gets a session and interleaves exercises', async () => {
@@ -618,6 +681,23 @@ describe('SessionsService', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
+  it('throws forbidden when adding inaccessible exercise template to session', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.workoutSession.findFirst as jest.Mock).mockResolvedValue({
+      id: 'session-1',
+    });
+    (prismaMock.exerciseTemplate.findMany as jest.Mock).mockResolvedValue([]);
+
+    await expect(
+      service.addSessionExercise('user-1', 'session-1', {
+        exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+        orderIndex: 0,
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+
+    expect(prismaMock.sessionExercise.create).not.toHaveBeenCalled();
+  });
+
   it('updates session exercise with version check', async () => {
     const { service, prismaMock } = createService();
     (prismaMock.sessionExercise.findFirst as jest.Mock).mockResolvedValue({
@@ -736,6 +816,23 @@ describe('SessionsService', () => {
         toExerciseTemplateId: '11111111-1111-4111-8111-111111111111',
       }),
     ).resolves.toEqual({ id: 'se1' });
+  });
+
+  it('throws forbidden when swap replacement exercise is inaccessible', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.sessionExercise.findFirst as jest.Mock).mockResolvedValue({
+      id: 'se1',
+    });
+    (prismaMock.exerciseTemplate.findMany as jest.Mock).mockResolvedValue([]);
+
+    await expect(
+      service.swapSessionExercise('user-1', 'session-1', {
+        fromExerciseId: 'se1',
+        toExerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+
+    expect(prismaMock.sessionExercise.update).not.toHaveBeenCalled();
   });
 
   it('throws when swap target does not exist', async () => {
@@ -858,6 +955,10 @@ describe('SessionsService', () => {
     (prismaMock.sessionExercise.findFirst as jest.Mock).mockResolvedValue({
       id: 'se1',
       exerciseTemplateId: 'exercise-1',
+      session: {
+        id: 'session-1',
+        status: 'IN_PROGRESS',
+      },
     });
     (prismaMock.set.findFirst as jest.Mock).mockResolvedValue({
       id: 'existing-set',
@@ -885,6 +986,32 @@ describe('SessionsService', () => {
         payload: {},
       }),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('recaches volume when creating a set for a finished session', async () => {
+    const { service, prismaMock, volumeMock } = createService();
+    (prismaMock.sessionExercise.findFirst as jest.Mock).mockResolvedValue({
+      id: 'se1',
+      exerciseTemplateId: 'exercise-1',
+    });
+    (prismaMock.set.findFirst as jest.Mock).mockResolvedValue(null);
+    (prismaMock.set.create as jest.Mock).mockResolvedValue({
+      id: 'set-1',
+      isCompleted: false,
+      sessionExercise: {
+        exerciseTemplateId: 'exercise-1',
+        session: { id: 'session-1', userId: 'user-1', status: 'FINISHED' },
+      },
+    });
+
+    await service.createSet('user-1', 'se1', {
+      orderIndex: 0,
+      type: 'WEIGHT_REPS',
+      payload: {},
+      isCompleted: false,
+    });
+
+    expect(volumeMock.cacheSessionVolume).toHaveBeenCalledWith('session-1');
   });
 
   it('updates set and refreshes volume for finished sessions', async () => {
@@ -1089,6 +1216,10 @@ describe('SessionsService', () => {
       id: 'set-1',
       sessionExercise: {
         exerciseTemplateId: 'exercise-1',
+        session: {
+          id: 'session-1',
+          status: 'IN_PROGRESS',
+        },
       },
     });
     (prismaMock.set.update as jest.Mock).mockResolvedValue({
@@ -1108,12 +1239,42 @@ describe('SessionsService', () => {
     );
   });
 
+  it('recaches volume when toggling set completion for a finished session', async () => {
+    const { service, prismaMock, volumeMock } = createService();
+    (prismaMock.set.findFirst as jest.Mock).mockResolvedValue({
+      id: 'set-1',
+      isCompleted: false,
+      completedAt: null,
+      sessionExercise: {
+        exerciseTemplateId: 'exercise-1',
+        session: {
+          id: 'session-1',
+          status: 'FINISHED',
+        },
+      },
+    });
+    (prismaMock.set.update as jest.Mock).mockResolvedValue({
+      id: 'set-1',
+      isCompleted: true,
+    });
+
+    await service.toggleSetCompletion('user-1', 'se1', 'set-1', {
+      isCompleted: true,
+    });
+
+    expect(volumeMock.cacheSessionVolume).toHaveBeenCalledWith('session-1');
+  });
+
   it('toggles completion to true and stores a completion timestamp', async () => {
     const { service, prismaMock } = createService();
     (prismaMock.set.findFirst as jest.Mock).mockResolvedValue({
       id: 'set-1',
       sessionExercise: {
         exerciseTemplateId: 'exercise-1',
+        session: {
+          id: 'session-1',
+          status: 'IN_PROGRESS',
+        },
       },
     });
     (prismaMock.set.update as jest.Mock).mockResolvedValue({
@@ -1204,6 +1365,10 @@ describe('SessionsService', () => {
       completedAt: existingCompletedAt,
       sessionExercise: {
         exerciseTemplateId: 'exercise-1',
+        session: {
+          id: 'session-1',
+          status: 'IN_PROGRESS',
+        },
       },
     });
     (prismaMock.set.update as jest.Mock).mockResolvedValue({
@@ -1232,6 +1397,10 @@ describe('SessionsService', () => {
       completedAt: null,
       sessionExercise: {
         exerciseTemplateId: 'exercise-1',
+        session: {
+          id: 'session-1',
+          status: 'IN_PROGRESS',
+        },
       },
     });
     (prismaMock.set.update as jest.Mock).mockResolvedValue({
@@ -1406,6 +1575,35 @@ describe('SessionsService', () => {
     });
 
     expect(prDetectionMock.recalculateForExercise).not.toHaveBeenCalled();
+  });
+
+  it('recaches volume after batch create for a finished session', async () => {
+    const { service, prismaMock, volumeMock } = createService();
+    (prismaMock.sessionExercise.findFirst as jest.Mock).mockResolvedValue({
+      id: 'se1',
+      exerciseTemplateId: 'exercise-1',
+      session: { id: 'session-1', userId: 'user-1', status: 'FINISHED' },
+    });
+    (prismaMock.set.create as jest.Mock).mockResolvedValue({
+      id: 'set-1',
+      isCompleted: false,
+      sessionExercise: {
+        exerciseTemplateId: 'exercise-1',
+        session: { id: 'session-1', userId: 'user-1', status: 'FINISHED' },
+      },
+    });
+
+    await service.batchCreateSets('user-1', 'se1', {
+      sets: [
+        {
+          orderIndex: 0,
+          type: 'WEIGHT_REPS',
+          payload: {},
+        },
+      ],
+    });
+
+    expect(volumeMock.cacheSessionVolume).toHaveBeenCalledWith('session-1');
   });
 
   it('throws forbidden when batch creating for inaccessible session exercise', async () => {
