@@ -5,6 +5,9 @@ import {
   trimStringOrUndefined,
 } from '../common/validation/string-normalization';
 
+const DEFAULT_CORS_ORIGINS =
+  'http://localhost:3000,http://localhost:5173,http://localhost:8081';
+
 const durationSchema = z
   .string()
   .trim()
@@ -32,6 +35,45 @@ const optionalTrimmedUrlSchema = z.preprocess(
   z.string().url().optional(),
 );
 
+const optionalTrimmedGoogleClientSecretSchema = z.preprocess(
+  trimStringOrUndefined,
+  z.string().min(10).optional(),
+);
+
+const jwtSecretSchema = z.preprocess(trimString, z.string().min(16));
+
+function isValidCorsOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return false;
+    }
+    return (
+      (url.pathname === '' || url.pathname === '/') &&
+      url.search.length === 0 &&
+      url.hash.length === 0
+    );
+  } catch {
+    return false;
+  }
+}
+
+const corsOriginsSchema = z
+  .string()
+  .transform((value) => value.split(',').map((origin) => origin.trim()))
+  .refine(
+    (origins) => origins.length > 0 && origins.every((origin) => origin !== ''),
+    {
+      message:
+        'CORS_ORIGINS must be a comma-separated list of valid HTTP(S) origins',
+    },
+  )
+  .refine((origins) => origins.every(isValidCorsOrigin), {
+    message:
+      'CORS_ORIGINS must be a comma-separated list of valid HTTP(S) origins',
+  })
+  .transform((origins) => origins.join(','));
+
 export const envSchema = z
   .object({
     NODE_ENV: z
@@ -43,12 +85,12 @@ export const envSchema = z
       z.string().default('api/v1'),
     ),
     DATABASE_URL: z.preprocess(trimString, databaseUrlSchema),
-    JWT_ACCESS_SECRET: z.string().min(16),
-    JWT_REFRESH_SECRET: z.string().min(16),
+    JWT_ACCESS_SECRET: jwtSecretSchema,
+    JWT_REFRESH_SECRET: jwtSecretSchema,
     JWT_ACCESS_EXPIRY: durationSchema.default('15m'),
     JWT_REFRESH_EXPIRY: durationSchema.default('7d'),
     GOOGLE_CLIENT_ID: optionalTrimmedStringSchema,
-    GOOGLE_CLIENT_SECRET: optionalTrimmedStringSchema,
+    GOOGLE_CLIENT_SECRET: optionalTrimmedGoogleClientSecretSchema,
     GOOGLE_CALLBACK_URL: optionalTrimmedUrlSchema,
     ML_SERVICE_URL: z.preprocess(
       trimStringOrUndefined,
@@ -56,11 +98,7 @@ export const envSchema = z
     ),
     CORS_ORIGINS: z.preprocess(
       trimStringOrUndefined,
-      z
-        .string()
-        .default(
-          'http://localhost:3000,http://localhost:5173,http://localhost:8081',
-        ),
+      corsOriginsSchema.default(DEFAULT_CORS_ORIGINS),
     ),
   })
   .superRefine((env, ctx) => {
@@ -95,14 +133,24 @@ export const envSchema = z
           message: 'GOOGLE_CALLBACK_URL is required when NODE_ENV=production',
         });
       }
-      return;
     }
 
     if (
-      env.NODE_ENV !== 'production' &&
-      hasAnyGoogleConfig &&
-      !hasCompleteGoogleConfig
+      env.NODE_ENV === 'production' &&
+      env.ML_SERVICE_URL.startsWith('http://')
     ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['ML_SERVICE_URL'],
+        message: 'ML_SERVICE_URL must use https when NODE_ENV=production',
+      });
+    }
+
+    if (env.NODE_ENV === 'production') {
+      return;
+    }
+
+    if (hasAnyGoogleConfig && !hasCompleteGoogleConfig) {
       if (!hasGoogleClientId) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,

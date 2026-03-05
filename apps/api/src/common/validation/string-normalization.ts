@@ -8,6 +8,7 @@ export function trimString(value: unknown): unknown {
 
 export function trimStringOrUndefined(value: unknown): unknown {
   if (typeof value !== 'string') {
+    // Preserve non-strings so Zod can report accurate type errors.
     return value;
   }
 
