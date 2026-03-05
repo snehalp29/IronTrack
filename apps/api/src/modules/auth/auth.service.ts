@@ -6,7 +6,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { AuthProvider, User } from '@prisma/client';
-import { compare, hash } from 'bcryptjs';
+import { compare, hash, hashSync } from 'bcryptjs';
 import { createHash, randomUUID } from 'node:crypto';
 
 import { durationToSeconds } from '../../config/env.schema';
@@ -18,6 +18,8 @@ import {
   RegisterDto,
 } from './dto/auth.schemas';
 import { GoogleTokenVerifierService } from './google-token-verifier.service';
+
+const DUMMY_PASSWORD_HASH = hashSync(randomUUID(), 12);
 
 export interface AuthTokens {
   accessToken: string;
@@ -34,8 +36,12 @@ export class AuthService {
   ) {}
 
   async register(input: RegisterDto): Promise<AuthTokens> {
-    const existingUser = await this.prisma.user.findUnique({
-      where: { email: input.email.toLowerCase() },
+    const normalizedEmail = input.email.toLowerCase();
+    const existingUser = await this.prisma.user.findFirst({
+      where: {
+        email: normalizedEmail,
+        deletedAt: null,
+      },
     });
 
     if (existingUser) {
@@ -50,7 +56,7 @@ export class AuthService {
     try {
       user = await this.prisma.user.create({
         data: {
-          email: input.email.toLowerCase(),
+          email: normalizedEmail,
           passwordHash,
           name: input.name,
           timezone: input.timezone ?? 'UTC',
@@ -58,7 +64,7 @@ export class AuthService {
         },
       });
     } catch (error) {
-      if (isPrismaUniqueConstraintError(error)) {
+      if (isEmailUniqueConstraintError(error)) {
         this.throwEmailTaken();
       }
       throw error;
@@ -75,15 +81,10 @@ export class AuthService {
       },
     });
 
-    if (!user || user.authProvider !== AuthProvider.LOCAL) {
-      throw new UnauthorizedException({
-        code: 'INVALID_CREDENTIALS',
-        message: 'Invalid email or password',
-      });
-    }
-
-    const passwordMatches = await compare(input.password, user.passwordHash);
-    if (!passwordMatches) {
+    const isLocalUser = user?.authProvider === AuthProvider.LOCAL;
+    const passwordHash = isLocalUser ? user.passwordHash : DUMMY_PASSWORD_HASH;
+    const passwordMatches = await compare(input.password, passwordHash);
+    if (!isLocalUser || !passwordMatches) {
       throw new UnauthorizedException({
         code: 'INVALID_CREDENTIALS',
         message: 'Invalid email or password',
@@ -172,6 +173,13 @@ export class AuthService {
         message: 'User account is disabled',
       });
     }
+    if (existingUser?.authProvider === AuthProvider.LOCAL) {
+      throw new UnauthorizedException({
+        code: 'EMAIL_REGISTERED_WITH_PASSWORD',
+        message:
+          'This email is registered with a password. Please log in with your password.',
+      });
+    }
 
     const user = await this.prisma.user.upsert({
       where: { email: identity.email },
@@ -183,7 +191,7 @@ export class AuthService {
       },
       create: {
         email: identity.email,
-        passwordHash: await hash(identity.googleId, 10),
+        passwordHash: await hash(randomUUID(), 12),
         authProvider: AuthProvider.GOOGLE,
         timezone: 'UTC',
         googleId: identity.googleId,
@@ -284,11 +292,28 @@ export class AuthService {
   }
 }
 
-function isPrismaUniqueConstraintError(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code?: unknown }).code === 'P2002'
-  );
+function isEmailUniqueConstraintError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+
+  const maybeError = error as {
+    code?: unknown;
+    meta?: {
+      target?: unknown;
+    };
+  };
+  if (maybeError.code !== 'P2002') {
+    return false;
+  }
+
+  const target = maybeError.meta?.target;
+  if (Array.isArray(target)) {
+    return target.some(
+      (entry) =>
+        typeof entry === 'string' && entry.toLowerCase().includes('email'),
+    );
+  }
+
+  return typeof target === 'string' && target.toLowerCase().includes('email');
 }

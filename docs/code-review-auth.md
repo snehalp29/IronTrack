@@ -323,3 +323,211 @@ The e2e mock for `refreshToken.updateMany` only matched `tokenHash` + `revokedAt
 | --- | -------------------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 8   | Dead defensive guards in Google claims check | ✅ Fixed | Removed unreachable `!email`, `!googleId`, `!issuer` checks after schema parse in `google-token-verifier.service.ts:97-104`; behavior preserved by existing tests.      |
 | 10  | Refresh expiry parsed twice per issuance     | ✅ Fixed | `issueTokens` now parses `JWT_REFRESH_EXPIRY` once and passes `refreshExpiryMs` to `persistRefreshToken`; added test `parses refresh duration once per token issuance`. |
+
+---
+
+## Verification Pass 6 — 2026-03-05
+
+Verified against current `auth.service.ts` (295 lines), `google-token-verifier.service.ts` (284 lines), `auth.service.spec.ts` (807 lines), and `prisma/schema.prisma`.
+
+| #   | Finding                                        | Status   | Notes                                                                                                                                                                                                                           |
+| --- | ---------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 7   | `register` TOCTOU race leaks P2002 as 500      | ✅ Fixed | `isPrismaUniqueConstraintError` helper + try/catch wraps `user.create` (L50–65). Tests: `maps create-time unique constraint races to EMAIL_TAKEN` (spec L451) and `rethrows unexpected registration create errors` (spec L472). |
+| 8   | Dead defensive guards in Google claims check   | ✅ Fixed | Confirmed: `verifyIdToken` check at L97–107 is now `!emailVerified \|\| !hasAudience(...) \|\| !VALID_ISSUERS.has(issuer) \|\| !notExpired` — no `!email`, `!googleId`, `!issuer`.                                              |
+| 9   | `googleLogin.create` missing `timezone: 'UTC'` | ✅ Fixed | `timezone: 'UTC'` present at `auth.service.ts:188`. Spec test "applies UTC timezone when creating google-auth users" asserts `create` payload includes `timezone: 'UTC'`.                                                       |
+| 10  | `JWT_REFRESH_EXPIRY` parsed twice per issuance | ✅ Fixed | `refreshExpiryMs` computed once at L211–213 and forwarded to `persistRefreshToken(userId, refreshToken, refreshExpiryMs)`.                                                                                                      |
+| 11  | `googleLogin` delete-race still issues tokens  | ✅ Fixed | Post-upsert guard at L195–200: `if (user.deletedAt !== null) throw UnauthorizedException`. Spec L740–759 covers the race scenario.                                                                                              |
+| 12  | Auth e2e mock drift                            | ✅ Fixed | Confirmed by system-note; e2e flow passes.                                                                                                                                                                                      |
+
+---
+
+## New Findings — 2026-03-05 (Pass 6)
+
+### P2 — Should Fix
+
+#### 13. `AuthService.login` — timing oracle leaks account existence and auth provider (`auth.service.ts:70–93`)
+
+```ts
+const user = await this.prisma.user.findFirst({ where: { email, deletedAt: null } });
+
+if (!user || user.authProvider !== AuthProvider.LOCAL) {
+  throw new UnauthorizedException({ ... }); // ← returns immediately, no bcrypt
+}
+
+const passwordMatches = await compare(input.password, user.passwordHash); // ← ~100ms
+```
+
+`compare` (bcrypt cost 12, ~100ms) is only called when a LOCAL user is found. Missing and Google-auth accounts return in microseconds. An attacker timing responses at the login endpoint can:
+
+1. Enumerate which email addresses are registered (`fast` = not found; `slow` = found and LOCAL).
+2. Distinguish LOCAL accounts from GOOGLE-auth accounts (`slow` = LOCAL; `fast` = GOOGLE).
+
+This leaks user enumeration data that `INVALID_CREDENTIALS` messaging is intended to hide.
+
+**Fix:** Always call `compare` against a pre-computed dummy hash to equalize timing:
+
+```ts
+const DUMMY_HASH = await hash('dummy-sentinel', 12); // computed once at class init or module level
+
+const user = await this.prisma.user.findFirst({ where: { email, deletedAt: null } });
+const isValidUser = !!user && user.authProvider === AuthProvider.LOCAL;
+const hashToCompare = isValidUser ? user.passwordHash! : DUMMY_HASH;
+
+const passwordMatches = await compare(input.password, hashToCompare);
+
+if (!isValidUser || !passwordMatches) {
+  throw new UnauthorizedException({ code: 'INVALID_CREDENTIALS', ... });
+}
+```
+
+---
+
+#### 14. `AuthService.googleLogin` — silently migrates LOCAL accounts to GOOGLE auth (`auth.service.ts:176–193`)
+
+```ts
+const user = await this.prisma.user.upsert({
+  where: { email: identity.email },
+  update: {
+    authProvider: AuthProvider.GOOGLE, // ← overwrites LOCAL → GOOGLE without consent
+    googleId: identity.googleId,
+    name: identity.name,
+    avatarUrl: identity.avatarUrl,
+  },
+  create: { ... },
+});
+```
+
+If a user registered locally with `alice@example.com`, then calls `/auth/google` with a Google token for the same email, the `update` branch overwrites `authProvider` to `GOOGLE`. The user loses the ability to log in with their password (`authProvider !== LOCAL` guard in `login` rejects them). This migration is implicit, unconsented, and undocumented.
+
+More critically, if an attacker obtains a valid Google ID token for the victim's email (which requires compromising the victim's Google account), they can permanently lock the victim out of their local login path.
+
+**Fix:** Check whether the existing account uses LOCAL auth, and if so, reject the Google login rather than silently migrating:
+
+```ts
+if (existingUser && existingUser.authProvider === AuthProvider.LOCAL) {
+  throw new UnauthorizedException({
+    code: 'EMAIL_REGISTERED_WITH_PASSWORD',
+    message:
+      'This email is registered with a password. Please log in with your password.',
+  });
+}
+```
+
+---
+
+### P3 — Nice to Have
+
+#### 15. `isPrismaUniqueConstraintError` catches any P2002, not specifically the email constraint (`auth.service.ts:287–294`)
+
+```ts
+function isPrismaUniqueConstraintError(error: unknown): boolean {
+  return ... && (error as { code?: unknown }).code === 'P2002';
+}
+```
+
+The check maps any Prisma unique constraint violation from `user.create` to `EMAIL_TAKEN`. If the `User` schema ever gains another unique field that `register` populates, a P2002 on that field would be silently misreported as `EMAIL_TAKEN`. Prisma's `PrismaClientKnownRequestError` exposes a `meta.target` field containing the constraint name, which can be used for a more precise check.
+
+**Fix:** Import `Prisma` from `@prisma/client` and narrow on `meta.target`:
+
+```ts
+import { Prisma } from '@prisma/client';
+
+function isEmailUniqueConstraintError(error: unknown): boolean {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === 'P2002' &&
+    Array.isArray((error.meta as { target?: unknown })?.target) &&
+    (error.meta as { target: string[] }).target.includes('email')
+  );
+}
+```
+
+---
+
+## Verification Pass 7 — 2026-03-05
+
+Verified against current `auth.service.ts` (295 lines), `schema.prisma`, and `auth.service.spec.ts` (807 lines).
+
+| #   | Finding                                                       | Status  | Notes                                                                                                                                  |
+| --- | ------------------------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| 13  | `login` timing oracle leaks account existence / auth provider | ⏳ Open | No dummy-hash equalization in `auth.service.ts:78–83`; fast-path still exits before `compare` for missing/GOOGLE accounts.             |
+| 14  | `googleLogin` silently migrates LOCAL accounts to GOOGLE auth | ⏳ Open | `upsert` update branch still overwrites `authProvider: GOOGLE` without checking existing account provider (`auth.service.ts:176–183`). |
+| 15  | `isPrismaUniqueConstraintError` catches any P2002             | ⏳ Open | `auth.service.ts:287–294` still matches any Prisma unique violation; `meta.target` not inspected.                                      |
+| 16  | `RefreshToken.tokenHash` lacks `@@unique` constraint          | ⏳ Open | `schema.prisma:110` still uses `@@index([tokenHash])`; no migration generated.                                                         |
+
+---
+
+## New Findings — 2026-03-05 (Pass 7)
+
+### P2 — Should Fix
+
+#### 17. `googleLogin` stores a deterministic, low-cost hash of `googleId` as `passwordHash` (`auth.service.ts:186`)
+
+```ts
+passwordHash: await hash(identity.googleId, 10),
+```
+
+Two problems with this approach:
+
+1. **Cost inconsistency**: `register` uses cost 12 (`hash(input.password, 12)`); Google users get cost 10. While `passwordHash` is never compared for Google accounts today, differing cost factors suggest an unreviewed choice rather than a deliberate policy.
+
+2. **Deterministic value derived from plaintext in the same row**: `identity.googleId` is stored as-is in `User.googleId`. If a future code path ever calls `compare(someInput, user.passwordHash)` without first checking `authProvider`, the raw Google account ID (a public numeric string) would successfully authenticate as the user's "password". Storing a random sentinel instead removes this latent risk entirely.
+
+**Fix:** Replace with a random value at creation time:
+
+```ts
+passwordHash: await hash(randomUUID(), 12),
+```
+
+---
+
+### P3 — Nice to Have
+
+#### 18. `register` pre-check does not exclude soft-deleted accounts, permanently blocking email reuse (`auth.service.ts:37–39`)
+
+```ts
+const existingUser = await this.prisma.user.findUnique({
+  where: { email: input.email.toLowerCase() },
+  // ← no deletedAt: null filter
+});
+if (existingUser) {
+  this.throwEmailTaken(); // ← fires for soft-deleted users too
+}
+```
+
+`login` uses `findFirst({ where: { email, deletedAt: null } })` to ignore soft-deleted records. `register` uses `findUnique` without the same guard, so a soft-deleted user permanently blocks that email address for new registrations — there is no re-registration or restoration path. Whether this is intentional policy should be documented; if re-registration is desired, the pre-check should filter `deletedAt: null` (and the DB-level `@unique` on `email` would also need a strategy such as nullifying the email on soft-delete or using a partial index).
+
+**Fix (if re-registration is not desired, at minimum):** Document the policy explicitly. If re-registration _is_ desired, filter soft-deleted records:
+
+```ts
+const existingUser = await this.prisma.user.findFirst({
+  where: { email: input.email.toLowerCase(), deletedAt: null },
+});
+```
+
+---
+
+#### 16. `RefreshToken.tokenHash` lacks a `@@unique` constraint (`schema.prisma:109–110`)
+
+```prisma
+@@index([tokenHash])   // ← index only; no uniqueness guarantee
+```
+
+Each refresh token JWT contains a `jti: randomUUID()`, making SHA-256 collisions cryptographically impossible. However, without a `@@unique` constraint, the DB does not enforce this invariant. A programming bug that accidentally creates two `RefreshToken` rows with the same `tokenHash` would go undetected, leaving the second token as a permanent zombie (never revoked since `refresh` revokes by `id`).
+
+**Fix:** Change `@@index([tokenHash])` to `@@unique([tokenHash])` in `schema.prisma` and generate a migration.
+
+---
+
+## Verification Pass 8 — 2026-03-05
+
+Verified against current `auth.service.ts`, `auth.service.spec.ts`, and Prisma schema/migrations.
+
+| #   | Finding                                                         | Status   | Notes                                                                                                                                                                                                                                  |
+| --- | --------------------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 13  | `login` timing oracle leaks account existence / auth provider   | ✅ Fixed | `login` now always runs `bcrypt.compare` with a module-level dummy hash for non-LOCAL/missing users before returning `INVALID_CREDENTIALS`. Tests: `runs bcrypt compare even when login user is missing`, `...for GOOGLE accounts...`. |
+| 14  | `googleLogin` silently migrates LOCAL accounts to GOOGLE auth   | ✅ Fixed | Added guard rejecting Google login when an existing active account uses `LOCAL`, with `EMAIL_REGISTERED_WITH_PASSWORD`; `upsert` is skipped in this case.                                                                              |
+| 15  | Unique error mapper catches any `P2002`                         | ✅ Fixed | `isEmailUniqueConstraintError` now requires both `code === 'P2002'` and `meta.target` containing `email` (array or string target). Added positive and negative tests.                                                                  |
+| 16  | `RefreshToken.tokenHash` lacks `@@unique` constraint            | ✅ Fixed | `schema.prisma` now uses `@@unique([tokenHash])`; migration `202603050003_refresh_token_hash_unique` drops the old non-unique index and creates a unique index.                                                                        |
+| 17  | Google create path hashes deterministic `googleId` with cost 10 | ✅ Fixed | Google-user `passwordHash` now uses `hash(randomUUID(), 12)` so it is non-deterministic and aligned with LOCAL hashing cost. Test asserts it does not match `googleId` and uses 12 rounds.                                             |
+| 18  | `register` pre-check includes soft-deleted accounts             | ✅ Fixed | Register pre-check now queries active users only (`findFirst` with `deletedAt: null`) to align boundary behavior with login checks. Note: full email reuse remains constrained by DB-level `User.email @unique` policy.                |

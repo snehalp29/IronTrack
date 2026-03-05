@@ -2,12 +2,21 @@ import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule, JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
+import * as bcryptjs from 'bcryptjs';
 import { hash } from 'bcryptjs';
 import { createHash, randomUUID } from 'node:crypto';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuthService } from './auth.service';
 import { GoogleTokenVerifierService } from './google-token-verifier.service';
+
+jest.mock('bcryptjs', () => {
+  const actual = jest.requireActual<typeof import('bcryptjs')>('bcryptjs');
+  return {
+    ...actual,
+    compare: jest.fn(actual.compare),
+  };
+});
 
 describe('AuthService', () => {
   type UserRecord = {
@@ -226,6 +235,9 @@ describe('AuthService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    if (jest.isMockFunction(bcryptjs.compare)) {
+      (bcryptjs.compare as unknown as jest.Mock).mockClear();
+    }
     users.length = 0;
     refreshTokens.length = 0;
     googleTokenVerifierMock.verifyIdToken.mockReset();
@@ -394,6 +406,27 @@ describe('AuthService', () => {
     );
   });
 
+  it('rejects google login for accounts registered with password auth', async () => {
+    users.push({
+      id: randomUUID(),
+      email: 'verified@irontrack.local',
+      passwordHash: await hash('Str0ngPassword!', 12),
+      authProvider: 'LOCAL',
+      deletedAt: null,
+    });
+
+    await expect(
+      authService.googleLogin({
+        idToken: 'valid-google-id-token-1234567890',
+      }),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'EMAIL_REGISTERED_WITH_PASSWORD',
+      },
+    });
+    expect(prismaMock.user.upsert).not.toHaveBeenCalled();
+  });
+
   it('applies UTC timezone when creating google-auth users', async () => {
     await authService.googleLogin({
       idToken: 'valid-google-id-token-1234567890',
@@ -406,6 +439,22 @@ describe('AuthService', () => {
         }),
       }),
     );
+  });
+
+  it('stores a random high-cost sentinel password hash for new google users', async () => {
+    await authService.googleLogin({
+      idToken: 'valid-google-id-token-1234567890',
+    });
+
+    const upsertArgs = (prismaMock.user.upsert as jest.Mock).mock
+      .calls[0]?.[0] as UserUpsertArgs | undefined;
+    const createPasswordHash = upsertArgs?.create.passwordHash;
+
+    expect(typeof createPasswordHash).toBe('string');
+    expect(
+      await bcryptjs.compare('google-user-id-123', createPasswordHash!),
+    ).toBe(false);
+    expect(bcryptjs.getRounds(createPasswordHash!)).toBe(12);
   });
 
   it('google login requires idToken', async () => {
@@ -452,6 +501,7 @@ describe('AuthService', () => {
     (prismaMock.user.create as jest.Mock).mockRejectedValueOnce(
       Object.assign(new Error('Unique constraint failed'), {
         code: 'P2002',
+        meta: { target: ['email'] },
       }),
     );
 
@@ -482,6 +532,75 @@ describe('AuthService', () => {
     ).rejects.toBe(unexpected);
   });
 
+  it('does not remap non-email unique constraint errors to EMAIL_TAKEN', async () => {
+    const nonEmailUniqueViolation = Object.assign(
+      new Error('Unique constraint failed'),
+      {
+        code: 'P2002',
+        meta: { target: ['googleId'] },
+      },
+    );
+    (prismaMock.user.create as jest.Mock).mockRejectedValueOnce(
+      nonEmailUniqueViolation,
+    );
+
+    await expect(
+      authService.register({
+        email: 'not-email-unique@example.com',
+        password: 'Str0ngPassword!',
+        name: 'Not Email Unique',
+      }),
+    ).rejects.toBe(nonEmailUniqueViolation);
+  });
+
+  it('maps email unique violations when Prisma target is a constraint-name string', async () => {
+    (prismaMock.user.create as jest.Mock).mockRejectedValueOnce(
+      Object.assign(new Error('Unique constraint failed'), {
+        code: 'P2002',
+        meta: { target: 'User_email_key' },
+      }),
+    );
+
+    await expect(
+      authService.register({
+        email: 'constraint-string@example.com',
+        password: 'Str0ngPassword!',
+        name: 'Constraint String',
+      }),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'EMAIL_TAKEN',
+      },
+    });
+  });
+
+  it('rethrows non-object registration create errors', async () => {
+    (prismaMock.user.create as jest.Mock).mockRejectedValueOnce('boom');
+
+    await expect(
+      authService.register({
+        email: 'non-object-error@example.com',
+        password: 'Str0ngPassword!',
+        name: 'Non Object',
+      }),
+    ).rejects.toBe('boom');
+  });
+
+  it('checks registration email availability against active users', async () => {
+    await authService.register({
+      email: 'active-check@example.com',
+      password: 'Str0ngPassword!',
+      name: 'Active Check',
+    });
+
+    expect(prismaMock.user.findFirst).toHaveBeenCalledWith({
+      where: {
+        email: 'active-check@example.com',
+        deletedAt: null,
+      },
+    });
+  });
+
   it('rejects login when user is missing', async () => {
     await expect(
       authService.login({
@@ -489,6 +608,38 @@ describe('AuthService', () => {
         password: 'Str0ngPassword!',
       }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('runs bcrypt compare even when login user is missing', async () => {
+    const compareMock = bcryptjs.compare as unknown as jest.Mock;
+
+    await expect(
+      authService.login({
+        email: 'timing-missing@example.com',
+        password: 'Str0ngPassword!',
+      }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+
+    expect(compareMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs bcrypt compare even for GOOGLE accounts to reduce timing side-channel', async () => {
+    users.push({
+      id: randomUUID(),
+      email: 'google-only@example.com',
+      passwordHash: await hash('irrelevant-password', 12),
+      authProvider: 'GOOGLE',
+    });
+    const compareMock = bcryptjs.compare as unknown as jest.Mock;
+
+    await expect(
+      authService.login({
+        email: 'google-only@example.com',
+        password: 'Str0ngPassword!',
+      }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+
+    expect(compareMock).toHaveBeenCalledTimes(1);
   });
 
   it('rejects login when password does not match', async () => {
