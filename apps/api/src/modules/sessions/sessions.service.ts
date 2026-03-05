@@ -420,71 +420,19 @@ export class SessionsService {
     sessionExerciseId: string,
     input: CreateSetDto,
   ) {
-    const sessionExercise = await this.prisma.sessionExercise.findFirst({
-      where: {
-        id: sessionExerciseId,
-        deletedAt: null,
-        session: { userId },
-      },
-    });
-
-    if (!sessionExercise) {
-      this.throwSessionExerciseNotFound();
-    }
-
-    if (input.idempotencyKey) {
-      const existing = await this.prisma.set.findFirst({
-        where: {
-          sessionExerciseId,
-          idempotencyKey: input.idempotencyKey,
-        },
-      });
-      if (existing) {
-        return existing;
-      }
-    }
-
-    const createdSet = await this.prisma.set.create({
-      data: {
-        sessionExerciseId,
-        orderIndex: input.orderIndex,
-        type: input.type,
-        payload: input.payload as Prisma.InputJsonValue,
-        isCompleted: input.isCompleted ?? Boolean(input.completedAt),
-        completedAt: input.completedAt
-          ? new Date(input.completedAt)
-          : input.isCompleted
-            ? new Date()
-            : null,
-        idempotencyKey: input.idempotencyKey,
-        weight: input.weight,
-        reps: input.reps,
-        durationSeconds: input.durationSeconds,
-        rpe: input.rpe,
-      },
-      include: {
-        sessionExercise: {
-          select: {
-            exerciseTemplateId: true,
-            session: {
-              select: {
-                id: true,
-                userId: true,
-              },
-            },
-          },
-        },
-      },
-    });
-
-    if (createdSet.isCompleted) {
+    const createdSet = await this.createSetInternal(
+      userId,
+      sessionExerciseId,
+      input,
+    );
+    if (createdSet.wasCreated && createdSet.item.isCompleted) {
       await this.prDetectionService.recalculateForExercise(
-        createdSet.sessionExercise.session.userId,
-        createdSet.sessionExercise.exerciseTemplateId,
+        userId,
+        createdSet.exerciseTemplateId,
       );
     }
 
-    return createdSet;
+    return createdSet.item;
   }
 
   async updateSet(
@@ -655,12 +603,31 @@ export class SessionsService {
     sessionExerciseId: string,
     input: BatchCreateSetsDto,
   ) {
-    await this.assertSessionExerciseOwnership(userId, sessionExerciseId);
+    const sessionExercise = await this.assertSessionExerciseOwnership(
+      userId,
+      sessionExerciseId,
+    );
 
     const results = [];
+    let shouldRecalculatePrs = false;
     for (const set of input.sets) {
-      const created = await this.createSet(userId, sessionExerciseId, set);
-      results.push(created);
+      const created = await this.createSetInternal(
+        userId,
+        sessionExerciseId,
+        set,
+        sessionExercise,
+      );
+      results.push(created.item);
+      if (created.wasCreated && created.item.isCompleted) {
+        shouldRecalculatePrs = true;
+      }
+    }
+
+    if (shouldRecalculatePrs) {
+      await this.prDetectionService.recalculateForExercise(
+        userId,
+        sessionExercise.exerciseTemplateId,
+      );
     }
 
     return {
@@ -696,11 +663,100 @@ export class SessionsService {
           deletedAt: null,
         },
       },
+      select: {
+        id: true,
+        exerciseTemplateId: true,
+      },
     });
 
     if (!sessionExercise) {
       this.throwSessionExerciseForbidden();
     }
+
+    return sessionExercise;
+  }
+
+  private async createSetInternal(
+    userId: string,
+    sessionExerciseId: string,
+    input: CreateSetDto,
+    existingSessionExercise?: {
+      id: string;
+      exerciseTemplateId: string;
+    },
+  ) {
+    const sessionExercise =
+      existingSessionExercise ??
+      (await this.prisma.sessionExercise.findFirst({
+        where: {
+          id: sessionExerciseId,
+          deletedAt: null,
+          session: { userId },
+        },
+        select: {
+          id: true,
+          exerciseTemplateId: true,
+        },
+      }));
+
+    if (!sessionExercise) {
+      this.throwSessionExerciseNotFound();
+    }
+
+    if (input.idempotencyKey) {
+      const existing = await this.prisma.set.findFirst({
+        where: {
+          sessionExerciseId,
+          idempotencyKey: input.idempotencyKey,
+        },
+      });
+      if (existing) {
+        return {
+          item: existing,
+          wasCreated: false,
+          exerciseTemplateId: sessionExercise.exerciseTemplateId,
+        };
+      }
+    }
+
+    const created = await this.prisma.set.create({
+      data: {
+        sessionExerciseId,
+        orderIndex: input.orderIndex,
+        type: input.type,
+        payload: input.payload as Prisma.InputJsonValue,
+        isCompleted: input.isCompleted ?? Boolean(input.completedAt),
+        completedAt: input.completedAt
+          ? new Date(input.completedAt)
+          : input.isCompleted
+            ? new Date()
+            : null,
+        idempotencyKey: input.idempotencyKey,
+        weight: input.weight,
+        reps: input.reps,
+        durationSeconds: input.durationSeconds,
+        rpe: input.rpe,
+      },
+      include: {
+        sessionExercise: {
+          select: {
+            exerciseTemplateId: true,
+            session: {
+              select: {
+                id: true,
+                userId: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return {
+      item: created,
+      wasCreated: true,
+      exerciseTemplateId: sessionExercise.exerciseTemplateId,
+    };
   }
 
   private throwSessionNotFound(): never {

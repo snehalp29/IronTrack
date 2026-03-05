@@ -754,6 +754,7 @@ describe('SessionsService', () => {
     const { service, prismaMock, prDetectionMock } = createService();
     (prismaMock.sessionExercise.findFirst as jest.Mock).mockResolvedValue({
       id: 'se1',
+      exerciseTemplateId: 'exercise-1',
     });
     (prismaMock.set.findFirst as jest.Mock).mockResolvedValue(null);
     (prismaMock.set.create as jest.Mock).mockResolvedValue({
@@ -788,6 +789,7 @@ describe('SessionsService', () => {
     const { service, prismaMock, prDetectionMock } = createService();
     (prismaMock.sessionExercise.findFirst as jest.Mock).mockResolvedValue({
       id: 'se1',
+      exerciseTemplateId: 'exercise-1',
     });
     (prismaMock.set.findFirst as jest.Mock).mockResolvedValue(null);
     (prismaMock.set.create as jest.Mock).mockResolvedValue({
@@ -822,6 +824,7 @@ describe('SessionsService', () => {
     const { service, prismaMock, prDetectionMock } = createService();
     (prismaMock.sessionExercise.findFirst as jest.Mock).mockResolvedValue({
       id: 'se1',
+      exerciseTemplateId: 'exercise-1',
     });
     (prismaMock.set.create as jest.Mock).mockResolvedValue({
       id: 'set-1',
@@ -854,6 +857,7 @@ describe('SessionsService', () => {
     const { service, prismaMock } = createService();
     (prismaMock.sessionExercise.findFirst as jest.Mock).mockResolvedValue({
       id: 'se1',
+      exerciseTemplateId: 'exercise-1',
     });
     (prismaMock.set.findFirst as jest.Mock).mockResolvedValue({
       id: 'existing-set',
@@ -1263,12 +1267,26 @@ describe('SessionsService', () => {
     const { service, prismaMock } = createService();
     (prismaMock.sessionExercise.findFirst as jest.Mock).mockResolvedValue({
       id: 'se1',
+      exerciseTemplateId: 'exercise-1',
+      session: { id: 'session-1', userId: 'user-1' },
     });
-
-    const createSetSpy = jest
-      .spyOn(service, 'createSet')
-      .mockResolvedValueOnce({ id: 'set-1' } as never)
-      .mockResolvedValueOnce({ id: 'set-2' } as never);
+    (prismaMock.set.create as jest.Mock)
+      .mockResolvedValueOnce({
+        id: 'set-1',
+        isCompleted: false,
+        sessionExercise: {
+          exerciseTemplateId: 'exercise-1',
+          session: { id: 'session-1', userId: 'user-1' },
+        },
+      })
+      .mockResolvedValueOnce({
+        id: 'set-2',
+        isCompleted: false,
+        sessionExercise: {
+          exerciseTemplateId: 'exercise-1',
+          session: { id: 'session-1', userId: 'user-1' },
+        },
+      });
 
     await expect(
       service.batchCreateSets('user-1', 'se1', {
@@ -1285,23 +1303,109 @@ describe('SessionsService', () => {
           },
         ],
       }),
-    ).resolves.toEqual({
-      items: [{ id: 'set-1' }, { id: 'set-2' }],
-      count: 2,
+    ).resolves.toEqual(
+      expect.objectContaining({
+        count: 2,
+        items: [
+          expect.objectContaining({ id: 'set-1' }),
+          expect.objectContaining({ id: 'set-2' }),
+        ],
+      }),
+    );
+
+    expect(prismaMock.set.create).toHaveBeenCalledTimes(2);
+  });
+
+  it('batch recalculates PRs once for multiple completed sets on same exercise', async () => {
+    const { service, prismaMock, prDetectionMock } = createService();
+    (prismaMock.sessionExercise.findFirst as jest.Mock).mockResolvedValue({
+      id: 'se1',
+      exerciseTemplateId: 'exercise-1',
+      session: { id: 'session-1', userId: 'user-1' },
+    });
+    (prismaMock.set.create as jest.Mock)
+      .mockResolvedValueOnce({
+        id: 'set-1',
+        isCompleted: true,
+        sessionExercise: {
+          exerciseTemplateId: 'exercise-1',
+          session: { id: 'session-1', userId: 'user-1' },
+        },
+      })
+      .mockResolvedValueOnce({
+        id: 'set-2',
+        isCompleted: true,
+        sessionExercise: {
+          exerciseTemplateId: 'exercise-1',
+          session: { id: 'session-1', userId: 'user-1' },
+        },
+      });
+
+    await service.batchCreateSets('user-1', 'se1', {
+      sets: [
+        {
+          orderIndex: 0,
+          type: 'WEIGHT_REPS',
+          payload: {},
+          isCompleted: true,
+        },
+        {
+          orderIndex: 1,
+          type: 'WEIGHT_REPS',
+          payload: {},
+          isCompleted: true,
+        },
+      ],
     });
 
-    expect(createSetSpy).toHaveBeenNthCalledWith(
-      1,
+    expect(prDetectionMock.recalculateForExercise).toHaveBeenCalledTimes(1);
+    expect(prDetectionMock.recalculateForExercise).toHaveBeenCalledWith(
       'user-1',
-      'se1',
-      expect.objectContaining({ orderIndex: 0 }),
+      'exercise-1',
     );
-    expect(createSetSpy).toHaveBeenNthCalledWith(
-      2,
-      'user-1',
-      'se1',
-      expect.objectContaining({ orderIndex: 1 }),
-    );
+  });
+
+  it('does not recalculate PRs for batch when no new completed sets were created', async () => {
+    const { service, prismaMock, prDetectionMock } = createService();
+    (prismaMock.sessionExercise.findFirst as jest.Mock).mockResolvedValue({
+      id: 'se1',
+      exerciseTemplateId: 'exercise-1',
+      session: { id: 'session-1', userId: 'user-1' },
+    });
+    (prismaMock.set.create as jest.Mock)
+      .mockResolvedValueOnce({
+        id: 'set-1',
+        isCompleted: false,
+        sessionExercise: {
+          exerciseTemplateId: 'exercise-1',
+          session: { id: 'session-1', userId: 'user-1' },
+        },
+      })
+      .mockResolvedValueOnce({
+        id: 'set-2',
+        isCompleted: false,
+        sessionExercise: {
+          exerciseTemplateId: 'exercise-1',
+          session: { id: 'session-1', userId: 'user-1' },
+        },
+      });
+
+    await service.batchCreateSets('user-1', 'se1', {
+      sets: [
+        {
+          orderIndex: 0,
+          type: 'WEIGHT_REPS',
+          payload: {},
+        },
+        {
+          orderIndex: 1,
+          type: 'WEIGHT_REPS',
+          payload: {},
+        },
+      ],
+    });
+
+    expect(prDetectionMock.recalculateForExercise).not.toHaveBeenCalled();
   });
 
   it('throws forbidden when batch creating for inaccessible session exercise', async () => {
