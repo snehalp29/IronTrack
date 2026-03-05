@@ -9,6 +9,7 @@ import { AuthProvider, User } from '@prisma/client';
 import { compare, hash } from 'bcryptjs';
 import { createHash } from 'node:crypto';
 
+import { durationToSeconds } from '../../config/env.schema';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   GoogleAuthDto,
@@ -59,8 +60,11 @@ export class AuthService {
   }
 
   async login(input: LoginDto): Promise<AuthTokens> {
-    const user = await this.prisma.user.findUnique({
-      where: { email: input.email.toLowerCase() },
+    const user = await this.prisma.user.findFirst({
+      where: {
+        email: input.email.toLowerCase(),
+        deletedAt: null,
+      },
     });
 
     if (!user || user.authProvider !== AuthProvider.LOCAL) {
@@ -116,6 +120,13 @@ export class AuthService {
       });
     }
 
+    if (!stored.user || stored.user.deletedAt !== null) {
+      throw new UnauthorizedException({
+        code: 'INVALID_REFRESH_TOKEN',
+        message: 'Refresh token is invalid or expired',
+      });
+    }
+
     return this.issueTokens(stored.user.id, stored.user.email);
   }
 
@@ -143,6 +154,16 @@ export class AuthService {
     const identity = await this.googleTokenVerifierService.verifyIdToken(
       input.idToken,
     );
+
+    const existingUser = await this.prisma.user.findFirst({
+      where: { email: identity.email },
+    });
+    if (existingUser?.deletedAt) {
+      throw new UnauthorizedException({
+        code: 'USER_DISABLED',
+        message: 'User account is disabled',
+      });
+    }
 
     const user = await this.prisma.user.upsert({
       where: { email: identity.email },
@@ -211,23 +232,13 @@ export class AuthService {
   }
 
   private parseDurationToMs(value: string): number {
-    const pattern = /^(\d+)([smhd])$/;
-    const match = pattern.exec(value.trim());
-    if (!match) {
-      return 7 * 24 * 60 * 60 * 1000;
+    const normalized = value.trim();
+    const durationSeconds = durationToSeconds(normalized);
+    if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+      throw new Error(`Invalid JWT_REFRESH_EXPIRY value: ${value}`);
     }
 
-    const amount = Number(match[1]);
-    const unit = match[2];
-
-    const unitMap: Record<string, number> = {
-      s: 1000,
-      m: 60_000,
-      h: 3_600_000,
-      d: 86_400_000,
-    };
-
-    return amount * unitMap[unit];
+    return durationSeconds * 1000;
   }
 
   async validateUserFromPayload(payload: {

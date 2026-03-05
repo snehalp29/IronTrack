@@ -5,6 +5,7 @@ import { z } from 'zod';
 
 const GOOGLE_JWKS_URL = 'https://www.googleapis.com/oauth2/v3/certs';
 const DEFAULT_JWKS_CACHE_TTL_SECONDS = 300;
+const GOOGLE_JWKS_REQUEST_TIMEOUT_MS = 5000;
 const VALID_ISSUERS = new Set([
   'accounts.google.com',
   'https://accounts.google.com',
@@ -178,12 +179,23 @@ export class GoogleTokenVerifierService {
       return this.jwksCache.keys;
     }
 
-    const response = await fetch(GOOGLE_JWKS_URL, {
-      method: 'GET',
-      headers: {
-        Accept: 'application/json',
-      },
-    });
+    const abortController = new AbortController();
+    const timeoutHandle = setTimeout(() => {
+      abortController.abort();
+    }, GOOGLE_JWKS_REQUEST_TIMEOUT_MS);
+
+    let response: Response;
+    try {
+      response = await fetch(GOOGLE_JWKS_URL, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+        },
+        signal: abortController.signal,
+      });
+    } finally {
+      clearTimeout(timeoutHandle);
+    }
 
     if (!response.ok) {
       throw new UnauthorizedException({

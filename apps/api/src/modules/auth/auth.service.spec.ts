@@ -15,6 +15,7 @@ describe('AuthService', () => {
     email: string;
     passwordHash: string;
     authProvider: 'LOCAL' | 'GOOGLE';
+    deletedAt?: Date | null;
     timezone?: string;
     unitPreference?: 'METRIC' | 'IMPERIAL';
     googleId?: string;
@@ -32,7 +33,7 @@ describe('AuthService', () => {
     where: { id?: string; email?: string };
   };
   type UserFindFirstArgs = {
-    where: { id: string; deletedAt?: null };
+    where: { id?: string; email?: string; deletedAt?: null };
   };
   type UserCreateArgs = {
     data: {
@@ -104,7 +105,16 @@ describe('AuthService', () => {
       ),
       findFirst: jest.fn(
         async ({ where }: UserFindFirstArgs) =>
-          users.find((user) => user.id === where.id) ?? null,
+          users.find((user) => {
+            const matchesId = where.id === undefined || user.id === where.id;
+            const matchesEmail =
+              where.email === undefined || user.email === where.email;
+            const userDeletedAt = user.deletedAt ?? null;
+            const matchesDeletedAt =
+              where.deletedAt === undefined ||
+              userDeletedAt === where.deletedAt;
+            return matchesId && matchesEmail && matchesDeletedAt;
+          }) ?? null,
       ),
       create: jest.fn(async ({ data }: UserCreateArgs) => {
         const user = {
@@ -112,6 +122,7 @@ describe('AuthService', () => {
           email: data.email,
           passwordHash: data.passwordHash,
           authProvider: 'LOCAL' as const,
+          deletedAt: null,
           timezone: data.timezone,
           unitPreference: data.unitPreference,
           name: data.name,
@@ -131,6 +142,7 @@ describe('AuthService', () => {
           email: create.email,
           passwordHash: create.passwordHash,
           authProvider: 'GOOGLE' as const,
+          deletedAt: null,
           timezone: create.timezone,
           unitPreference: create.unitPreference,
           name: create.name,
@@ -164,9 +176,16 @@ describe('AuthService', () => {
             return null;
           }
           if (include?.user) {
+            const user = users.find((entry) => entry.id === token.userId);
             return {
               ...token,
-              user: users.find((user) => user.id === token.userId),
+              user:
+                user === undefined
+                  ? null
+                  : {
+                      ...user,
+                      deletedAt: user.deletedAt ?? null,
+                    },
             };
           }
           return token;
@@ -295,7 +314,12 @@ describe('AuthService', () => {
 
     expect(parser.parseDurationToMs('15m')).toBe(15 * 60_000);
     expect(parser.parseDurationToMs('7d')).toBe(7 * 86_400_000);
-    expect(parser.parseDurationToMs('invalid')).toBe(7 * 86_400_000);
+    expect(() => parser.parseDurationToMs('invalid')).toThrow(
+      'Invalid JWT_REFRESH_EXPIRY value: invalid',
+    );
+    expect(() => parser.parseDurationToMs('0m')).toThrow(
+      'Invalid JWT_REFRESH_EXPIRY value: 0m',
+    );
   });
 
   it('uses jwt module defaults for access tokens and explicit options for refresh tokens', async () => {
@@ -412,6 +436,23 @@ describe('AuthService', () => {
     await expect(
       authService.login({
         email: 'john@example.com',
+        password: 'Str0ngPassword!',
+      }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('rejects login for soft-deleted local users', async () => {
+    users.push({
+      id: randomUUID(),
+      email: 'deleted@example.com',
+      passwordHash: await hash('Str0ngPassword!', 12),
+      authProvider: 'LOCAL',
+      deletedAt: new Date('2026-03-05T00:00:00.000Z'),
+    });
+
+    await expect(
+      authService.login({
+        email: 'deleted@example.com',
         password: 'Str0ngPassword!',
       }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
@@ -560,6 +601,49 @@ describe('AuthService', () => {
     }
   });
 
+  it('rejects refresh token for soft-deleted users', async () => {
+    const userId = randomUUID();
+    users.push({
+      id: userId,
+      email: 'deleted-refresh@example.com',
+      passwordHash: 'hash',
+      authProvider: 'LOCAL',
+      deletedAt: new Date('2026-03-05T00:00:00.000Z'),
+    });
+
+    const rawRefreshToken = 'refresh-token-deleted-user-123';
+    refreshTokens.push({
+      id: randomUUID(),
+      userId,
+      tokenHash: createHash('sha256').update(rawRefreshToken).digest('hex'),
+      revokedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+
+    await expect(
+      authService.refresh({
+        refreshToken: rawRefreshToken,
+      }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('rejects google login for soft-deleted accounts', async () => {
+    users.push({
+      id: randomUUID(),
+      email: 'verified@irontrack.local',
+      passwordHash: 'hash',
+      authProvider: 'LOCAL',
+      deletedAt: new Date('2026-03-05T00:00:00.000Z'),
+    });
+
+    await expect(
+      authService.googleLogin({
+        idToken: 'valid-google-id-token-1234567890',
+      }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(prismaMock.user.upsert).not.toHaveBeenCalled();
+  });
+
   it('validates and returns user from JWT payload', async () => {
     const user = {
       id: randomUUID(),
@@ -584,6 +668,24 @@ describe('AuthService', () => {
       authService.validateUserFromPayload({
         sub: randomUUID(),
         email: 'missing@example.com',
+      }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('rejects JWT payload when user is soft-deleted', async () => {
+    const user = {
+      id: randomUUID(),
+      email: 'deleted-payload@example.com',
+      passwordHash: 'hash',
+      authProvider: 'LOCAL' as const,
+      deletedAt: new Date('2026-03-05T00:00:00.000Z'),
+    };
+    users.push(user);
+
+    await expect(
+      authService.validateUserFromPayload({
+        sub: user.id,
+        email: user.email,
       }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });

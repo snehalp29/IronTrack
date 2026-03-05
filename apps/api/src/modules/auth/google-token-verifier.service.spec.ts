@@ -409,6 +409,51 @@ describe('GoogleTokenVerifierService', () => {
     });
   });
 
+  it('aborts stalled JWKS fetches and returns verification failure', async () => {
+    jest.useFakeTimers();
+    fetchSpy.mockImplementation(
+      async (_input: string | URL | Request, init?: RequestInit) =>
+        await new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (!signal) {
+            return;
+          }
+
+          signal.addEventListener('abort', () => {
+            const abortError = new Error('aborted');
+            abortError.name = 'AbortError';
+            reject(abortError);
+          });
+        }),
+    );
+
+    const verification = service.verifyIdToken(createToken({ sub: 'timeout' }));
+    let settled = false;
+    void verification.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+
+    await jest.advanceTimersByTimeAsync(5_001);
+    expect(settled).toBe(true);
+
+    await expect(verification).rejects.toMatchObject({
+      response: {
+        code: 'GOOGLE_TOKEN_VERIFICATION_FAILED',
+      },
+    });
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        signal: expect.any(AbortSignal),
+      }),
+    );
+  });
+
   it('rejects when claims payload shape is invalid after successful signature verification', async () => {
     fetchSpy.mockResolvedValue(
       createJwksResponse({ keys: [createSigningJwk()] }),
