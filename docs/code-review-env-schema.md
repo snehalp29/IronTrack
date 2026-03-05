@@ -1926,3 +1926,165 @@ However, `durationToSeconds` is also called from the object-level `superRefine`.
 // Defensive guard: durationSchema.refine() runs even when the preceding
 // .regex() check fails, so this function may receive a non-matching string.
 ```
+
+## Verification Pass 11 — 2026-03-05
+
+**Scope:** `apps/api/src/config/env.schema.spec.ts`
+
+| #   | Finding                                                                | Status   | Notes                                                                                                                     |
+| --- | ---------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------- |
+| 77  | `throws with issue details` — 3-field `.toThrow()` regex               | ✅ Fixed | Split into 3 individual `it` blocks using `getValidationErrorMessage` + `toContain` (L235–267)                            |
+| 78  | `rejects config with missing JWT secrets` — 2-field `.toThrow()` regex | ✅ Fixed | Split into 2 individual `it` blocks for access and refresh secret (L269–287)                                              |
+| 79  | No test for single valid `CORS_ORIGINS` entry                          | ✅ Fixed | `accepts CORS_ORIGINS with a single valid entry` — `['https://app.example.com']` (L1043–1051)                             |
+| 80  | No test for `CORS_ORIGINS` where non-first entry is invalid            | ✅ Fixed | `rejects CORS_ORIGINS when a non-first entry is invalid` — `'https://app.example.com,ftp://bad.example.com'` (L1053–1063) |
+| 81  | `API_PREFIX: 123` type rejection not tested                            | ✅ Fixed | `rejects non-string API_PREFIX values` — `API_PREFIX: 123` → `received number` (L325–335)                                 |
+| 82  | `VALID_GOOGLE_CALLBACK_URL` embeds `api/v1` path                       | ✅ Fixed | Constant updated to `'https://auth.example.com/oauth/google/callback'` — no API prefix coupling (L13–14)                  |
+
+---
+
+### New Findings — 2026-03-05
+
+#### 83. JWT expiry whitespace tests share config across two `it` blocks (`env.schema.spec.ts:337–357`) **[P3]**
+
+```ts
+it('accepts JWT_ACCESS_EXPIRY values with surrounding whitespace and normalizes them', () => {
+  const parsed = validateEnv(
+    createBaseConfig({
+      JWT_ACCESS_EXPIRY: ' 15m ',
+      JWT_REFRESH_EXPIRY: '\t7d\n', // ← also set here
+    }),
+  );
+  expect(parsed.JWT_ACCESS_EXPIRY).toBe('15m');
+});
+
+it('accepts JWT_REFRESH_EXPIRY values with surrounding whitespace and normalizes them', () => {
+  const parsed = validateEnv(
+    createBaseConfig({
+      JWT_ACCESS_EXPIRY: ' 15m ', // ← also set here
+      JWT_REFRESH_EXPIRY: '\t7d\n',
+    }),
+  );
+  expect(parsed.JWT_REFRESH_EXPIRY).toBe('7d');
+});
+```
+
+Both tests require both `JWT_ACCESS_EXPIRY` and `JWT_REFRESH_EXPIRY` to be set (because if only one is padded, the cross-expiry guard may fire). However, both tests define the full config identically. This is the same pattern addressed in finding #75 (resolved by extracting `parseWithWhitespacedNormalizedFields()`).
+
+**Fix:** Extract a shared helper:
+
+```ts
+function parseWithWhitespacedJwtExpiries() {
+  return validateEnv(
+    createBaseConfig({
+      JWT_ACCESS_EXPIRY: ' 15m ',
+      JWT_REFRESH_EXPIRY: '\t7d\n',
+    }),
+  );
+}
+
+it('accepts JWT_ACCESS_EXPIRY values with surrounding whitespace and normalizes them', () => {
+  expect(parseWithWhitespacedJwtExpiries().JWT_ACCESS_EXPIRY).toBe('15m');
+});
+
+it('accepts JWT_REFRESH_EXPIRY values with surrounding whitespace and normalizes them', () => {
+  expect(parseWithWhitespacedJwtExpiries().JWT_REFRESH_EXPIRY).toBe('7d');
+});
+```
+
+---
+
+#### 84. Blank Google OAuth tests share config across three `it` blocks (`env.schema.spec.ts:876–913`) **[P3]**
+
+```ts
+it('treats blank GOOGLE_CLIENT_ID values as missing', () => {
+  const parsed = validateEnv(
+    createBaseConfig({
+      NODE_ENV: 'development',
+      GOOGLE_CLIENT_ID: '   ',
+      GOOGLE_CLIENT_SECRET: '',
+      GOOGLE_CALLBACK_URL: '\n\t',
+    }),
+  );
+  expect(parsed.GOOGLE_CLIENT_ID).toBeUndefined();
+});
+
+// identical config repeated in the next two `it` blocks
+```
+
+All three tests parse the same config object to assert three different fields are `undefined`. This is the same multi-parse pattern flagged in #75 and #83.
+
+**Fix:** Extract a shared helper:
+
+```ts
+function parseWithBlankGoogleOAuthFields() {
+  return validateEnv(
+    createBaseConfig({
+      NODE_ENV: 'development',
+      GOOGLE_CLIENT_ID: '   ',
+      GOOGLE_CLIENT_SECRET: '',
+      GOOGLE_CALLBACK_URL: '\n\t',
+    }),
+  );
+}
+
+it('treats blank GOOGLE_CLIENT_ID values as missing', () => {
+  expect(parseWithBlankGoogleOAuthFields().GOOGLE_CLIENT_ID).toBeUndefined();
+});
+// …and so on for SECRET and CALLBACK_URL
+```
+
+---
+
+#### 85. Only one permutation of the "two-of-three present" partial OAuth config is tested in non-production mode (`env.schema.spec.ts:820–832`) **[P3]**
+
+The non-production partial OAuth tests cover two cases:
+
+| Scenario                                                | Tests present                                                         |
+| ------------------------------------------------------- | --------------------------------------------------------------------- |
+| Only `GOOGLE_CLIENT_ID` set                             | test mode (L768–779, L781–792), development mode (L794–805, L807–818) |
+| Only `GOOGLE_CLIENT_ID` missing (secret + callback set) | development mode only (L820–832)                                      |
+
+Missing:
+
+- `GOOGLE_CLIENT_SECRET` missing, id + callback present — not tested in dev or test mode
+- `GOOGLE_CALLBACK_URL` missing, id + secret present — only tested in **production** (L692–705, L707–718)
+
+The `superRefine` logic for `hasAnyGoogleConfig && !hasCompleteGoogleConfig` has three independent branches. Only the "id missing" branch is exercised in non-production; the other two branches are implicitly covered only because the "only id set" test exercises two branches simultaneously.
+
+**Fix:** Add for development or test mode:
+
+```ts
+it('reports missing GOOGLE_CALLBACK_URL for partial Google OAuth config when id and secret are present', () => {
+  const message = getValidationErrorMessage(
+    createBaseConfig({
+      GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
+      GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
+    }),
+  );
+  expect(message).toContain(
+    'GOOGLE_CALLBACK_URL: GOOGLE_CALLBACK_URL must be provided with GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET',
+  );
+});
+```
+
+---
+
+#### 86. `formats non-Error throws in the test helper` tests the helper, not `validateEnv` (`env.schema.spec.ts:97–103`) **[P3]**
+
+```ts
+it('formats non-Error throws in the test helper', () => {
+  const message = getValidationErrorMessageFrom(createBaseConfig(), () => {
+    throw 'boom';
+  });
+  expect(message).toBe('validateEnv threw a non-Error: boom');
+});
+```
+
+This test passes a valid config but provides a dummy validator that throws a string — bypassing `validateEnv` entirely. The subject under test is the `getValidationErrorMessageFrom` helper function itself, not any schema behaviour. Two issues:
+
+1. The test description `'formats non-Error throws in the test helper'` is accurate but sits inside the `validateEnv` `describe` block, suggesting it tests `validateEnv` behaviour.
+2. `createBaseConfig()` is passed as the config argument but is ignored by the validator — it is dead input.
+
+The non-Error branch (`return \`validateEnv threw a non-Error: ${String(error)}\``) can never be reached through normal `validateEnv`usage since`validateEnv`only throws`new Error(...)`. The test is testing an unreachable branch of the helper.
+
+**Fix:** Either move the test to a dedicated `describe('getValidationErrorMessageFrom', ...)` block and remove `createBaseConfig()` from the call, or delete the test — the branch it covers exists only as a defensive fallback, not a reachable path through `validateEnv`.

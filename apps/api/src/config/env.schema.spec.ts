@@ -35,6 +35,26 @@ function parseWithWhitespacedNormalizedFields() {
   );
 }
 
+function parseWithWhitespacedJwtExpiries() {
+  return validateEnv(
+    createBaseConfig({
+      JWT_ACCESS_EXPIRY: ' 15m ',
+      JWT_REFRESH_EXPIRY: '\t7d\n',
+    }),
+  );
+}
+
+function parseWithBlankGoogleOAuthFields() {
+  return validateEnv(
+    createBaseConfig({
+      NODE_ENV: 'development',
+      GOOGLE_CLIENT_ID: '   ',
+      GOOGLE_CLIENT_SECRET: '',
+      GOOGLE_CALLBACK_URL: '\n\t',
+    }),
+  );
+}
+
 function getValidationErrorMessage(config: Record<string, unknown>): string {
   return getValidationErrorMessageFrom(config, validateEnv);
 }
@@ -53,6 +73,16 @@ function getValidationErrorMessageFrom(
   }
   throw new Error('Expected validateEnv to throw');
 }
+
+describe('getValidationErrorMessageFrom', () => {
+  it('formats non-Error throws in the helper', () => {
+    const message = getValidationErrorMessageFrom({}, () => {
+      throw 'boom';
+    });
+
+    expect(message).toBe('validateEnv threw a non-Error: boom');
+  });
+});
 
 describe('validateEnv', () => {
   it('defaults NODE_ENV to development', () => {
@@ -92,14 +122,6 @@ describe('validateEnv', () => {
       'http://localhost:5173',
       'http://localhost:8081',
     ]);
-  });
-
-  it('formats non-Error throws in the test helper', () => {
-    const message = getValidationErrorMessageFrom(createBaseConfig(), () => {
-      throw 'boom';
-    });
-
-    expect(message).toBe('validateEnv threw a non-Error: boom');
   });
 
   it('converts second-based duration strings to seconds', () => {
@@ -335,23 +357,13 @@ describe('validateEnv', () => {
   });
 
   it('accepts JWT_ACCESS_EXPIRY values with surrounding whitespace and normalizes them', () => {
-    const parsed = validateEnv(
-      createBaseConfig({
-        JWT_ACCESS_EXPIRY: ' 15m ',
-        JWT_REFRESH_EXPIRY: '\t7d\n',
-      }),
-    );
+    const parsed = parseWithWhitespacedJwtExpiries();
 
     expect(parsed.JWT_ACCESS_EXPIRY).toBe('15m');
   });
 
   it('accepts JWT_REFRESH_EXPIRY values with surrounding whitespace and normalizes them', () => {
-    const parsed = validateEnv(
-      createBaseConfig({
-        JWT_ACCESS_EXPIRY: ' 15m ',
-        JWT_REFRESH_EXPIRY: '\t7d\n',
-      }),
-    );
+    const parsed = parseWithWhitespacedJwtExpiries();
 
     expect(parsed.JWT_REFRESH_EXPIRY).toBe('7d');
   });
@@ -831,6 +843,34 @@ describe('validateEnv', () => {
     );
   });
 
+  it('rejects non-production Google OAuth config when client secret is missing and callback is present', () => {
+    expect(() =>
+      validateEnv(
+        createBaseConfig({
+          NODE_ENV: 'development',
+          GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
+          GOOGLE_CALLBACK_URL: VALID_GOOGLE_CALLBACK_URL,
+        }),
+      ),
+    ).toThrow(
+      /Invalid environment configuration: GOOGLE_CLIENT_SECRET: GOOGLE_CLIENT_SECRET must be provided with GOOGLE_CLIENT_ID and GOOGLE_CALLBACK_URL/,
+    );
+  });
+
+  it('rejects non-production Google OAuth config when callback is missing and client secret is present', () => {
+    expect(() =>
+      validateEnv(
+        createBaseConfig({
+          NODE_ENV: 'development',
+          GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
+          GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
+        }),
+      ),
+    ).toThrow(
+      /Invalid environment configuration: GOOGLE_CALLBACK_URL: GOOGLE_CALLBACK_URL must be provided with GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET/,
+    );
+  });
+
   it('accepts GOOGLE_CLIENT_ID in complete Google OAuth config for production', () => {
     const parsed = validateEnv(
       createBaseConfig({
@@ -874,40 +914,19 @@ describe('validateEnv', () => {
   });
 
   it('treats blank GOOGLE_CLIENT_ID values as missing', () => {
-    const parsed = validateEnv(
-      createBaseConfig({
-        NODE_ENV: 'development',
-        GOOGLE_CLIENT_ID: '   ',
-        GOOGLE_CLIENT_SECRET: '',
-        GOOGLE_CALLBACK_URL: '\n\t',
-      }),
-    );
+    const parsed = parseWithBlankGoogleOAuthFields();
 
     expect(parsed.GOOGLE_CLIENT_ID).toBeUndefined();
   });
 
   it('treats blank GOOGLE_CLIENT_SECRET values as missing', () => {
-    const parsed = validateEnv(
-      createBaseConfig({
-        NODE_ENV: 'development',
-        GOOGLE_CLIENT_ID: '   ',
-        GOOGLE_CLIENT_SECRET: '',
-        GOOGLE_CALLBACK_URL: '\n\t',
-      }),
-    );
+    const parsed = parseWithBlankGoogleOAuthFields();
 
     expect(parsed.GOOGLE_CLIENT_SECRET).toBeUndefined();
   });
 
   it('treats blank GOOGLE_CALLBACK_URL values as missing', () => {
-    const parsed = validateEnv(
-      createBaseConfig({
-        NODE_ENV: 'development',
-        GOOGLE_CLIENT_ID: '   ',
-        GOOGLE_CLIENT_SECRET: '',
-        GOOGLE_CALLBACK_URL: '\n\t',
-      }),
-    );
+    const parsed = parseWithBlankGoogleOAuthFields();
 
     expect(parsed.GOOGLE_CALLBACK_URL).toBeUndefined();
   });
