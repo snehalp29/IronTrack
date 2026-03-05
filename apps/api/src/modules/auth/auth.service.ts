@@ -192,6 +192,13 @@ export class AuthService {
       },
     });
 
+    if (user.deletedAt !== null) {
+      throw new UnauthorizedException({
+        code: 'USER_DISABLED',
+        message: 'User account is disabled',
+      });
+    }
+
     return this.issueTokens(user.id, user.email);
   }
 
@@ -201,6 +208,9 @@ export class AuthService {
   ): Promise<AuthTokens> {
     const payload = { sub: userId, email };
     const accessToken = await this.jwtService.signAsync(payload);
+    const refreshExpiryMs = this.parseDurationToMs(
+      this.configService.getOrThrow<string>('JWT_REFRESH_EXPIRY'),
+    );
     const refreshPayload = {
       ...payload,
       jti: randomUUID(),
@@ -208,13 +218,10 @@ export class AuthService {
 
     const refreshToken = await this.jwtService.signAsync(refreshPayload, {
       secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
-      expiresIn:
-        this.parseDurationToMs(
-          this.configService.getOrThrow<string>('JWT_REFRESH_EXPIRY'),
-        ) / 1000,
+      expiresIn: refreshExpiryMs / 1000,
     });
 
-    await this.persistRefreshToken(userId, refreshToken);
+    await this.persistRefreshToken(userId, refreshToken, refreshExpiryMs);
 
     return { accessToken, refreshToken };
   }
@@ -222,9 +229,10 @@ export class AuthService {
   private async persistRefreshToken(
     userId: string,
     refreshToken: string,
+    refreshExpiryMs: number,
   ): Promise<void> {
     const tokenHash = this.hashToken(refreshToken);
-    const expiresAt = this.getRefreshTokenExpiry();
+    const expiresAt = new Date(Date.now() + refreshExpiryMs);
 
     await this.prisma.refreshToken.create({
       data: {
@@ -244,11 +252,6 @@ export class AuthService {
       code: 'EMAIL_TAKEN',
       message: 'Email already in use',
     });
-  }
-
-  private getRefreshTokenExpiry(): Date {
-    const expiry = this.configService.getOrThrow<string>('JWT_REFRESH_EXPIRY');
-    return new Date(Date.now() + this.parseDurationToMs(expiry));
   }
 
   private parseDurationToMs(value: string): number {

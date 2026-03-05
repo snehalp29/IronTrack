@@ -355,6 +355,24 @@ describe('AuthService', () => {
     });
   });
 
+  it('parses refresh duration once per token issuance', async () => {
+    const parserSpy = jest.spyOn(
+      authService as unknown as {
+        parseDurationToMs: (value: string) => number;
+      },
+      'parseDurationToMs',
+    );
+
+    await authService.register({
+      email: 'parse-once@example.com',
+      password: 'Str0ngPassword!',
+      name: 'Parse Once',
+    });
+
+    expect(parserSpy).toHaveBeenCalledTimes(1);
+    parserSpy.mockRestore();
+  });
+
   it('google login uses verified token identity', async () => {
     const tokens = await authService.googleLogin({
       idToken: 'valid-google-id-token-1234567890',
@@ -717,6 +735,27 @@ describe('AuthService', () => {
       }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
     expect(prismaMock.user.upsert).not.toHaveBeenCalled();
+  });
+
+  it('rejects google login when account becomes soft-deleted before token issuance', async () => {
+    const userId = randomUUID();
+    (prismaMock.user.findFirst as jest.Mock).mockResolvedValueOnce(null);
+    (prismaMock.user.upsert as jest.Mock).mockResolvedValueOnce({
+      id: userId,
+      email: 'verified@irontrack.local',
+      passwordHash: 'hash',
+      authProvider: 'GOOGLE',
+      deletedAt: new Date('2026-03-05T00:00:00.000Z'),
+      googleId: 'google-user-id-123',
+      name: 'Verified User',
+      avatarUrl: 'https://example.com/avatar.png',
+    });
+
+    await expect(
+      authService.googleLogin({
+        idToken: 'valid-google-id-token-1234567890',
+      }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it('validates and returns user from JWT payload', async () => {

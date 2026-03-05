@@ -277,3 +277,49 @@ private getRefreshTokenExpiry(): Date {
 | 9   | Google create branch omits explicit timezone default | ✅ Fixed | `googleLogin` create payload now sets `timezone: 'UTC'` (`auth.service.ts:178–183`). Test: `applies UTC timezone when creating google-auth users`.                                                                          |
 
 Remaining optional items from pass 2: #8 (dead guards cleanup) and #10 (expiry parse dedup).
+
+---
+
+## New Findings — 2026-03-05 (Pass 4)
+
+### P1 — Must Fix
+
+#### 11) `googleLogin` can still mint tokens if account is soft-deleted between pre-check and upsert
+
+**Files/lines:**
+
+- `apps/api/src/modules/auth/auth.service.ts:158-186`
+
+`googleLogin` checks for deleted user before `upsert`, but a concurrent soft-delete between that check and the `upsert` call can still return a deleted record. Without a post-upsert deleted check, token issuance can proceed for a disabled account.
+
+**Fix:** Add a post-upsert guard (`if (user.deletedAt !== null)`) before `issueTokens`.
+
+### P2 — Should Fix
+
+#### 12) Auth e2e mock drift from production refresh revocation query
+
+**Files/lines:**
+
+- `apps/api/test/auth.e2e-spec.ts:70-184`
+
+The e2e mock for `refreshToken.updateMany` only matched `tokenHash` + `revokedAt`, while production refresh revocation uses `id` + `revokedAt` + `expiresAt`. This caused false negative 401s in e2e flow.
+
+**Fix:** Align e2e mock type and matching logic with the production query shape.
+
+---
+
+## Verification Pass 4 — 2026-03-05
+
+| #   | Finding                                          | Status   | Notes                                                                                                                                                             |
+| --- | ------------------------------------------------ | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 11  | `googleLogin` delete-race can still issue tokens | ✅ Fixed | Added post-upsert guard in `auth.service.ts` and unit test: `rejects google login when account becomes soft-deleted before token issuance`.                       |
+| 12  | Auth e2e refresh flow mock drift                 | ✅ Fixed | Updated `auth.e2e-spec.ts` mock `updateMany` shape/logic to support `id`/`expiresAt` paths; e2e flow (`register -> login -> refresh -> logout`) now passes again. |
+
+---
+
+## Verification Pass 5 — 2026-03-05
+
+| #   | Finding                                      | Status   | Notes                                                                                                                                                                   |
+| --- | -------------------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 8   | Dead defensive guards in Google claims check | ✅ Fixed | Removed unreachable `!email`, `!googleId`, `!issuer` checks after schema parse in `google-token-verifier.service.ts:97-104`; behavior preserved by existing tests.      |
+| 10  | Refresh expiry parsed twice per issuance     | ✅ Fixed | `issueTokens` now parses `JWT_REFRESH_EXPIRY` once and passes `refreshExpiryMs` to `persistRefreshToken`; added test `parses refresh duration once per token issuance`. |

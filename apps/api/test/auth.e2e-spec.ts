@@ -15,6 +15,7 @@ describe('AuthController (e2e)', () => {
     email: string;
     passwordHash: string;
     authProvider: 'LOCAL' | 'GOOGLE';
+    deletedAt?: Date | null;
     timezone?: string;
     unitPreference?: 'METRIC' | 'IMPERIAL';
     googleId?: string;
@@ -68,7 +69,12 @@ describe('AuthController (e2e)', () => {
     data: { revokedAt: Date };
   };
   type RefreshTokenUpdateManyArgs = {
-    where: { tokenHash: string; revokedAt: null };
+    where: {
+      tokenHash?: string;
+      id?: string;
+      revokedAt: null;
+      expiresAt?: { gt: Date };
+    };
     data: { revokedAt: Date };
   };
 
@@ -104,9 +110,16 @@ describe('AuthController (e2e)', () => {
             deletedAt?: null;
           };
         }) =>
-          users.find((user) =>
-            where.id ? user.id === where.id : user.email === where.email,
-          ) ?? null,
+          users.find((user) => {
+            const matchesId = where.id === undefined || user.id === where.id;
+            const matchesEmail =
+              where.email === undefined || user.email === where.email;
+            const userDeletedAt = user.deletedAt ?? null;
+            const matchesDeletedAt =
+              where.deletedAt === undefined ||
+              userDeletedAt === where.deletedAt;
+            return matchesId && matchesEmail && matchesDeletedAt;
+          }) ?? null,
       ),
       create: jest.fn(async ({ data }: UserCreateArgs) => {
         const created = {
@@ -114,6 +127,7 @@ describe('AuthController (e2e)', () => {
           email: data.email,
           passwordHash: data.passwordHash,
           authProvider: data.authProvider ?? 'LOCAL',
+          deletedAt: null,
           timezone: data.timezone,
           unitPreference: data.unitPreference,
           name: data.name,
@@ -133,6 +147,7 @@ describe('AuthController (e2e)', () => {
           email: create.email,
           passwordHash: create.passwordHash,
           authProvider: create.authProvider ?? 'GOOGLE',
+          deletedAt: null,
           googleId: create.googleId,
           name: create.name,
           avatarUrl: create.avatarUrl,
@@ -173,8 +188,12 @@ describe('AuthController (e2e)', () => {
           let count = 0;
           for (const token of refreshTokens) {
             if (
-              token.tokenHash === where.tokenHash &&
-              token.revokedAt === where.revokedAt
+              (where.tokenHash === undefined ||
+                token.tokenHash === where.tokenHash) &&
+              (where.id === undefined || token.id === where.id) &&
+              token.revokedAt === where.revokedAt &&
+              (where.expiresAt === undefined ||
+                token.expiresAt > where.expiresAt.gt)
             ) {
               token.revokedAt = data.revokedAt;
               count += 1;

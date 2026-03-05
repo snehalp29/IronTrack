@@ -95,11 +95,8 @@ export class GoogleTokenVerifierService {
     const notExpired = payload.exp * 1000 > Date.now();
 
     if (
-      !email ||
-      !googleId ||
       !emailVerified ||
       !hasAudience(audience, clientId) ||
-      !issuer ||
       !VALID_ISSUERS.has(issuer) ||
       !notExpired
     ) {
