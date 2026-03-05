@@ -56,9 +56,11 @@ describe('validateEnv', () => {
     );
 
     expect(parsed.API_PREFIX).toBe('api/v1');
-    expect(parsed.CORS_ORIGINS).toBe(
-      'http://localhost:3000,http://localhost:5173,http://localhost:8081',
-    );
+    expect(parsed.CORS_ORIGINS).toEqual([
+      'http://localhost:3000',
+      'http://localhost:5173',
+      'http://localhost:8081',
+    ]);
   });
 
   it('throws with issue details for invalid values', () => {
@@ -439,9 +441,11 @@ describe('validateEnv', () => {
       }),
     );
 
-    expect(parsed.CORS_ORIGINS).toBe(
-      'https://app.example.com,http://localhost:3000,https://admin.example.com',
-    );
+    expect(parsed.CORS_ORIGINS).toEqual([
+      'https://app.example.com',
+      'http://localhost:3000',
+      'https://admin.example.com',
+    ]);
   });
 
   it('rejects invalid ML_SERVICE_URL values', () => {

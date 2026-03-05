@@ -32,11 +32,7 @@ async function bootstrap() {
   const prefix = normalizeApiPrefix(configService.get<string>('API_PREFIX'));
   app.setGlobalPrefix(prefix);
 
-  const corsOrigins = configService.get<string>('CORS_ORIGINS');
-  const allowedOrigins = (corsOrigins ?? '')
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
+  const allowedOrigins = configService.get<string[]>('CORS_ORIGINS') ?? [];
 
   app.enableCors({
     origin: allowedOrigins,

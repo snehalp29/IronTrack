@@ -5,8 +5,12 @@ import {
   trimStringOrUndefined,
 } from '../common/validation/string-normalization';
 
-const DEFAULT_CORS_ORIGINS =
-  'http://localhost:3000,http://localhost:5173,http://localhost:8081';
+const DEFAULT_CORS_ORIGINS = [
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://localhost:8081',
+];
+const DEFAULT_CORS_ORIGINS_RAW = DEFAULT_CORS_ORIGINS.join(',');
 const CORS_EMPTY_ENTRIES_MESSAGE =
   'CORS_ORIGINS must not contain empty entries';
 const CORS_INVALID_ORIGIN_MESSAGE =
@@ -106,8 +110,7 @@ const corsOriginsSchema = z
   })
   .refine((origins) => origins.filter(Boolean).every(isValidCorsOrigin), {
     message: CORS_INVALID_ORIGIN_MESSAGE,
-  })
-  .transform((origins) => origins.join(','));
+  });
 
 export const envSchema = z
   .object({
@@ -131,10 +134,10 @@ export const envSchema = z
       trimStringOrUndefined,
       z.string().url().default('http://localhost:5000'),
     ),
-    CORS_ORIGINS: z.preprocess(
-      trimStringOrUndefined,
-      corsOriginsSchema.default(DEFAULT_CORS_ORIGINS),
-    ),
+    CORS_ORIGINS: z.preprocess((value) => {
+      const normalized = trimStringOrUndefined(value);
+      return normalized ?? DEFAULT_CORS_ORIGINS_RAW;
+    }, corsOriginsSchema),
   })
   .superRefine((env, ctx) => {
     const hasGoogleClientId = Boolean(env.GOOGLE_CLIENT_ID);
