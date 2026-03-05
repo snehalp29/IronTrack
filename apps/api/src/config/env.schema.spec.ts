@@ -1246,6 +1246,20 @@ describe('validateEnv', () => {
     );
   });
 
+  it('returns a validation error when ML_SERVICE_URL is malformed in production', () => {
+    expect(() =>
+      validateEnv(
+        createBaseConfig({
+          NODE_ENV: 'production',
+          GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
+          GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
+          GOOGLE_CALLBACK_URL: VALID_GOOGLE_CALLBACK_URL,
+          ML_SERVICE_URL: 'not-a-url',
+        }),
+      ),
+    ).toThrow(/Invalid environment configuration: ML_SERVICE_URL: Invalid URL/);
+  });
+
   it('rejects uppercase-scheme ML_SERVICE_URL values in production', () => {
     expect(() =>
       validateEnv(
@@ -1307,6 +1321,22 @@ describe('validateEnv', () => {
       ),
     ).toThrow(
       /Invalid environment configuration: GOOGLE_CALLBACK_URL: GOOGLE_CALLBACK_URL must use https when NODE_ENV=production/,
+    );
+  });
+
+  it('returns a validation error when GOOGLE_CALLBACK_URL is malformed in production', () => {
+    expect(() =>
+      validateEnv(
+        createBaseConfig({
+          NODE_ENV: 'production',
+          GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
+          GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
+          GOOGLE_CALLBACK_URL: 'not-a-url',
+          ML_SERVICE_URL: 'https://ml.internal:5000',
+        }),
+      ),
+    ).toThrow(
+      /Invalid environment configuration: GOOGLE_CALLBACK_URL: Invalid URL/,
     );
   });
 

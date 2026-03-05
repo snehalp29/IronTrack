@@ -108,6 +108,14 @@ export function isValidCorsOrigin(origin: string): boolean {
   }
 }
 
+function getProtocolOrUndefined(urlValue: string): string | undefined {
+  try {
+    return new URL(urlValue).protocol;
+  } catch {
+    return undefined;
+  }
+}
+
 const corsOriginsSchema = z
   .string()
   .transform((value) => value.split(',').map((origin) => origin.trim()))
@@ -202,9 +210,14 @@ export const envSchema = z
       }
     }
 
+    const mlServiceProtocol =
+      env.NODE_ENV === 'production'
+        ? getProtocolOrUndefined(env.ML_SERVICE_URL)
+        : undefined;
     if (
       env.NODE_ENV === 'production' &&
-      new URL(env.ML_SERVICE_URL).protocol !== 'https:'
+      mlServiceProtocol !== undefined &&
+      mlServiceProtocol !== 'https:'
     ) {
       ctx.addIssue({
         code: 'custom',
@@ -213,10 +226,15 @@ export const envSchema = z
       });
     }
 
+    const googleCallbackProtocol =
+      env.NODE_ENV === 'production' && env.GOOGLE_CALLBACK_URL
+        ? getProtocolOrUndefined(env.GOOGLE_CALLBACK_URL)
+        : undefined;
     if (
       env.NODE_ENV === 'production' &&
       env.GOOGLE_CALLBACK_URL &&
-      new URL(env.GOOGLE_CALLBACK_URL).protocol !== 'https:'
+      googleCallbackProtocol !== undefined &&
+      googleCallbackProtocol !== 'https:'
     ) {
       ctx.addIssue({
         code: 'custom',

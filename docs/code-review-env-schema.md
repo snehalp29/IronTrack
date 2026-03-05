@@ -2088,3 +2088,123 @@ This test passes a valid config but provides a dummy validator that throws a str
 The non-Error branch (`return \`validateEnv threw a non-Error: ${String(error)}\``) can never be reached through normal `validateEnv`usage since`validateEnv`only throws`new Error(...)`. The test is testing an unreachable branch of the helper.
 
 **Fix:** Either move the test to a dedicated `describe('getValidationErrorMessageFrom', ...)` block and remove `createBaseConfig()` from the call, or delete the test — the branch it covers exists only as a defensive fallback, not a reachable path through `validateEnv`.
+
+---
+
+## Verification Pass 12 — 2026-03-05
+
+**Scope:** `apps/api/src/config/env.schema.ts`, `apps/api/src/config/env.schema.spec.ts`
+
+| #   | Finding                                                             | Status   | Notes                                                                                                                      |
+| --- | ------------------------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------- |
+| 83  | JWT expiry whitespace tests duplicate config across two `it` blocks | ✅ Fixed | `parseWithWhitespacedJwtExpiries()` helper extracted at `spec.ts:38–45`; both tests use it                                 |
+| 84  | Blank Google OAuth tests duplicate config across three `it` blocks  | ✅ Fixed | `parseWithBlankGoogleOAuthFields()` helper extracted at `spec.ts:47–56`; all three tests use it                            |
+| 85  | Only one "two-of-three present" partial OAuth permutation tested    | ✅ Fixed | All three permutations covered: client-id-missing (L832–844), secret-missing (L846–858), callback-missing (L860–872)       |
+| 86  | `formats non-Error throws` test inside `validateEnv` describe       | ✅ Fixed | Moved to dedicated `describe('getValidationErrorMessageFrom', ...)` block at `spec.ts:77–85`; `createBaseConfig()` removed |
+
+---
+
+## New Findings — 2026-03-05 (Pass 12)
+
+**Scope:** `apps/api/src/config/env.schema.ts`, `apps/api/src/config/env.schema.spec.ts`
+
+### P1 — Must Fix
+
+#### 87. `new URL()` crash in `superRefine` when URL fields contain an invalid URL string (`env.schema.ts:207, 219`)
+
+```ts
+// ML_SERVICE_URL check (L205–213) — no guard
+if (
+  env.NODE_ENV === 'production' &&
+  new URL(env.ML_SERVICE_URL).protocol !== 'https:'   // ← crashes if field failed .url()
+) { ... }
+
+// GOOGLE_CALLBACK_URL check (L216–226) — truthy-guard insufficient
+if (
+  env.NODE_ENV === 'production' &&
+  env.GOOGLE_CALLBACK_URL &&                           // truthy but may be invalid URL string
+  new URL(env.GOOGLE_CALLBACK_URL).protocol !== 'https:'  // ← crashes
+) { ... }
+```
+
+In Zod 3, when a field schema produces a "dirty" parse result — where `z.string()` succeeds but `.url()` fails — the field's original string value is still present in the data object passed to `superRefine`. This is confirmed by the existing behavior of the cross-expiry guard (finding #29): `JWT_ACCESS_EXPIRY: '25h'` fails its max-bound `.refine()`, yet `superRefine` correctly receives `'25h'` and computes `durationToSeconds('25h')`.
+
+So when `ML_SERVICE_URL: 'not-a-url'` is provided in production:
+
+- `z.string()` succeeds → dirty result value = `'not-a-url'`
+- `.url()` fails → field-level error recorded
+- In `superRefine`: `env.ML_SERVICE_URL = 'not-a-url'` (truthy string)
+- `new URL('not-a-url')` throws `TypeError`
+- Zod treats the exception as a fatal error, suppressing the clean `ML_SERVICE_URL: Invalid URL` field error
+
+The same applies to `GOOGLE_CALLBACK_URL` with a URL typo (e.g., `'https:/callback.example.com'`). The `env.GOOGLE_CALLBACK_URL &&` guard protects against `undefined` but not against an invalid string value that passed `z.string()` but failed `.url()`.
+
+No test covers `NODE_ENV: 'production'` combined with an invalid-format URL for either field.
+
+**Fix:** Wrap each `new URL()` call in a try/catch inside the production guards:
+
+```ts
+// ML_SERVICE_URL
+if (env.NODE_ENV === 'production') {
+  try {
+    if (new URL(env.ML_SERVICE_URL).protocol !== 'https:') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['ML_SERVICE_URL'],
+        message: 'ML_SERVICE_URL must use https when NODE_ENV=production',
+      });
+    }
+  } catch {
+    // env.ML_SERVICE_URL failed its own .url() schema — field error already recorded
+  }
+}
+
+// GOOGLE_CALLBACK_URL
+if (env.NODE_ENV === 'production' && env.GOOGLE_CALLBACK_URL) {
+  try {
+    if (new URL(env.GOOGLE_CALLBACK_URL).protocol !== 'https:') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['GOOGLE_CALLBACK_URL'],
+        message: 'GOOGLE_CALLBACK_URL must use https when NODE_ENV=production',
+      });
+    }
+  } catch {
+    // env.GOOGLE_CALLBACK_URL failed its own .url() schema — field error already recorded
+  }
+}
+```
+
+**Missing tests** (required to expose and guard the fix):
+
+```ts
+it('does not crash when ML_SERVICE_URL is an invalid URL in production', () => {
+  expect(() =>
+    validateEnv(
+      createBaseConfig({
+        NODE_ENV: 'production',
+        GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
+        GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
+        GOOGLE_CALLBACK_URL: VALID_GOOGLE_CALLBACK_URL,
+        ML_SERVICE_URL: 'not-a-url',
+      }),
+    ),
+  ).toThrow(/Invalid environment configuration: ML_SERVICE_URL: Invalid URL/);
+});
+
+it('does not crash when GOOGLE_CALLBACK_URL is a malformed URL in production', () => {
+  expect(() =>
+    validateEnv(
+      createBaseConfig({
+        NODE_ENV: 'production',
+        GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
+        GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
+        GOOGLE_CALLBACK_URL: 'https:/callback.example.com',
+        ML_SERVICE_URL: 'https://ml.example.com',
+      }),
+    ),
+  ).toThrow(
+    /Invalid environment configuration: GOOGLE_CALLBACK_URL: Invalid URL/,
+  );
+});
+```
