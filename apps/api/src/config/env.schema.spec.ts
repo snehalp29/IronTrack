@@ -190,6 +190,44 @@ describe('validateEnv', () => {
     );
   });
 
+  it('rejects JWT_ACCESS_EXPIRY values equal to JWT_REFRESH_EXPIRY', () => {
+    expect(() =>
+      validateEnv(
+        createBaseConfig({
+          JWT_ACCESS_EXPIRY: '1h',
+          JWT_REFRESH_EXPIRY: '1h',
+        }),
+      ),
+    ).toThrow(
+      /Invalid environment configuration: JWT_ACCESS_EXPIRY: JWT_ACCESS_EXPIRY must be shorter than JWT_REFRESH_EXPIRY/,
+    );
+  });
+
+  it('rejects cross-unit durations when access and refresh expiries are equal', () => {
+    expect(() =>
+      validateEnv(
+        createBaseConfig({
+          JWT_ACCESS_EXPIRY: '60m',
+          JWT_REFRESH_EXPIRY: '1h',
+        }),
+      ),
+    ).toThrow(
+      /Invalid environment configuration: JWT_ACCESS_EXPIRY: JWT_ACCESS_EXPIRY must be shorter than JWT_REFRESH_EXPIRY/,
+    );
+  });
+
+  it('accepts cross-unit durations when access expiry is shorter', () => {
+    const parsed = validateEnv(
+      createBaseConfig({
+        JWT_ACCESS_EXPIRY: '59m',
+        JWT_REFRESH_EXPIRY: '1h',
+      }),
+    );
+
+    expect(parsed.JWT_ACCESS_EXPIRY).toBe('59m');
+    expect(parsed.JWT_REFRESH_EXPIRY).toBe('1h');
+  });
+
   it('accepts JWT_ACCESS_EXPIRY values that are shorter than JWT_REFRESH_EXPIRY', () => {
     const parsed = validateEnv(
       createBaseConfig({
@@ -479,6 +517,18 @@ describe('validateEnv', () => {
       ),
     ).toThrow(
       /Invalid environment configuration: CORS_ORIGINS: CORS_ORIGINS must not contain empty entries/,
+    );
+  });
+
+  it('rejects non-string CORS_ORIGINS values', () => {
+    expect(() =>
+      validateEnv(
+        createBaseConfig({
+          CORS_ORIGINS: 123,
+        }),
+      ),
+    ).toThrow(
+      /Invalid environment configuration: CORS_ORIGINS: Invalid input: expected string, received number/,
     );
   });
 
