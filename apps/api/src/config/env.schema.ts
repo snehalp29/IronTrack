@@ -7,6 +7,10 @@ import {
 
 const DEFAULT_CORS_ORIGINS =
   'http://localhost:3000,http://localhost:5173,http://localhost:8081';
+const CORS_EMPTY_ENTRIES_MESSAGE =
+  'CORS_ORIGINS must not contain empty entries';
+const CORS_INVALID_ORIGIN_MESSAGE =
+  'CORS_ORIGINS entries must be valid HTTP or HTTPS origins (no path, query, or fragment)';
 
 const durationSchema = z
   .string()
@@ -49,9 +53,7 @@ function isValidCorsOrigin(origin: string): boolean {
       return false;
     }
     return (
-      (url.pathname === '' || url.pathname === '/') &&
-      url.search.length === 0 &&
-      url.hash.length === 0
+      url.pathname === '/' && url.search.length === 0 && url.hash.length === 0
     );
   } catch {
     return false;
@@ -61,16 +63,11 @@ function isValidCorsOrigin(origin: string): boolean {
 const corsOriginsSchema = z
   .string()
   .transform((value) => value.split(',').map((origin) => origin.trim()))
-  .refine(
-    (origins) => origins.length > 0 && origins.every((origin) => origin !== ''),
-    {
-      message:
-        'CORS_ORIGINS must be a comma-separated list of valid HTTP(S) origins',
-    },
-  )
-  .refine((origins) => origins.every(isValidCorsOrigin), {
-    message:
-      'CORS_ORIGINS must be a comma-separated list of valid HTTP(S) origins',
+  .refine((origins) => origins.every((origin) => origin !== ''), {
+    message: CORS_EMPTY_ENTRIES_MESSAGE,
+  })
+  .refine((origins) => origins.filter(Boolean).every(isValidCorsOrigin), {
+    message: CORS_INVALID_ORIGIN_MESSAGE,
   })
   .transform((origins) => origins.join(','));
 

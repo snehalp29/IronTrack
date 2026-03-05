@@ -315,6 +315,30 @@ describe('validateEnv', () => {
     );
   });
 
+  it('enforces GOOGLE_CLIENT_SECRET length boundary at 10 characters', () => {
+    expect(() =>
+      validateEnv(
+        createBaseConfig({
+          GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
+          GOOGLE_CLIENT_SECRET: '123456789',
+          GOOGLE_CALLBACK_URL: VALID_GOOGLE_CALLBACK_URL,
+        }),
+      ),
+    ).toThrow(
+      /Invalid environment configuration: GOOGLE_CLIENT_SECRET: Too small: expected string to have >=10 characters/,
+    );
+
+    const parsed = validateEnv(
+      createBaseConfig({
+        GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
+        GOOGLE_CLIENT_SECRET: '1234567890',
+        GOOGLE_CALLBACK_URL: VALID_GOOGLE_CALLBACK_URL,
+      }),
+    );
+
+    expect(parsed.GOOGLE_CLIENT_SECRET).toBe('1234567890');
+  });
+
   it('rejects invalid CORS_ORIGINS values', () => {
     expect(() =>
       validateEnv(
@@ -323,7 +347,7 @@ describe('validateEnv', () => {
         }),
       ),
     ).toThrow(
-      /Invalid environment configuration: CORS_ORIGINS: CORS_ORIGINS must be a comma-separated list of valid HTTP\(S\) origins/,
+      /Invalid environment configuration: CORS_ORIGINS: CORS_ORIGINS entries must be valid HTTP or HTTPS origins \(no path, query, or fragment\)/,
     );
   });
 
@@ -335,7 +359,31 @@ describe('validateEnv', () => {
         }),
       ),
     ).toThrow(
-      /Invalid environment configuration: CORS_ORIGINS: CORS_ORIGINS must be a comma-separated list of valid HTTP\(S\) origins/,
+      /Invalid environment configuration: CORS_ORIGINS: CORS_ORIGINS entries must be valid HTTP or HTTPS origins \(no path, query, or fragment\)/,
+    );
+  });
+
+  it('rejects CORS_ORIGINS values with path components', () => {
+    expect(() =>
+      validateEnv(
+        createBaseConfig({
+          CORS_ORIGINS: 'http://localhost:3000/api',
+        }),
+      ),
+    ).toThrow(
+      /Invalid environment configuration: CORS_ORIGINS: CORS_ORIGINS entries must be valid HTTP or HTTPS origins \(no path, query, or fragment\)/,
+    );
+  });
+
+  it('rejects CORS_ORIGINS values with empty segments', () => {
+    expect(() =>
+      validateEnv(
+        createBaseConfig({
+          CORS_ORIGINS: 'http://localhost:3000,',
+        }),
+      ),
+    ).toThrow(
+      /Invalid environment configuration: CORS_ORIGINS: CORS_ORIGINS must not contain empty entries/,
     );
   });
 
