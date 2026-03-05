@@ -36,6 +36,7 @@ const durationUnitInSeconds = {
 type DurationUnit = keyof typeof durationUnitInSeconds;
 
 function durationToSeconds(duration: string): number {
+  // Defensive guard: Zod may still execute refine callbacks after regex failure.
   const match = duration.match(/^([1-9]\d*)([smhd])$/);
   if (!match) {
     return Number.NaN;
@@ -108,6 +109,7 @@ const corsOriginsSchema = z
   .refine((origins) => origins.every((origin) => origin !== ''), {
     message: CORS_EMPTY_ENTRIES_MESSAGE,
   })
+  // filter(Boolean) prevents double-reporting: empty entries are handled above.
   .refine((origins) => origins.filter(Boolean).every(isValidCorsOrigin), {
     message: CORS_INVALID_ORIGIN_MESSAGE,
   });
@@ -140,6 +142,16 @@ export const envSchema = z
     }, corsOriginsSchema),
   })
   .superRefine((env, ctx) => {
+    const accessExpirySeconds = durationToSeconds(env.JWT_ACCESS_EXPIRY);
+    const refreshExpirySeconds = durationToSeconds(env.JWT_REFRESH_EXPIRY);
+    if (accessExpirySeconds >= refreshExpirySeconds) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['JWT_ACCESS_EXPIRY'],
+        message: 'JWT_ACCESS_EXPIRY must be shorter than JWT_REFRESH_EXPIRY',
+      });
+    }
+
     const hasGoogleClientId = Boolean(env.GOOGLE_CLIENT_ID);
     const hasGoogleClientSecret = Boolean(env.GOOGLE_CLIENT_SECRET);
     const hasGoogleCallbackUrl = Boolean(env.GOOGLE_CALLBACK_URL);
@@ -152,21 +164,21 @@ export const envSchema = z
     if (env.NODE_ENV === 'production' && !hasCompleteGoogleConfig) {
       if (!hasGoogleClientId) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: 'custom',
           path: ['GOOGLE_CLIENT_ID'],
           message: 'GOOGLE_CLIENT_ID is required when NODE_ENV=production',
         });
       }
       if (!hasGoogleClientSecret) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: 'custom',
           path: ['GOOGLE_CLIENT_SECRET'],
           message: 'GOOGLE_CLIENT_SECRET is required when NODE_ENV=production',
         });
       }
       if (!hasGoogleCallbackUrl) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: 'custom',
           path: ['GOOGLE_CALLBACK_URL'],
           message: 'GOOGLE_CALLBACK_URL is required when NODE_ENV=production',
         });
@@ -178,7 +190,7 @@ export const envSchema = z
       env.ML_SERVICE_URL.startsWith('http://')
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         path: ['ML_SERVICE_URL'],
         message: 'ML_SERVICE_URL must use https when NODE_ENV=production',
       });
@@ -191,7 +203,7 @@ export const envSchema = z
     if (hasAnyGoogleConfig && !hasCompleteGoogleConfig) {
       if (!hasGoogleClientId) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: 'custom',
           path: ['GOOGLE_CLIENT_ID'],
           message:
             'GOOGLE_CLIENT_ID must be provided with GOOGLE_CLIENT_SECRET and GOOGLE_CALLBACK_URL',
@@ -199,7 +211,7 @@ export const envSchema = z
       }
       if (!hasGoogleClientSecret) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: 'custom',
           path: ['GOOGLE_CLIENT_SECRET'],
           message:
             'GOOGLE_CLIENT_SECRET must be provided with GOOGLE_CLIENT_ID and GOOGLE_CALLBACK_URL',
@@ -207,7 +219,7 @@ export const envSchema = z
       }
       if (!hasGoogleCallbackUrl) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: 'custom',
           path: ['GOOGLE_CALLBACK_URL'],
           message:
             'GOOGLE_CALLBACK_URL must be provided with GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET',

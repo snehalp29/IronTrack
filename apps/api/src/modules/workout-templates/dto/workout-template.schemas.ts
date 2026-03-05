@@ -20,7 +20,7 @@ const templateExerciseSchema = z
       value.repMin > value.repMax
     ) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         path: ['repMin'],
         message: 'repMin must be less than or equal to repMax',
       });

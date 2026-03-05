@@ -177,6 +177,31 @@ describe('validateEnv', () => {
     expect(parsed.JWT_REFRESH_EXPIRY).toBe('365d');
   });
 
+  it('rejects JWT_ACCESS_EXPIRY values that are not shorter than JWT_REFRESH_EXPIRY', () => {
+    expect(() =>
+      validateEnv(
+        createBaseConfig({
+          JWT_ACCESS_EXPIRY: '24h',
+          JWT_REFRESH_EXPIRY: '1h',
+        }),
+      ),
+    ).toThrow(
+      /Invalid environment configuration: JWT_ACCESS_EXPIRY: JWT_ACCESS_EXPIRY must be shorter than JWT_REFRESH_EXPIRY/,
+    );
+  });
+
+  it('accepts JWT_ACCESS_EXPIRY values that are shorter than JWT_REFRESH_EXPIRY', () => {
+    const parsed = validateEnv(
+      createBaseConfig({
+        JWT_ACCESS_EXPIRY: '1h',
+        JWT_REFRESH_EXPIRY: '2h',
+      }),
+    );
+
+    expect(parsed.JWT_ACCESS_EXPIRY).toBe('1h');
+    expect(parsed.JWT_REFRESH_EXPIRY).toBe('2h');
+  });
+
   it('coerces API_PORT string values into numbers', () => {
     const parsed = validateEnv(
       createBaseConfig({
@@ -414,6 +439,30 @@ describe('validateEnv', () => {
       validateEnv(
         createBaseConfig({
           CORS_ORIGINS: 'http://localhost:3000/api',
+        }),
+      ),
+    ).toThrow(
+      /Invalid environment configuration: CORS_ORIGINS: CORS_ORIGINS entries must be valid HTTP or HTTPS origins \(no path, query, or fragment\)/,
+    );
+  });
+
+  it('rejects CORS_ORIGINS values with query strings', () => {
+    expect(() =>
+      validateEnv(
+        createBaseConfig({
+          CORS_ORIGINS: 'http://localhost:3000?debug=true',
+        }),
+      ),
+    ).toThrow(
+      /Invalid environment configuration: CORS_ORIGINS: CORS_ORIGINS entries must be valid HTTP or HTTPS origins \(no path, query, or fragment\)/,
+    );
+  });
+
+  it('rejects CORS_ORIGINS values with hash fragments', () => {
+    expect(() =>
+      validateEnv(
+        createBaseConfig({
+          CORS_ORIGINS: 'http://localhost:3000#section',
         }),
       ),
     ).toThrow(

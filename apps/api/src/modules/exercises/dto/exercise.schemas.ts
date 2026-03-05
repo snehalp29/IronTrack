@@ -51,7 +51,7 @@ function validateRepRange(
     data.repMin > data.repMax
   ) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: 'custom',
       path: ['repMax'],
       message: 'repMax must be greater than or equal to repMin',
     });

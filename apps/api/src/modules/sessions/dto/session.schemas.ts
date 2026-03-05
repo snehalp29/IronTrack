@@ -67,7 +67,7 @@ export const reorderSessionExercisesSchema = z.object({
       for (const [index, item] of items.entries()) {
         if (seenIds.has(item.id)) {
           ctx.addIssue({
-            code: z.ZodIssueCode.custom,
+            code: 'custom',
             message: 'Duplicate exercise id in reorder payload',
             path: [index, 'id'],
           });
@@ -76,7 +76,7 @@ export const reorderSessionExercisesSchema = z.object({
 
         if (seenOrderIndexes.has(item.orderIndex)) {
           ctx.addIssue({
-            code: z.ZodIssueCode.custom,
+            code: 'custom',
             message: 'Duplicate orderIndex in reorder payload',
             path: [index, 'orderIndex'],
           });
@@ -116,7 +116,7 @@ const validateSetCompletionConsistency = (
 ) => {
   if (value.completedAt !== undefined && value.isCompleted !== true) {
     ctx.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: 'custom',
       message: 'isCompleted must be true when completedAt is provided',
       path: ['isCompleted'],
     });
