@@ -68,25 +68,68 @@ describe('validateEnv', () => {
     expect(message).toBe('validateEnv threw a non-Error: boom');
   });
 
-  it('converts duration strings to seconds', () => {
+  it('converts second-based duration strings to seconds', () => {
     expect(durationToSeconds('30s')).toBe(30);
+  });
+
+  it('converts minute-based duration strings to seconds', () => {
     expect(durationToSeconds('15m')).toBe(900);
+  });
+
+  it('converts hour-based duration strings to seconds', () => {
     expect(durationToSeconds('2h')).toBe(7200);
+  });
+
+  it('converts day-based duration strings to seconds', () => {
     expect(durationToSeconds('3d')).toBe(259200);
   });
 
-  it('returns NaN for unsupported duration strings', () => {
-    expect(Number.isNaN(durationToSeconds('0m'))).toBe(true);
-    expect(Number.isNaN(durationToSeconds('abc'))).toBe(true);
+  it('converts multi-digit duration strings to seconds', () => {
+    expect(durationToSeconds('120m')).toBe(7200);
   });
 
-  it('validates CORS origins directly', () => {
+  it('returns NaN for zero-value duration strings', () => {
+    expect(durationToSeconds('0m')).toBeNaN();
+  });
+
+  it('returns NaN for malformed duration strings', () => {
+    expect(durationToSeconds('abc')).toBeNaN();
+  });
+
+  it('accepts https CORS origins', () => {
     expect(isValidCorsOrigin('https://app.example.com')).toBe(true);
+  });
+
+  it('accepts localhost CORS origins with explicit ports', () => {
     expect(isValidCorsOrigin('http://localhost:3000')).toBe(true);
+  });
+
+  it('accepts non-standard https CORS origin ports', () => {
+    expect(isValidCorsOrigin('https://app.example.com:8443')).toBe(true);
+  });
+
+  it('accepts non-standard http localhost CORS origin ports', () => {
+    expect(isValidCorsOrigin('http://localhost:8080')).toBe(true);
+  });
+
+  it('rejects CORS origins with unsupported protocols', () => {
     expect(isValidCorsOrigin('ftp://app.example.com')).toBe(false);
+  });
+
+  it('rejects CORS origins with path components', () => {
     expect(isValidCorsOrigin('https://app.example.com/path')).toBe(false);
+  });
+
+  it('rejects CORS origins with query strings', () => {
     expect(isValidCorsOrigin('https://app.example.com?x=1')).toBe(false);
+  });
+
+  it('rejects CORS origins with hash fragments', () => {
     expect(isValidCorsOrigin('https://app.example.com#hash')).toBe(false);
+  });
+
+  it('rejects empty CORS origins', () => {
+    expect(isValidCorsOrigin('')).toBe(false);
   });
 
   it('normalizes whitespace for DATABASE_URL and API_PREFIX', () => {
@@ -119,6 +162,16 @@ describe('validateEnv', () => {
       'http://localhost:5173',
       'http://localhost:8081',
     ]);
+  });
+
+  it('falls back to default API_PREFIX when only slashes are provided', () => {
+    const parsed = validateEnv(
+      createBaseConfig({
+        API_PREFIX: '///',
+      }),
+    );
+
+    expect(parsed.API_PREFIX).toBe('api/v1');
   });
 
   it('throws with issue details for invalid values', () => {
@@ -444,6 +497,16 @@ describe('validateEnv', () => {
     expect(parsed.NODE_ENV).toBe('test');
   });
 
+  it('rejects unknown NODE_ENV values', () => {
+    expect(() =>
+      validateEnv(
+        createBaseConfig({
+          NODE_ENV: 'staging',
+        }),
+      ),
+    ).toThrow(/Invalid environment configuration: NODE_ENV:/);
+  });
+
   it('rejects partial Google OAuth config in test mode', () => {
     expect(() =>
       validateEnv(
@@ -726,6 +789,17 @@ describe('validateEnv', () => {
         }),
       ),
     ).toThrow(/Invalid environment configuration: ML_SERVICE_URL: Invalid URL/);
+  });
+
+  it('accepts explicit http ML_SERVICE_URL values in development mode', () => {
+    const parsed = validateEnv(
+      createBaseConfig({
+        NODE_ENV: 'development',
+        ML_SERVICE_URL: 'http://ml.internal:5000',
+      }),
+    );
+
+    expect(parsed.ML_SERVICE_URL).toBe('http://ml.internal:5000');
   });
 
   it('rejects non-https ML_SERVICE_URL values in production when explicitly set', () => {

@@ -125,6 +125,7 @@ export const envSchema = z
       .enum(['development', 'test', 'production'])
       .default('development'),
     API_PORT: z.coerce.number().int().positive().default(3000),
+    // Normalize once at env boundary so all consumers get a canonical prefix.
     API_PREFIX: z.preprocess(
       trimStringOrUndefined,
       z
