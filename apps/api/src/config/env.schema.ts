@@ -41,7 +41,7 @@ const durationSchema = z
   );
 
 export function durationToSeconds(duration: string): number {
-  // Defensive guard: Zod may still execute refine callbacks after regex failure.
+  // Defensive guard: durationSchema.refine() still runs when regex validation fails.
   const match = duration.match(durationCaptureRegex);
   if (!match) {
     return Number.NaN;
@@ -124,7 +124,7 @@ export const envSchema = z
     NODE_ENV: z
       .enum(['development', 'test', 'production'])
       .default('development'),
-    API_PORT: z.coerce.number().int().positive().default(3000),
+    API_PORT: z.coerce.number().int().positive().max(65535).default(3000),
     // Normalize once at env boundary so all consumers get a canonical prefix.
     API_PREFIX: z.preprocess(
       trimStringOrUndefined,
@@ -147,7 +147,7 @@ export const envSchema = z
     ),
     CORS_ORIGINS: z.preprocess((value) => {
       const normalized = trimStringOrUndefined(value);
-      return normalized ?? DEFAULT_CORS_ORIGINS_RAW;
+      return normalized === undefined ? DEFAULT_CORS_ORIGINS_RAW : normalized;
     }, corsOriginsSchema),
   })
   .superRefine((env, ctx) => {
@@ -210,6 +210,18 @@ export const envSchema = z
         code: 'custom',
         path: ['ML_SERVICE_URL'],
         message: 'ML_SERVICE_URL must use https when NODE_ENV=production',
+      });
+    }
+
+    if (
+      env.NODE_ENV === 'production' &&
+      env.GOOGLE_CALLBACK_URL &&
+      new URL(env.GOOGLE_CALLBACK_URL).protocol === 'http:'
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['GOOGLE_CALLBACK_URL'],
+        message: 'GOOGLE_CALLBACK_URL must use https when NODE_ENV=production',
       });
     }
 

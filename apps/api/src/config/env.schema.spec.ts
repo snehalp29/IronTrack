@@ -44,15 +44,38 @@ function getValidationErrorMessageFrom(
 }
 
 describe('validateEnv', () => {
-  it('parses valid config and applies defaults', () => {
+  it('defaults NODE_ENV to development', () => {
     const parsed = validateEnv(createBaseConfig());
-
     expect(parsed.NODE_ENV).toBe('development');
+  });
+
+  it('defaults API_PORT to 3000', () => {
+    const parsed = validateEnv(createBaseConfig());
     expect(parsed.API_PORT).toBe(3000);
+  });
+
+  it('defaults API_PREFIX to api/v1', () => {
+    const parsed = validateEnv(createBaseConfig());
     expect(parsed.API_PREFIX).toBe('api/v1');
+  });
+
+  it('defaults JWT_ACCESS_EXPIRY to 15m', () => {
+    const parsed = validateEnv(createBaseConfig());
     expect(parsed.JWT_ACCESS_EXPIRY).toBe('15m');
+  });
+
+  it('defaults JWT_REFRESH_EXPIRY to 7d', () => {
+    const parsed = validateEnv(createBaseConfig());
     expect(parsed.JWT_REFRESH_EXPIRY).toBe('7d');
+  });
+
+  it('defaults ML_SERVICE_URL to localhost http endpoint', () => {
+    const parsed = validateEnv(createBaseConfig());
     expect(parsed.ML_SERVICE_URL).toBe('http://localhost:5000');
+  });
+
+  it('defaults CORS_ORIGINS to local dev origins', () => {
+    const parsed = validateEnv(createBaseConfig());
     expect(parsed.CORS_ORIGINS).toEqual([
       'http://localhost:3000',
       'http://localhost:5173',
@@ -72,6 +95,10 @@ describe('validateEnv', () => {
     expect(durationToSeconds('30s')).toBe(30);
   });
 
+  it('converts minimum valid duration strings to seconds', () => {
+    expect(durationToSeconds('1s')).toBe(1);
+  });
+
   it('converts minute-based duration strings to seconds', () => {
     expect(durationToSeconds('15m')).toBe(900);
   });
@@ -86,6 +113,10 @@ describe('validateEnv', () => {
 
   it('converts multi-digit duration strings to seconds', () => {
     expect(durationToSeconds('120m')).toBe(7200);
+  });
+
+  it('converts refresh expiry boundary duration strings to seconds', () => {
+    expect(durationToSeconds('365d')).toBe(31536000);
   });
 
   it('returns NaN for zero-value duration strings', () => {
@@ -183,6 +214,16 @@ describe('validateEnv', () => {
       }),
     ).toThrow(
       /Invalid environment configuration: DATABASE_URL: Invalid URL, JWT_ACCESS_SECRET: Too small: expected string to have >=16 characters, JWT_REFRESH_SECRET: Too small: expected string to have >=16 characters/,
+    );
+  });
+
+  it('rejects config with missing JWT secrets', () => {
+    expect(() =>
+      validateEnv({
+        DATABASE_URL: VALID_DATABASE_URL,
+      }),
+    ).toThrow(
+      /Invalid environment configuration: JWT_ACCESS_SECRET: Invalid input: expected string, received undefined, JWT_REFRESH_SECRET: Invalid input: expected string, received undefined/,
     );
   });
 
@@ -435,7 +476,17 @@ describe('validateEnv', () => {
     ).toThrow(/Invalid environment configuration: API_PORT:/);
   });
 
-  it('requires complete Google OAuth config in production', () => {
+  it('rejects API_PORT values greater than 65535', () => {
+    expect(() =>
+      validateEnv(
+        createBaseConfig({
+          API_PORT: 65536,
+        }),
+      ),
+    ).toThrow(/Invalid environment configuration: API_PORT:/);
+  });
+
+  it('reports missing GOOGLE_CLIENT_ID when Google OAuth config is absent in production', () => {
     const message = getValidationErrorMessage(
       createBaseConfig({
         NODE_ENV: 'production',
@@ -446,12 +497,42 @@ describe('validateEnv', () => {
     expect(message).toContain(
       'GOOGLE_CLIENT_ID: GOOGLE_CLIENT_ID is required when NODE_ENV=production',
     );
+  });
+
+  it('reports missing GOOGLE_CLIENT_SECRET when Google OAuth config is absent in production', () => {
+    const message = getValidationErrorMessage(
+      createBaseConfig({
+        NODE_ENV: 'production',
+        ML_SERVICE_URL: 'https://ml.example.com',
+      }),
+    );
+
     expect(message).toContain(
       'GOOGLE_CLIENT_SECRET: GOOGLE_CLIENT_SECRET is required when NODE_ENV=production',
     );
+  });
+
+  it('reports missing GOOGLE_CALLBACK_URL when Google OAuth config is absent in production', () => {
+    const message = getValidationErrorMessage(
+      createBaseConfig({
+        NODE_ENV: 'production',
+        ML_SERVICE_URL: 'https://ml.example.com',
+      }),
+    );
+
     expect(message).toContain(
       'GOOGLE_CALLBACK_URL: GOOGLE_CALLBACK_URL is required when NODE_ENV=production',
     );
+  });
+
+  it('does not report ML_SERVICE_URL errors when only Google OAuth config is missing in production', () => {
+    const message = getValidationErrorMessage(
+      createBaseConfig({
+        NODE_ENV: 'production',
+        ML_SERVICE_URL: 'https://ml.example.com',
+      }),
+    );
+
     expect(message).not.toContain('ML_SERVICE_URL');
   });
 
@@ -563,7 +644,7 @@ describe('validateEnv', () => {
     expect(parsed.GOOGLE_CALLBACK_URL).toBe(VALID_GOOGLE_CALLBACK_URL);
   });
 
-  it('treats blank Google OAuth values as missing', () => {
+  it('treats blank GOOGLE_CLIENT_ID values as missing', () => {
     const parsed = validateEnv(
       createBaseConfig({
         NODE_ENV: 'development',
@@ -574,7 +655,31 @@ describe('validateEnv', () => {
     );
 
     expect(parsed.GOOGLE_CLIENT_ID).toBeUndefined();
+  });
+
+  it('treats blank GOOGLE_CLIENT_SECRET values as missing', () => {
+    const parsed = validateEnv(
+      createBaseConfig({
+        NODE_ENV: 'development',
+        GOOGLE_CLIENT_ID: '   ',
+        GOOGLE_CLIENT_SECRET: '',
+        GOOGLE_CALLBACK_URL: '\n\t',
+      }),
+    );
+
     expect(parsed.GOOGLE_CLIENT_SECRET).toBeUndefined();
+  });
+
+  it('treats blank GOOGLE_CALLBACK_URL values as missing', () => {
+    const parsed = validateEnv(
+      createBaseConfig({
+        NODE_ENV: 'development',
+        GOOGLE_CLIENT_ID: '   ',
+        GOOGLE_CLIENT_SECRET: '',
+        GOOGLE_CALLBACK_URL: '\n\t',
+      }),
+    );
+
     expect(parsed.GOOGLE_CALLBACK_URL).toBeUndefined();
   });
 
@@ -766,6 +871,18 @@ describe('validateEnv', () => {
     );
   });
 
+  it('rejects null CORS_ORIGINS values', () => {
+    expect(() =>
+      validateEnv(
+        createBaseConfig({
+          CORS_ORIGINS: null,
+        }),
+      ),
+    ).toThrow(
+      /Invalid environment configuration: CORS_ORIGINS: Invalid input: expected string, received null/,
+    );
+  });
+
   it('normalizes whitespace in CORS_ORIGINS values', () => {
     const parsed = validateEnv(
       createBaseConfig({
@@ -791,10 +908,9 @@ describe('validateEnv', () => {
     ).toThrow(/Invalid environment configuration: ML_SERVICE_URL: Invalid URL/);
   });
 
-  it('accepts explicit http ML_SERVICE_URL values in development mode', () => {
+  it('accepts explicit http ML_SERVICE_URL values outside production', () => {
     const parsed = validateEnv(
       createBaseConfig({
-        NODE_ENV: 'development',
         ML_SERVICE_URL: 'http://ml.internal:5000',
       }),
     );
@@ -831,6 +947,22 @@ describe('validateEnv', () => {
       ),
     ).toThrow(
       /Invalid environment configuration: ML_SERVICE_URL: ML_SERVICE_URL must use https when NODE_ENV=production/,
+    );
+  });
+
+  it('rejects non-https GOOGLE_CALLBACK_URL values in production when explicitly set', () => {
+    expect(() =>
+      validateEnv(
+        createBaseConfig({
+          NODE_ENV: 'production',
+          GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
+          GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
+          GOOGLE_CALLBACK_URL: 'http://api.example.com/auth/google/callback',
+          ML_SERVICE_URL: 'https://ml.internal:5000',
+        }),
+      ),
+    ).toThrow(
+      /Invalid environment configuration: GOOGLE_CALLBACK_URL: GOOGLE_CALLBACK_URL must use https when NODE_ENV=production/,
     );
   });
 
