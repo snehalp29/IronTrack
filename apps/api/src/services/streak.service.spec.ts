@@ -36,6 +36,64 @@ describe('StreakService', () => {
     );
   });
 
+  it('treats duplicate streak creation as idempotent when concurrent insert occurs', async () => {
+    const prismaMock = {
+      user: {
+        findUnique: jest.fn(async () => ({ id: 'user-1', timezone: 'UTC' })),
+      },
+      userStreak: {
+        findUnique: jest.fn(async () => null),
+        create: jest.fn(async () => {
+          const error = new Error('Unique constraint failed') as Error & {
+            code?: string;
+          };
+          error.code = 'P2002';
+          throw error;
+        }),
+        update: jest.fn(async ({ data }) => data),
+      },
+      checklistItem: { findMany: jest.fn(async () => []) },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        StreakService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(StreakService);
+    await expect(service.onSessionFinished('user-1')).resolves.toBeUndefined();
+    expect(prismaMock.userStreak.update).not.toHaveBeenCalled();
+  });
+
+  it('rethrows non-unique errors during initial streak creation', async () => {
+    const prismaMock = {
+      user: {
+        findUnique: jest.fn(async () => ({ id: 'user-1', timezone: 'UTC' })),
+      },
+      userStreak: {
+        findUnique: jest.fn(async () => null),
+        create: jest.fn(async () => {
+          throw new Error('database unavailable');
+        }),
+      },
+      checklistItem: { findMany: jest.fn(async () => []) },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        StreakService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(StreakService);
+    await expect(service.onSessionFinished('user-1')).rejects.toThrow(
+      'database unavailable',
+    );
+  });
+
   it('uses the provided completion timestamp when finishing workout streak', async () => {
     jest.useFakeTimers().setSystemTime(new Date('2024-02-01T12:00:00.000Z'));
 

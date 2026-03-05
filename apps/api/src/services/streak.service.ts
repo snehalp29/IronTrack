@@ -60,15 +60,21 @@ export class StreakService {
     });
 
     if (!streak) {
-      await this.prisma.userStreak.create({
-        data: {
-          userId,
-          streakType,
-          currentStreakDays: 1,
-          longestStreakDays: 1,
-          lastCompletedDate: dateValue,
-        },
-      });
+      try {
+        await this.prisma.userStreak.create({
+          data: {
+            userId,
+            streakType,
+            currentStreakDays: 1,
+            longestStreakDays: 1,
+            lastCompletedDate: dateValue,
+          },
+        });
+      } catch (error) {
+        if (!isPrismaUniqueConstraintError(error)) {
+          throw error;
+        }
+      }
       return;
     }
 
@@ -128,4 +134,13 @@ export class StreakService {
     const nextDate = new Date(`${next}T00:00:00.000Z`);
     return Math.round((nextDate.getTime() - prevDate.getTime()) / 86_400_000);
   }
+}
+
+function isPrismaUniqueConstraintError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'P2002'
+  );
 }

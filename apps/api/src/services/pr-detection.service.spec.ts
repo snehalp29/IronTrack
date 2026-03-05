@@ -146,6 +146,7 @@ describe('PrDetectionService', () => {
           },
         ]),
       },
+      $transaction: jest.fn(async () => undefined),
       pRRecord: {
         findMany: jest.fn(async () => []),
         upsert: jest.fn(async () => undefined),
@@ -164,6 +165,7 @@ describe('PrDetectionService', () => {
       service.detectForSession('user-1', 'session-1'),
     ).resolves.toEqual([]);
     expect(prismaMock.pRRecord.upsert).not.toHaveBeenCalled();
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
   });
 
   it('creates a PR when no existing value exists for that exercise/type', async () => {

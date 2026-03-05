@@ -428,3 +428,85 @@ if (completedCount >= REQUIRED_CHECKLIST_TYPES.length) {
 ```
 
 This is a no-op when the schema enforces uniqueness but becomes correct if the constraint is ever relaxed.
+
+---
+
+## Verification Pass 3 — 2026-03-05
+
+| #   | Finding                                                                         | Status   | Notes                                                                                                                                                                                                                                                  |
+| --- | ------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 11  | `recalculateForExercise` — sequential upserts + `deleteMany` not in transaction | ✅ Fixed | Operations collected into `operations[]` (L188–191); `deleteMany` pushed when `nullPrTypes` non-empty (L234–243); `$transaction(operations)` called at L246. Spec tests (L385–602) include `$transaction` mock and assert call count and array length. |
+| 12  | `formatDateInTimezone` — invalid timezone throws uncaught `RangeError`          | ✅ Fixed | `try/catch` added at `streak.service.ts:103–120`; catches error and falls back to UTC formatter. Test "falls back to UTC when timezone value is invalid" added at `streak.service.spec.ts:421–455`.                                                    |
+| 13  | `recalculateForExercise` spec tests incompatible with `$transaction` fix        | ✅ Fixed | All three tests now include `$transaction: jest.fn(...)` mock and assert `toHaveBeenCalledTimes(1)` plus `toHaveLength(4/2/1)`.                                                                                                                        |
+| 14  | `onChecklistCompleted` — `=== 4` should be `>= 4`                               | ✅ Fixed | Changed to `>=` at `streak.service.ts:31`. New test "increments checklist streak when completed count exceeds required checklist types" (spec L388–419) exercises `count = 5` path.                                                                    |
+
+---
+
+## New Findings — 2026-03-05 (Pass 3)
+
+### P2 — Should Fix
+
+#### 15. `StreakService.incrementStreak` — TOCTOU race condition between `findUnique` and `create` (`streak.service.ts:53–73`)
+
+```ts
+const streak = await this.prisma.userStreak.findUnique({
+  where: { userId_streakType: { userId, streakType } },
+});
+
+if (!streak) {
+  await this.prisma.userStreak.create({    // ← P2002 if concurrent call wins the race
+    data: { userId, streakType, currentStreakDays: 1, ... },
+  });
+  return;
+}
+```
+
+If two requests invoke `incrementStreak` concurrently for the same `(userId, streakType)` — e.g., a retry from a failed job, a double-tap on the client, or two background handlers running in parallel — both calls can read `null` from `findUnique` and both then attempt `create`. The second `create` hits the unique constraint on `(userId, streakType)` and throws `PrismaClientKnownRequestError` with code `P2002`. This error is uncaught and propagates to the caller.
+
+`sessions.service.ts:193` correctly passes `finishedAt` to `onSessionFinished`, so this is a pure concurrency issue, not a data problem.
+
+**Fix:** Catch the `P2002` from `create` and treat it as a same-day idempotent call:
+
+```ts
+import { Prisma } from '@prisma/client';
+
+try {
+  await this.prisma.userStreak.create({
+    data: {
+      userId,
+      streakType,
+      currentStreakDays: 1,
+      longestStreakDays: 1,
+      lastCompletedDate: dateValue,
+    },
+  });
+} catch (err) {
+  if (
+    err instanceof Prisma.PrismaClientKnownRequestError &&
+    err.code === 'P2002'
+  ) {
+    return; // concurrent insert already created it — treat as idempotent
+  }
+  throw err;
+}
+return;
+```
+
+---
+
+### P3 — Nice to Have
+
+#### 16. `detectForSession` — "skips candidate types" test missing `$transaction` mock and negative assertion (`pr-detection.service.spec.ts:136–167`)
+
+```ts
+// No $transaction in mock, no expect(...).not.toHaveBeenCalled() assertion.
+const prismaMock = {
+  set: { findMany: jest.fn(...) },
+  pRRecord: { findMany: jest.fn(...), upsert: jest.fn(...) },
+  // ← $transaction absent
+} as unknown as PrismaService;
+```
+
+The "skips candidate types with non-positive values" test omits `$transaction` from the mock. If the `if (upserts.length > 0)` guard were accidentally removed, `$transaction(...)` would throw `TypeError: this.prisma.$transaction is not a function`, surfacing as a cryptic runtime error rather than a clean assertion failure. The pattern in "ignores completed sets without completedAt" (`expect(prismaMock.$transaction).not.toHaveBeenCalled()`) is more explicit and should be applied here too.
+
+**Fix:** Add `$transaction: jest.fn()` to the mock and assert `expect(prismaMock.$transaction).not.toHaveBeenCalled()`.
