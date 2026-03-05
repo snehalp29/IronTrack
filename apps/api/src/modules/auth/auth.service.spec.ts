@@ -376,6 +376,20 @@ describe('AuthService', () => {
     );
   });
 
+  it('applies UTC timezone when creating google-auth users', async () => {
+    await authService.googleLogin({
+      idToken: 'valid-google-id-token-1234567890',
+    });
+
+    expect(prismaMock.user.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          timezone: 'UTC',
+        }),
+      }),
+    );
+  });
+
   it('google login requires idToken', async () => {
     await expect(authService.googleLogin({} as never)).rejects.toBeInstanceOf(
       BadRequestException,
@@ -414,6 +428,40 @@ describe('AuthService', () => {
         name: 'Taken',
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('maps create-time unique constraint races to EMAIL_TAKEN', async () => {
+    (prismaMock.user.create as jest.Mock).mockRejectedValueOnce(
+      Object.assign(new Error('Unique constraint failed'), {
+        code: 'P2002',
+      }),
+    );
+
+    await expect(
+      authService.register({
+        email: 'race@example.com',
+        password: 'Str0ngPassword!',
+        name: 'Race',
+      }),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'EMAIL_TAKEN',
+        message: 'Email already in use',
+      },
+    });
+  });
+
+  it('rethrows unexpected registration create errors', async () => {
+    const unexpected = new Error('database unavailable');
+    (prismaMock.user.create as jest.Mock).mockRejectedValueOnce(unexpected);
+
+    await expect(
+      authService.register({
+        email: 'unexpected@example.com',
+        password: 'Str0ngPassword!',
+        name: 'Unexpected',
+      }),
+    ).rejects.toBe(unexpected);
   });
 
   it('rejects login when user is missing', async () => {

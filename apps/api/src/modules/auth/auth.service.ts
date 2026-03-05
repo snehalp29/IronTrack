@@ -39,22 +39,30 @@ export class AuthService {
     });
 
     if (existingUser) {
-      throw new BadRequestException({
-        code: 'EMAIL_TAKEN',
-        message: 'Email already in use',
-      });
+      this.throwEmailTaken();
     }
 
     const passwordHash = await hash(input.password, 12);
-    const user = await this.prisma.user.create({
-      data: {
-        email: input.email.toLowerCase(),
-        passwordHash,
-        name: input.name,
-        timezone: input.timezone ?? 'UTC',
-        unitPreference: input.unitPreference ?? 'METRIC',
-      },
-    });
+    let user: {
+      id: string;
+      email: string;
+    };
+    try {
+      user = await this.prisma.user.create({
+        data: {
+          email: input.email.toLowerCase(),
+          passwordHash,
+          name: input.name,
+          timezone: input.timezone ?? 'UTC',
+          unitPreference: input.unitPreference ?? 'METRIC',
+        },
+      });
+    } catch (error) {
+      if (isPrismaUniqueConstraintError(error)) {
+        this.throwEmailTaken();
+      }
+      throw error;
+    }
 
     return this.issueTokens(user.id, user.email);
   }
@@ -177,6 +185,7 @@ export class AuthService {
         email: identity.email,
         passwordHash: await hash(identity.googleId, 10),
         authProvider: AuthProvider.GOOGLE,
+        timezone: 'UTC',
         googleId: identity.googleId,
         name: identity.name,
         avatarUrl: identity.avatarUrl,
@@ -230,6 +239,13 @@ export class AuthService {
     return createHash('sha256').update(token).digest('hex');
   }
 
+  private throwEmailTaken(): never {
+    throw new BadRequestException({
+      code: 'EMAIL_TAKEN',
+      message: 'Email already in use',
+    });
+  }
+
   private getRefreshTokenExpiry(): Date {
     const expiry = this.configService.getOrThrow<string>('JWT_REFRESH_EXPIRY');
     return new Date(Date.now() + this.parseDurationToMs(expiry));
@@ -263,4 +279,13 @@ export class AuthService {
     }
     return user;
   }
+}
+
+function isPrismaUniqueConstraintError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'P2002'
+  );
 }
