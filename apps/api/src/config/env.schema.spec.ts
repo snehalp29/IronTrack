@@ -249,4 +249,12 @@ describe('validateEnv', () => {
       /Invalid environment configuration: GOOGLE_CALLBACK_URL: Invalid input: expected string, received number/,
     );
   });
+
+  it('formats root-level validation errors with an explicit root path', () => {
+    expect(() =>
+      validateEnv('invalid-config' as unknown as Record<string, unknown>),
+    ).toThrow(
+      /Invalid environment configuration: <root>: Invalid input: expected object, received string/,
+    );
+  });
 });

@@ -136,7 +136,10 @@ export function validateEnv(config: Record<string, unknown>): Env {
   const parsed = envSchema.safeParse(config);
   if (!parsed.success) {
     const details = parsed.error.issues
-      .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
+      .map((issue) => {
+        const path = issue.path.length > 0 ? issue.path.join('.') : '<root>';
+        return `${path}: ${issue.message}`;
+      })
       .join(', ');
     throw new Error(`Invalid environment configuration: ${details}`);
   }
