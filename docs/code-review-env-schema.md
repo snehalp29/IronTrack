@@ -1058,6 +1058,637 @@ expect(isValidCorsOrigin('http://localhost:8080')).toBe(true);
 
 ---
 
+## Verification Pass 8 — 2026-03-05
+
+**Scope:** `apps/api/src/config/env.schema.ts`, `apps/api/src/config/env.schema.spec.ts`, `apps/api/src/main.ts`
+
+| #   | Finding                                                                    | Status   | Notes                                                                                                                                           |
+| --- | -------------------------------------------------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| 53  | `GOOGLE_CALLBACK_URL` accepts HTTP in production                           | ✅ Fixed | `env.schema.ts:216–226` adds `new URL(env.GOOGLE_CALLBACK_URL).protocol === 'http:'` check; `spec.ts:953–967` tests HTTP callback URL rejection |
+| 54  | `API_PORT` accepts values above 65535                                      | ✅ Fixed | `env.schema.ts:127` adds `.max(65535)`; `spec.ts:479–487` tests 65536 rejection                                                                 |
+| 55  | Multi-assertion pattern in defaults / Google OAuth / blank OAuth tests     | ✅ Fixed | Defaults split into 7 individual `it` blocks (L47–84); production Google OAuth split into 4 (L489–537); blank Google split into 3 (L647–684)    |
+| 56  | `configService.get<string[]>('CORS_ORIGINS') ?? []` dead code              | ✅ Fixed | `main.ts:34` now uses `configService.getOrThrow<string[]>('CORS_ORIGINS')`                                                                      |
+| 57  | No test for entirely absent required fields                                | ✅ Fixed | `spec.ts:220–228` tests `{ DATABASE_URL: VALID_DATABASE_URL }` with specific error for missing secrets                                          |
+| 58  | `NODE_ENV: 'development'` redundant in HTTP ML_SERVICE_URL acceptance test | ✅ Fixed | `spec.ts:911–919` — renamed `'outside production'`; `NODE_ENV` override removed                                                                 |
+| 59  | `CORS_ORIGINS: null` silently falls back to default                        | ✅ Fixed | `env.schema.ts:150` changed from `?? DEFAULT_CORS_ORIGINS_RAW` to `=== undefined`; `spec.ts:874–884` tests null rejection with type error       |
+| 60  | `durationToSeconds` min and max-boundary values untested                   | ✅ Fixed | `spec.ts:98–100` tests `'1s'` → 1; `spec.ts:118–120` tests `'365d'` → 31536000                                                                  |
+| 61  | `durationToSeconds` comment conflates `.refine()` and `superRefine`        | ✅ Fixed | `env.schema.ts:44` comment now reads: `durationSchema.refine() still runs when regex validation fails`                                          |
+
+---
+
+### New Findings — 2026-03-05
+
+#### 62. Both `ML_SERVICE_URL` and `GOOGLE_CALLBACK_URL` production HTTPS checks are bypassed by non-HTTP schemes (`env.schema.ts:205–226`) **[P1]**
+
+```ts
+// ML_SERVICE_URL check (L205–214)
+if (env.NODE_ENV === 'production' && new URL(env.ML_SERVICE_URL).protocol === 'http:') {
+
+// GOOGLE_CALLBACK_URL check (L216–226)
+if (env.NODE_ENV === 'production' && env.GOOGLE_CALLBACK_URL &&
+    new URL(env.GOOGLE_CALLBACK_URL).protocol === 'http:') {
+```
+
+Both checks use `=== 'http:'`, which only blocks the HTTP scheme. Any other non-HTTPS scheme passes silently. `z.string().url()` accepts any scheme the WHATWG URL constructor accepts, which includes `ftp:`, `ws:`, `wss:`, `data:`, and custom schemes. Verified:
+
+```
+new URL('ftp://ml.example.com').protocol   → 'ftp:'   (≠ 'http:', check skipped)
+new URL('ws://ml.example.com').protocol    → 'ws:'    (≠ 'http:', check skipped)
+```
+
+In production, `ML_SERVICE_URL: 'ftp://ml.example.com'` and `GOOGLE_CALLBACK_URL: 'ftp://callback.evil.com'` both pass all validation without error. This is the same class as finding #31 (the original case-sensitive bypass) — the fix for #31 correctly used `.protocol` but still only guards against `'http:'` specifically.
+
+**Fix:** Change both checks to `!== 'https:'`, which rejects every scheme except HTTPS:
+
+```ts
+// ML_SERVICE_URL
+if (env.NODE_ENV === 'production' && new URL(env.ML_SERVICE_URL).protocol !== 'https:') {
+  ctx.addIssue({ ..., message: 'ML_SERVICE_URL must use https when NODE_ENV=production' });
+}
+
+// GOOGLE_CALLBACK_URL
+if (
+  env.NODE_ENV === 'production' &&
+  env.GOOGLE_CALLBACK_URL &&
+  new URL(env.GOOGLE_CALLBACK_URL).protocol !== 'https:'
+) {
+  ctx.addIssue({ ..., message: 'GOOGLE_CALLBACK_URL must use https when NODE_ENV=production' });
+}
+```
+
+---
+
+#### 63. `.toThrow()` with multi-field order-sensitive regex — brittle partial Google OAuth tests (`env.schema.spec.ts:600, 613`) **[P2]**
+
+```ts
+// spec.ts:600
+).toThrow(
+  /GOOGLE_CLIENT_SECRET: .* GOOGLE_CALLBACK_URL: .*/,
+);
+
+// spec.ts:613
+).toThrow(
+  /GOOGLE_CLIENT_SECRET: .* GOOGLE_CALLBACK_URL: .*/,
+);
+```
+
+These regexes match the combined error string in field order. Zod reports issues in the order `ctx.addIssue()` is called inside `superRefine`. The current `superRefine` checks `GOOGLE_CLIENT_SECRET` before `GOOGLE_CALLBACK_URL` only because of the `if (!hasGoogleClientSecret)` / `if (!hasGoogleCallbackUrl)` ordering. If a future refactor reorders those checks (even for a legitimate reason), both tests fail despite the errors still being correct.
+
+Each test is also checking two logically independent concerns in one assertion: (1) `GOOGLE_CLIENT_SECRET` error is present, (2) `GOOGLE_CALLBACK_URL` error is present. If the first match fails, the test aborts without telling you whether the second error was reported.
+
+**Fix:** Split each `.toThrow()` into two `expect(message).toContain()` checks using `getValidationErrorMessage`:
+
+```ts
+it('rejects partial Google OAuth config in test mode when client secret is missing', () => {
+  const message = getValidationErrorMessage(
+    createBaseConfig({
+      NODE_ENV: 'test',
+      GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
+    }),
+  );
+  expect(message).toContain(
+    'GOOGLE_CLIENT_SECRET: GOOGLE_CLIENT_SECRET must be provided',
+  );
+});
+
+it('rejects partial Google OAuth config in test mode when callback url is missing', () => {
+  const message = getValidationErrorMessage(
+    createBaseConfig({
+      NODE_ENV: 'test',
+      GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
+    }),
+  );
+  expect(message).toContain(
+    'GOOGLE_CALLBACK_URL: GOOGLE_CALLBACK_URL must be provided',
+  );
+});
+```
+
+---
+
+#### 64. `configService.get<number>('API_PORT') ?? 3000` fallback in `main.ts` is dead code (`main.ts:54`) **[P3]**
+
+```ts
+const port = configService.get<number>('API_PORT') ?? 3000;
+```
+
+`API_PORT` has a `.default(3000)` in the schema and `validateEnv` throws at startup if the field fails. `configService.get('API_PORT')` will never return `undefined` in practice. The `?? 3000` fallback is unreachable, and the pattern is now inconsistent with `API_PREFIX` (L31) and `CORS_ORIGINS` (L34) which both use `getOrThrow`.
+
+**Fix:** Use `configService.getOrThrow<number>('API_PORT')` to mirror the pattern used for the other config values.
+
+---
+
+#### 65. No acceptance test for `API_PORT: 65535` — upper boundary not explicitly verified (`env.schema.spec.ts`) **[P3]**
+
+```ts
+it('rejects API_PORT values greater than 65535', () => {
+  // ← 65535 is rejected
+  validateEnv(createBaseConfig({ API_PORT: 65536 }));
+});
+// ← No test verifying 65535 is accepted
+```
+
+The rejection boundary at 65536 is tested, but the acceptance boundary at 65535 is not. A one-off error in the schema constraint (e.g., `.max(65534)` instead of `.max(65535)`) would go undetected. Standard boundary value analysis requires both the last-valid and first-invalid cases.
+
+**Fix:** Add:
+
+```ts
+it('accepts API_PORT at the maximum valid port', () => {
+  const parsed = validateEnv(createBaseConfig({ API_PORT: 65535 }));
+  expect(parsed.API_PORT).toBe(65535);
+});
+```
+
+---
+
+#### 66. Missing test for `GOOGLE_CALLBACK_URL` uppercase scheme bypass in production (`env.schema.spec.ts`) **[P3]**
+
+`ML_SERVICE_URL` has a dedicated test for uppercase scheme (`HTTP://`, `spec.ts:937–951`) to guard against the bypass found in #31. The new `GOOGLE_CALLBACK_URL` HTTPS check (added to fix #53) lacks the equivalent test:
+
+```ts
+// ML_SERVICE_URL — has uppercase test ✅
+it('rejects uppercase-scheme ML_SERVICE_URL values in production', () => { ... });
+
+// GOOGLE_CALLBACK_URL — no uppercase test ❌
+// no test for GOOGLE_CALLBACK_URL: 'HTTP://...' in production
+```
+
+`new URL('HTTP://evil.com/callback').protocol` returns `'http:'` (WHATWG normalises to lowercase), so the check does fire — but without a test, a future change that reverts to `startsWith('http://')` would reintroduce the uppercase bypass without a failing test.
+
+**Fix:** Add:
+
+```ts
+it('rejects uppercase-scheme GOOGLE_CALLBACK_URL values in production', () => {
+  expect(() =>
+    validateEnv(
+      createBaseConfig({
+        NODE_ENV: 'production',
+        GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
+        GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
+        GOOGLE_CALLBACK_URL: 'HTTP://api.example.com/auth/google/callback',
+        ML_SERVICE_URL: 'https://ml.example.com',
+      }),
+    ),
+  ).toThrow(
+    /Invalid environment configuration: GOOGLE_CALLBACK_URL: GOOGLE_CALLBACK_URL must use https/,
+  );
+});
+```
+
+---
+
+#### 67. Multi-assertion success tests remain — five `it` blocks assert multiple fields from the same parse result (`env.schema.spec.ts`) **[P3]**
+
+These tests call `validateEnv` once and then assert multiple fields of the returned `parsed` object. While less harmful than multi-input multi-assertion tests (finding #37/#44), a failure in the first assertion silences subsequent checks, understating the scope of a regression:
+
+| Location | Test name                                                                   | # of `expect` |
+| -------- | --------------------------------------------------------------------------- | ------------- |
+| L166–180 | `normalizes whitespace for DATABASE_URL and API_PREFIX`                     | 4             |
+| L405–415 | `accepts cross-unit durations when access expiry is shorter`                | 2             |
+| L417–427 | `accepts JWT_ACCESS_EXPIRY values that are shorter than JWT_REFRESH_EXPIRY` | 2             |
+| L254–264 | `accepts duration values with surrounding whitespace and normalizes them`   | 2             |
+| L631–645 | `accepts complete Google OAuth config in production`                        | 3             |
+
+**Fix:** Split each into one `it` block per field assertion. For example, `L254–264`:
+
+```ts
+it('normalizes leading whitespace from JWT_ACCESS_EXPIRY', () => {
+  const parsed = validateEnv(createBaseConfig({ JWT_ACCESS_EXPIRY: ' 15m ' }));
+  expect(parsed.JWT_ACCESS_EXPIRY).toBe('15m');
+});
+
+it('normalizes tab/newline whitespace from JWT_REFRESH_EXPIRY', () => {
+  const parsed = validateEnv(
+    createBaseConfig({ JWT_REFRESH_EXPIRY: '\t7d\n' }),
+  );
+  expect(parsed.JWT_REFRESH_EXPIRY).toBe('7d');
+});
+```
+
+---
+
+#### 68. `does not add cross-expiry errors` tests contain two logically independent assertions (`env.schema.spec.ts:302–332`) **[P3]**
+
+```ts
+it('does not add cross-expiry errors when access expiry already fails max bound validation', () => {
+  expect(message).toContain(
+    'JWT_ACCESS_EXPIRY: JWT_ACCESS_EXPIRY must be less than or equal to 24h',
+  );
+  expect(message).not.toContain(
+    'JWT_ACCESS_EXPIRY must be shorter than JWT_REFRESH_EXPIRY',
+  );
+});
+```
+
+Both assertions test different concerns: (1) the max-bound error IS present, (2) the cross-expiry error is NOT present. If assertion (1) fails (meaning the max-bound error is absent — perhaps due to a Zod error message wording change), assertion (2) is silenced. More importantly, if the max-bound error is absent because the bound was incorrectly relaxed, the `not.toContain` test might coincidentally pass for the wrong reason.
+
+**Fix:** Split into two `it` blocks — one asserting the max-bound error is present, one asserting the cross-expiry error is absent.
+
+## Verification Pass 9 — 2026-03-05
+
+**Scope:** `apps/api/src/config/env.schema.ts`, `apps/api/src/config/env.schema.spec.ts`, `apps/api/src/main.ts`
+
+| #   | Finding                                                                                  | Status   | Notes                                                                                                   |
+| --- | ---------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------- |
+| 62  | `ML_SERVICE_URL` and `GOOGLE_CALLBACK_URL` HTTPS checks bypassed by non-HTTP schemes     | ✅ Fixed | Both checks now use `!== 'https:'`; `ftp://` tests added at `spec.ts:1065–1079` and `spec.ts:1129–1143` |
+| 63  | Multi-field order-sensitive `.toThrow()` regex in partial OAuth tests                    | ✅ Fixed | Tests at L687–717 now use `getValidationErrorMessage` + individual `toContain` assertions               |
+| 64  | `configService.get<number>('API_PORT') ?? 3000` dead code                                | ✅ Fixed | `main.ts:54` now uses `configService.getOrThrow<number>('API_PORT')`                                    |
+| 65  | No acceptance test for `API_PORT: 65535` upper boundary                                  | ✅ Fixed | `spec.ts:575–583` tests `API_PORT: 65535` → `65535`                                                     |
+| 66  | Missing uppercase-scheme GOOGLE_CALLBACK_URL test in production                          | ✅ Fixed | `spec.ts:1113–1127` tests `'HTTP://api.example.com/...'`                                                |
+| 67  | Multi-assertion success tests — whitespace normalization, cross-unit JWT, complete OAuth | ✅ Fixed | All split: whitespace ×4 (L166–216), cross-unit ×2+2 (L471–513), complete OAuth ×3 (L733–773)           |
+| 68  | Cross-expiry guard tests contain `toContain` + `not.toContain` in same `it`              | ✅ Fixed | Split into `keeps...` + `omits...` pairs at L348–398                                                    |
+
+---
+
+### New Findings — 2026-03-05
+
+#### 69. Partial Google OAuth tests still contain two `toContain` assertions per `it` block (`env.schema.spec.ts:687–717`) **[P2]**
+
+```ts
+it('rejects partial Google OAuth config in test mode', () => {
+  // ...
+  expect(message).toContain(
+    'GOOGLE_CLIENT_SECRET: GOOGLE_CLIENT_SECRET must be provided ...',
+  );
+  expect(message).toContain(
+    'GOOGLE_CALLBACK_URL: GOOGLE_CALLBACK_URL must be provided ...',
+  );
+});
+```
+
+Finding #63 fixed the order-sensitivity by switching from a multi-field `.toThrow()` regex to `toContain`. However, both tests (`test mode`, L687–701; `outside production`, L703–717) still have two independent `toContain` assertions in a single `it`. If the `GOOGLE_CLIENT_SECRET` assertion fails (meaning the error is unexpectedly absent), the `GOOGLE_CALLBACK_URL` assertion is silenced and its status is unknown. This is the same pattern addressed in findings #37, #44, and #55.
+
+**Fix:** Split each into two `it` blocks — one per expected error message.
+
+---
+
+#### 70. Two `it` blocks mix `toContain` and `not.toContain` for independent concerns (`env.schema.spec.ts:635–665`) **[P3]**
+
+```ts
+// L635–649
+it('reports only missing Google OAuth fields in production when partially configured', () => {
+  expect(message).toContain('GOOGLE_CALLBACK_URL: ...');
+  expect(message).not.toContain('ML_SERVICE_URL'); // ← independent concern
+});
+
+// L651–665
+it('reports missing client id in production when secret and callback are provided', () => {
+  expect(message).toContain('GOOGLE_CLIENT_ID: ...');
+  expect(message).not.toContain('ML_SERVICE_URL'); // ← independent concern
+});
+```
+
+In both tests, the `toContain` and `not.toContain` assertions test distinct concerns: (1) the expected field error IS present, (2) `ML_SERVICE_URL` is NOT incorrectly included. If assertion (1) fails, (2) is silenced — and vice versa. The `not.toContain('ML_SERVICE_URL')` concern is identical in both tests and could be consolidated or separated.
+
+**Fix:** Split each into two `it` blocks, and consider sharing the `not.toContain` assertion in a dedicated test if the same input covers both cases.
+
+---
+
+#### 71. `falls back to defaults when API_PREFIX or CORS_ORIGINS are blank strings` tests two independent fields (`env.schema.spec.ts:218–232`) **[P3]**
+
+```ts
+it('falls back to defaults when API_PREFIX or CORS_ORIGINS are blank strings', () => {
+  // ...
+  expect(parsed.API_PREFIX).toBe('api/v1');        // field 1
+  expect(parsed.CORS_ORIGINS).toEqual([...]);       // field 2 — silenced if L1 fails
+});
+```
+
+`API_PREFIX` and `CORS_ORIGINS` defaults are independent schema paths. A regression in either fallback independently should produce a clearly labelled failure.
+
+**Fix:** Split into separate tests, each setting only the relevant blank field:
+
+```ts
+it('falls back to default API_PREFIX when a blank string is provided', () => {
+  const parsed = validateEnv(createBaseConfig({ API_PREFIX: '   ' }));
+  expect(parsed.API_PREFIX).toBe('api/v1');
+});
+
+it('falls back to default CORS_ORIGINS when a blank string is provided', () => {
+  const parsed = validateEnv(createBaseConfig({ CORS_ORIGINS: '\n\t' }));
+  expect(parsed.CORS_ORIGINS).toEqual([...]);
+});
+```
+
+---
+
+#### 72. No test asserting `GOOGLE_CALLBACK_URL` with HTTP is accepted outside production (`env.schema.spec.ts`) **[P3]**
+
+The schema enforces HTTPS for `GOOGLE_CALLBACK_URL` only in production. The production HTTP rejection is tested at `spec.ts:1097–1111`, but the non-production acceptance is not:
+
+```ts
+// Tested: HTTP GOOGLE_CALLBACK_URL rejected in production ✅
+// Missing: HTTP GOOGLE_CALLBACK_URL accepted outside production ❌
+```
+
+Without this test, a future change that accidentally enforces HTTPS in all environments would pass unnoticed. Mirrors the existing `it('accepts explicit http ML_SERVICE_URL values outside production', ...)` at L1039.
+
+**Fix:** Add:
+
+```ts
+it('accepts http GOOGLE_CALLBACK_URL values outside production', () => {
+  const parsed = validateEnv(
+    createBaseConfig({
+      GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
+      GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
+      GOOGLE_CALLBACK_URL: 'http://localhost:3000/auth/google/callback',
+    }),
+  );
+  expect(parsed.GOOGLE_CALLBACK_URL).toBe(
+    'http://localhost:3000/auth/google/callback',
+  );
+});
+```
+
+---
+
+#### 73. `API_PORT: 1` minimum boundary not tested (`env.schema.spec.ts`) **[P3]**
+
+`API_PORT: 0` is tested (rejected) and `API_PORT: 65535` is tested (accepted). The minimum accepted port `1` is not tested:
+
+```ts
+// Tested: 0 rejected ✅, 65535 accepted ✅
+// Missing: 1 accepted ❌
+```
+
+A one-off error in the schema (e.g., `.min(2)` instead of `.positive()`) would go undetected.
+
+**Fix:** Add:
+
+```ts
+it('accepts API_PORT at the minimum valid port', () => {
+  const parsed = validateEnv(createBaseConfig({ API_PORT: 1 }));
+  expect(parsed.API_PORT).toBe(1);
+});
+```
+
+---
+
+#### 74. `VALID_DATABASE_URL` only uses `postgresql://` — `postgres://` scheme variant never tested (`env.schema.spec.ts:7–8`) **[P3]**
+
+```ts
+const VALID_DATABASE_URL =
+  'postgresql://user:password@db.example.com:5432/mydb';
+```
+
+The schema at `env.schema.ts:74` uses `/^postgres(?:ql)?:\/\//i` which accepts both `postgres://` and `postgresql://`. The `(?:ql)?` alternation is never exercised in tests — every test uses `postgresql://`. A typo in the regex (e.g., `(?:qsl)?`) that broke the short form would go undetected.
+
+**Fix:** Add a test that uses the short `postgres://` form:
+
+```ts
+it('accepts postgres:// short scheme in DATABASE_URL', () => {
+  const parsed = validateEnv(
+    createBaseConfig({
+      DATABASE_URL: 'postgres://user:pass@db.example.com:5432/mydb',
+    }),
+  );
+  expect(parsed.DATABASE_URL).toBe(
+    'postgres://user:pass@db.example.com:5432/mydb',
+  );
+});
+```
+
+---
+
+#### 75. Whitespace normalization tests repeat the same config input four times (`env.schema.spec.ts:166–216`) **[P3]**
+
+```ts
+// L166: normalizes DATABASE_URL — uses full 4-field config
+// L179: normalizes API_PREFIX — uses full 4-field config (identical to L166)
+// L192: normalizes JWT_ACCESS_SECRET — uses full 4-field config (identical)
+// L205: normalizes JWT_REFRESH_SECRET — uses full 4-field config (identical)
+```
+
+All four tests call `validateEnv` with the same four-field config object but each asserts one field. If a future contributor updates one test's input (e.g., changes the `DATABASE_URL` value in L179 but not L166), the tests silently diverge and no longer test the same scenario. The duplication is also 4× the parse work.
+
+A shared fixture or `beforeEach`/`let parsed` pattern would eliminate the duplication. However, since Jest doesn't encourage shared state between `it` blocks, the cleanest fix is to consolidate the four fields into a single test that asserts each is normalized — accepting a controlled multi-assertion case for a single logical scenario — or to use a helper:
+
+```ts
+function parsedWithWhitespacedFields() {
+  return validateEnv(
+    createBaseConfig({
+      DATABASE_URL: '  postgresql://user:password@db.example.com:5432/mydb  ',
+      API_PREFIX: '  /api/v2/  ',
+      JWT_ACCESS_SECRET: '  access-secret-for-testing-only  ',
+      JWT_REFRESH_SECRET: '  refresh-secret-for-testing-only  ',
+    }),
+  );
+}
+```
+
+---
+
+#### 76. `CORS_ORIGINS` non-string non-null types beyond `number` are untested (`env.schema.spec.ts`) **[P3]**
+
+The spec tests `CORS_ORIGINS: 123` (number, rejected) and `CORS_ORIGINS: null` (null, rejected after the #59 fix). Other non-string types that `trimStringOrUndefined` passes through as-is are untested:
+
+- `CORS_ORIGINS: []` (array) — `typeof [] !== 'string'` → returned as `[]` → `[] === undefined` → false → `corsOriginsSchema` receives `[]` → `z.string()` rejects with `Invalid input: expected string, received array`
+- `CORS_ORIGINS: {}` (object) — same path
+- `CORS_ORIGINS: true` (boolean) — same path
+
+The `trimStringOrUndefined` non-string passthrough branch is only exercised by `number` and `null` tests. Under 100% branch coverage, the `typeof value !== 'string'` branch should be covered by a representative set of types.
+
+**Fix:** Add a test for at least one more non-string type, e.g.:
+
+```ts
+it('rejects array CORS_ORIGINS values', () => {
+  expect(() => validateEnv(createBaseConfig({ CORS_ORIGINS: [] }))).toThrow(
+    /Invalid environment configuration: CORS_ORIGINS:/,
+  );
+});
+```
+
+## Verification Pass 10 — 2026-03-05
+
+**Scope:** `apps/api/src/config/env.schema.spec.ts`
+
+| #   | Finding                                                                 | Status   | Notes                                                                                                                                                            |
+| --- | ----------------------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 69  | Partial OAuth tests still have 2 `toContain` per `it`                   | ✅ Fixed | Split into 4 individual tests: `GOOGLE_CLIENT_SECRET` and `GOOGLE_CALLBACK_URL` each separately for `test` and `development` modes (L724–774)                    |
+| 70  | `toContain` + `not.toContain` in same `it` for partial production OAuth | ✅ Fixed | Split into pairs: `reports missing GOOGLE_CALLBACK_URL` (L648) + `does not report ML_SERVICE_URL` (L663); same for missing client ID (L676 + L691)               |
+| 71  | `falls back to defaults` tests two independent fields                   | ✅ Fixed | Split into `falls back to default API_PREFIX when blank string is provided` (L201) and `falls back to default CORS_ORIGINS when blank string is provided` (L211) |
+| 72  | No test for HTTP `GOOGLE_CALLBACK_URL` accepted outside production      | ✅ Fixed | `spec.ts:1118–1130` — `it('accepts http GOOGLE_CALLBACK_URL values outside production', ...)`                                                                    |
+| 73  | `API_PORT: 1` minimum boundary not tested                               | ✅ Fixed | `spec.ts:538–546` — `it('accepts API_PORT at the minimum valid port', ...)`                                                                                      |
+| 74  | `VALID_DATABASE_URL` only uses `postgresql://`                          | ✅ Fixed | `spec.ts:269–279` — `it('accepts postgres:// short scheme in DATABASE_URL', ...)`                                                                                |
+| 75  | Whitespace normalization tests duplicate config × 4                     | ✅ Fixed | `parseWithWhitespacedNormalizedFields()` helper added at L27–36; all four tests use it                                                                           |
+| 76  | `CORS_ORIGINS` non-string non-null non-number types untested            | ✅ Fixed | `spec.ts:1059–1069` — `it('rejects array CORS_ORIGINS values', ...)` tests `CORS_ORIGINS: []`                                                                    |
+
+---
+
+### New Findings — 2026-03-05
+
+#### 77. `throws with issue details for invalid values` uses a three-field order-sensitive `.toThrow()` regex (`env.schema.spec.ts:235–245`) **[P2]**
+
+```ts
+it('throws with issue details for invalid values', () => {
+  expect(() =>
+    validateEnv({
+      DATABASE_URL: 'not-a-url',
+      JWT_ACCESS_SECRET: 'short',
+      JWT_REFRESH_SECRET: 'short',
+    }),
+  ).toThrow(
+    /Invalid environment configuration: DATABASE_URL: Invalid URL, JWT_ACCESS_SECRET: Too small: ..., JWT_REFRESH_SECRET: Too small: .../,
+  );
+});
+```
+
+This is the same multi-field `.toThrow()` pattern addressed in findings #63, #68, and #69. The regex encodes three independent error assertions: DATABASE_URL is invalid, JWT_ACCESS_SECRET is too short, JWT_REFRESH_SECRET is too short. If any part fails (e.g., Zod changes the `Invalid URL` message text), the remaining two assertions are silenced.
+
+Zod field errors are emitted in schema key order (stable), so the ordering is not a fragility concern here — but the multi-concern nature is.
+
+**Fix:** Switch to `getValidationErrorMessage` + individual `toContain` assertions:
+
+```ts
+it('reports DATABASE_URL error for invalid URL', () => {
+  const message = getValidationErrorMessage({ DATABASE_URL: 'not-a-url', JWT_ACCESS_SECRET: 'short', JWT_REFRESH_SECRET: 'short' });
+  expect(message).toContain('DATABASE_URL: Invalid URL');
+});
+
+it('reports JWT_ACCESS_SECRET error for short value', () => {
+  const message = getValidationErrorMessage({ DATABASE_URL: 'not-a-url', JWT_ACCESS_SECRET: 'short', JWT_REFRESH_SECRET: 'short' });
+  expect(message).toContain('JWT_ACCESS_SECRET: Too small');
+});
+
+it('reports JWT_REFRESH_SECRET error for short value', () => { ... });
+```
+
+---
+
+#### 78. `rejects config with missing JWT secrets` uses a two-field `.toThrow()` regex (`env.schema.spec.ts:247–255`) **[P2]**
+
+```ts
+it('rejects config with missing JWT secrets', () => {
+  expect(() => validateEnv({ DATABASE_URL: VALID_DATABASE_URL })).toThrow(
+    /Invalid environment configuration: JWT_ACCESS_SECRET: ..., JWT_REFRESH_SECRET: .../,
+  );
+});
+```
+
+Same pattern: if JWT_ACCESS_SECRET assertion fails, JWT_REFRESH_SECRET is silenced. The test also conflates two distinct conditions — the access secret is missing, AND the refresh secret is missing — which could independently regress.
+
+**Fix:** Split into two tests, one per missing secret:
+
+```ts
+it('reports JWT_ACCESS_SECRET error when absent from config', () => {
+  const message = getValidationErrorMessage({
+    DATABASE_URL: VALID_DATABASE_URL,
+  });
+  expect(message).toContain(
+    'JWT_ACCESS_SECRET: Invalid input: expected string, received undefined',
+  );
+});
+
+it('reports JWT_REFRESH_SECRET error when absent from config', () => {
+  const message = getValidationErrorMessage({
+    DATABASE_URL: VALID_DATABASE_URL,
+  });
+  expect(message).toContain(
+    'JWT_REFRESH_SECRET: Invalid input: expected string, received undefined',
+  );
+});
+```
+
+---
+
+#### 79. No test for `CORS_ORIGINS` with a single valid entry (`env.schema.spec.ts`) **[P3]**
+
+Every test that exercises the acceptance path of `corsOriginsSchema` uses multi-entry inputs (the three-origin default, the three-origin whitespace normalisation test). No test explicitly passes a single valid origin and asserts it is accepted as a one-element array:
+
+```ts
+// All current acceptance tests:
+// 'http://localhost:3000,http://localhost:5173,http://localhost:8081'  (3 entries, default)
+// 'https://app.example.com , http://localhost:3000 , ...'             (3 entries, whitespace)
+
+// Missing:
+// 'https://app.example.com'  →  ['https://app.example.com']
+```
+
+A regression that requires at least two entries (e.g., a mistaken change from `split(',')` to `split(',').slice(1)`) would not be caught.
+
+**Fix:** Add:
+
+```ts
+it('accepts a single valid CORS origin', () => {
+  const parsed = validateEnv(
+    createBaseConfig({ CORS_ORIGINS: 'https://app.example.com' }),
+  );
+  expect(parsed.CORS_ORIGINS).toEqual(['https://app.example.com']);
+});
+```
+
+---
+
+#### 80. No test for `CORS_ORIGINS` where only a non-first entry is invalid (`env.schema.spec.ts`) **[P3]**
+
+Every invalid `CORS_ORIGINS` test provides a single-entry string. The `refine` callbacks use `.every()`, which short-circuits on the first falsy result. A bug that only checks the first entry (e.g., `.find()` instead of `.every()`) would pass all existing single-entry tests:
+
+```ts
+// Current: all rejection tests use single-entry inputs
+CORS_ORIGINS: 'ftp://app.example.com'; // single invalid
+CORS_ORIGINS: 'http://localhost:3000/api'; // single invalid
+
+// Missing: multi-entry where only the second is invalid
+CORS_ORIGINS: 'https://valid.com,ftp://invalid.com'; // first valid, second invalid
+```
+
+**Fix:** Add:
+
+```ts
+it('rejects CORS_ORIGINS with a non-first invalid entry', () => {
+  expect(() =>
+    validateEnv(
+      createBaseConfig({ CORS_ORIGINS: 'https://valid.com,ftp://invalid.com' }),
+    ),
+  ).toThrow(
+    /CORS_ORIGINS: CORS_ORIGINS entries must be valid HTTP or HTTPS origins/,
+  );
+});
+```
+
+---
+
+#### 81. `API_PREFIX` non-string type rejection not tested (`env.schema.spec.ts`) **[P3]**
+
+`DATABASE_URL: 123` is tested (rejected with `Invalid input: expected string, received number`). `CORS_ORIGINS: 123` is tested. `GOOGLE_CLIENT_ID: 123` is tested. `GOOGLE_CALLBACK_URL: 123` is tested. But `API_PREFIX: 123` is not:
+
+```ts
+API_PREFIX: z.preprocess(
+  trimStringOrUndefined,    // number → number (non-string passthrough)
+  z.string().default('api/v1').transform(...)
+),
+```
+
+`trimStringOrUndefined(123)` → `123` (non-string). `123 === undefined` → false. `z.string()` receives `123` → `Invalid input: expected string, received number`. The behavior is correct but untested.
+
+**Fix:** Add:
+
+```ts
+it('rejects non-string API_PREFIX values', () => {
+  expect(() => validateEnv(createBaseConfig({ API_PREFIX: 123 }))).toThrow(
+    /Invalid environment configuration: API_PREFIX: Invalid input: expected string, received number/,
+  );
+});
+```
+
+---
+
+#### 82. `VALID_GOOGLE_CALLBACK_URL` embeds the `api/v1` path segment — ties the test constant to the API prefix convention (`env.schema.spec.ts:13–14`) **[P3]**
+
+```ts
+const VALID_GOOGLE_CALLBACK_URL =
+  'https://api.example.com/api/v1/auth/google/callback';
+```
+
+The `/api/v1/` path component mirrors the default `API_PREFIX`. The schema validates `GOOGLE_CALLBACK_URL` only as a URL format — the path content is irrelevant. A reader unfamiliar with OAuth validation might assume the path is validated against the prefix. If the API prefix default changes from `api/v1` to something else, this constant silently becomes misleading even though the test still passes.
+
+**Fix:** Use a path that is clearly unrelated to API routing:
+
+```ts
+const VALID_GOOGLE_CALLBACK_URL =
+  'https://auth.example.com/oauth/google/callback';
+```
+
 ## Verification Pass 7 — 2026-03-05
 
 **Scope:** `apps/api/src/config/env.schema.ts`, `apps/api/src/config/env.schema.spec.ts`, `apps/api/src/main.ts`

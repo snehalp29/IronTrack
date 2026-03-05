@@ -11,7 +11,7 @@ const VALID_REFRESH_SECRET = 'refresh-secret-for-testing-only';
 const VALID_GOOGLE_CLIENT_ID = 'google-client-id';
 const VALID_GOOGLE_CLIENT_SECRET = 'google-client-secret';
 const VALID_GOOGLE_CALLBACK_URL =
-  'https://api.example.com/api/v1/auth/google/callback';
+  'https://auth.example.com/oauth/google/callback';
 
 function createBaseConfig(
   overrides: Record<string, unknown> = {},
@@ -232,25 +232,57 @@ describe('validateEnv', () => {
     expect(parsed.API_PREFIX).toBe('api/v1');
   });
 
-  it('throws with issue details for invalid values', () => {
-    expect(() =>
-      validateEnv({
-        DATABASE_URL: 'not-a-url',
-        JWT_ACCESS_SECRET: 'short',
-        JWT_REFRESH_SECRET: 'short',
-      }),
-    ).toThrow(
-      /Invalid environment configuration: DATABASE_URL: Invalid URL, JWT_ACCESS_SECRET: Too small: expected string to have >=16 characters, JWT_REFRESH_SECRET: Too small: expected string to have >=16 characters/,
+  it('reports DATABASE_URL issue details for invalid values', () => {
+    const message = getValidationErrorMessage({
+      DATABASE_URL: 'not-a-url',
+      JWT_ACCESS_SECRET: 'short',
+      JWT_REFRESH_SECRET: 'short',
+    });
+
+    expect(message).toContain('DATABASE_URL: Invalid URL');
+  });
+
+  it('reports JWT_ACCESS_SECRET issue details for invalid values', () => {
+    const message = getValidationErrorMessage({
+      DATABASE_URL: 'not-a-url',
+      JWT_ACCESS_SECRET: 'short',
+      JWT_REFRESH_SECRET: 'short',
+    });
+
+    expect(message).toContain(
+      'JWT_ACCESS_SECRET: Too small: expected string to have >=16 characters',
     );
   });
 
-  it('rejects config with missing JWT secrets', () => {
-    expect(() =>
-      validateEnv({
-        DATABASE_URL: VALID_DATABASE_URL,
-      }),
-    ).toThrow(
-      /Invalid environment configuration: JWT_ACCESS_SECRET: Invalid input: expected string, received undefined, JWT_REFRESH_SECRET: Invalid input: expected string, received undefined/,
+  it('reports JWT_REFRESH_SECRET issue details for invalid values', () => {
+    const message = getValidationErrorMessage({
+      DATABASE_URL: 'not-a-url',
+      JWT_ACCESS_SECRET: 'short',
+      JWT_REFRESH_SECRET: 'short',
+    });
+
+    expect(message).toContain(
+      'JWT_REFRESH_SECRET: Too small: expected string to have >=16 characters',
+    );
+  });
+
+  it('reports missing JWT_ACCESS_SECRET details when required secret is absent', () => {
+    const message = getValidationErrorMessage({
+      DATABASE_URL: VALID_DATABASE_URL,
+    });
+
+    expect(message).toContain(
+      'JWT_ACCESS_SECRET: Invalid input: expected string, received undefined',
+    );
+  });
+
+  it('reports missing JWT_REFRESH_SECRET details when required secret is absent', () => {
+    const message = getValidationErrorMessage({
+      DATABASE_URL: VALID_DATABASE_URL,
+    });
+
+    expect(message).toContain(
+      'JWT_REFRESH_SECRET: Invalid input: expected string, received undefined',
     );
   });
 
@@ -287,6 +319,18 @@ describe('validateEnv', () => {
       ),
     ).toThrow(
       /Invalid environment configuration: DATABASE_URL: Invalid input: expected string, received number/,
+    );
+  });
+
+  it('rejects non-string API_PREFIX values', () => {
+    expect(() =>
+      validateEnv(
+        createBaseConfig({
+          API_PREFIX: 123,
+        }),
+      ),
+    ).toThrow(
+      /Invalid environment configuration: API_PREFIX: Invalid input: expected string, received number/,
     );
   });
 
@@ -989,6 +1033,28 @@ describe('validateEnv', () => {
       validateEnv(
         createBaseConfig({
           CORS_ORIGINS: 'ftp://app.example.com',
+        }),
+      ),
+    ).toThrow(
+      /Invalid environment configuration: CORS_ORIGINS: CORS_ORIGINS entries must be valid HTTP or HTTPS origins \(no path, query, or fragment\)/,
+    );
+  });
+
+  it('accepts CORS_ORIGINS with a single valid entry', () => {
+    const parsed = validateEnv(
+      createBaseConfig({
+        CORS_ORIGINS: 'https://app.example.com',
+      }),
+    );
+
+    expect(parsed.CORS_ORIGINS).toEqual(['https://app.example.com']);
+  });
+
+  it('rejects CORS_ORIGINS when a non-first entry is invalid', () => {
+    expect(() =>
+      validateEnv(
+        createBaseConfig({
+          CORS_ORIGINS: 'https://app.example.com,ftp://bad.example.com',
         }),
       ),
     ).toThrow(
