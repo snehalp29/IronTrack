@@ -74,4 +74,33 @@ describe('CompletionService', () => {
       isIncomplete: true,
     });
   });
+
+  it('excludes sets from soft-deleted session exercises in both count queries', async () => {
+    (prismaMock.set.count as jest.Mock)
+      .mockReturnValueOnce('count-total')
+      .mockReturnValueOnce('count-completed');
+    (prismaMock.$transaction as jest.Mock).mockResolvedValue([2, 1]);
+
+    await service.calculate('session-5');
+
+    expect(prismaMock.set.count).toHaveBeenNthCalledWith(1, {
+      where: {
+        deletedAt: null,
+        sessionExercise: {
+          sessionId: 'session-5',
+          deletedAt: null,
+        },
+      },
+    });
+    expect(prismaMock.set.count).toHaveBeenNthCalledWith(2, {
+      where: {
+        deletedAt: null,
+        isCompleted: true,
+        sessionExercise: {
+          sessionId: 'session-5',
+          deletedAt: null,
+        },
+      },
+    });
+  });
 });

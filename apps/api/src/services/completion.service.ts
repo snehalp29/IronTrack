@@ -11,14 +11,20 @@ export class CompletionService {
       this.prisma.set.count({
         where: {
           deletedAt: null,
-          sessionExercise: { sessionId },
+          sessionExercise: {
+            sessionId,
+            deletedAt: null,
+          },
         },
       }),
       this.prisma.set.count({
         where: {
           deletedAt: null,
           isCompleted: true,
-          sessionExercise: { sessionId },
+          sessionExercise: {
+            sessionId,
+            deletedAt: null,
+          },
         },
       }),
     ]);
