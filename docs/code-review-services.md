@@ -1,7 +1,7 @@
 # Code Review — Domain Services (Compact)
 
 **Branch:** `phase_one`  
-**Date:** 2026-03-05
+**Date:** 2026-03-06
 
 ## Scope
 
@@ -12,8 +12,8 @@
 ## Status
 
 - Total findings: **132**
-- Open: **12**
-- Fixed: **120**
+- Open: **0**
+- Fixed: **132**
 
 ## Fixed History
 
@@ -27,28 +27,14 @@
 - `#89–#98`: soft-delete edit guards, active-row write predicates, finished-session cache guards, deterministic PR recalculation, and broader user cleanup.
 - `#99–#109`: transactional ownership guards, refresh/google race tightening, timezone validation, trimmed query filters, and guarded session finishing.
 - `#110–#120`: parent-write guards before relation rewrites, trimmed-name post-validation, create/update race mapping, empty-template start rejection, and `SessionNote` cleanup.
-
-## Open Findings
-
-- `#121` `P1` [sessions.controller.ts](/Users/sp_admin/Dev/Code/NestJS/IronTrack/apps/api/src/modules/sessions/sessions.controller.ts): `@Patch(':sessionId/exercises/:id')` is ordered before `@Patch(':sessionId/exercises/reorder')`, so `reorder` can be swallowed as `id`.
-- `#122` `P2` [sessions.service.ts](/Users/sp_admin/Dev/Code/NestJS/IronTrack/apps/api/src/modules/sessions/sessions.service.ts): concurrent `finishSession()` calls can fire PR/volume/streak side effects twice before the final `FINISHED` write wins.
-- `#123` `P2` [sessions.service.ts](/Users/sp_admin/Dev/Code/NestJS/IronTrack/apps/api/src/modules/sessions/sessions.service.ts): `addSessionExercise()` does not recache volume when mutating an already finished session.
-- `#124` `P2` [sessions.service.ts](/Users/sp_admin/Dev/Code/NestJS/IronTrack/apps/api/src/modules/sessions/sessions.service.ts): `batchCreateSets()` uses `Promise.all` without a transaction, so mid-batch failure can leave partial commits.
-- `#125` `P2` [sessions.service.ts](/Users/sp_admin/Dev/Code/NestJS/IronTrack/apps/api/src/modules/sessions/sessions.service.ts): idempotency refetch in `createSetInternal()` can match a soft-deleted set because it does not filter `deletedAt: null`.
-- `#126` `P2` [session.schemas.ts](/Users/sp_admin/Dev/Code/NestJS/IronTrack/apps/api/src/modules/sessions/dto/session.schemas.ts): set `payload` is effectively unconstrained arbitrary JSON.
-- `#127` `P3` [session.schemas.ts](/Users/sp_admin/Dev/Code/NestJS/IronTrack/apps/api/src/modules/sessions/dto/session.schemas.ts): `startSessionSchema` has no cap on inline exercise count.
-- `#128` `P3` [session.schemas.ts](/Users/sp_admin/Dev/Code/NestJS/IronTrack/apps/api/src/modules/sessions/dto/session.schemas.ts): `batchCreateSetsSchema` has no cap on batch size.
-- `#129` `P3` [workout-template.schemas.ts](/Users/sp_admin/Dev/Code/NestJS/IronTrack/apps/api/src/modules/workout-templates/dto/workout-template.schemas.ts): template exercise arrays have no max bound.
-- `#130` `P3` [session.schemas.ts](/Users/sp_admin/Dev/Code/NestJS/IronTrack/apps/api/src/modules/sessions/dto/session.schemas.ts): session list queries have no enforced max date window.
-- `#131` `P3` [sessions.service.ts](/Users/sp_admin/Dev/Code/NestJS/IronTrack/apps/api/src/modules/sessions/sessions.service.ts): `swapSessionExercise()` returns a thin pre-write snapshot instead of the full updated row.
-- `#132` `P3` [exercises.service.ts](/Users/sp_admin/Dev/Code/NestJS/IronTrack/apps/api/src/modules/exercises/exercises.service.ts): soft-deleting an exercise leaves `PRRecord` rows behind without delete/recalc intent.
+- `#121–#132`: session route disambiguation, guarded finish-session claim/revert flow, finished-session volume recache on exercise adds, transactional batch set creation, soft-delete-safe idempotency lookups, bounded session/template payloads and query windows, refreshed swap responses, and `PRRecord` cleanup on exercise soft delete.
 
 ## Key Outcomes
 
 - Most reviewed service paths now enforce active-row ownership and soft-delete semantics consistently.
 - Session mutation flows are safer around ordering conflicts, optimistic concurrency, PR recomputation, and cached volume updates.
 - Input normalization and duplicate handling are much tighter across auth, exercises, templates, notes, and catalog lookups.
-- Remaining risk is concentrated in route ordering, batch/transaction boundaries, and a few unbounded schema shapes.
+- Follow-up review did not surface additional concrete `P0–P4` defects in the reviewed service scope.
 
 ## Validation
 
@@ -64,6 +50,8 @@
 - `pnpm --filter @irontrack/api test -- src/modules/exercises/exercises.service.spec.ts src/modules/workout-templates/workout-templates.service.spec.ts src/modules/sessions/sessions.service.spec.ts`
 - `pnpm --filter @irontrack/api test -- src/modules/sessions/sessions.service.spec.ts src/modules/users/users.service.spec.ts`
 - `pnpm --filter @irontrack/api test -- src/modules/exercises/exercises.service.spec.ts src/modules/workout-templates/workout-templates.service.spec.ts src/modules/sessions/sessions.service.spec.ts src/modules/users/users.service.spec.ts`
+- `pnpm --filter @irontrack/api test -- src/modules/sessions/dto/session.schemas.spec.ts src/modules/workout-templates/dto/workout-template.schemas.spec.ts src/modules/sessions/sessions.service.spec.ts src/modules/exercises/exercises.service.spec.ts`
+- `pnpm --filter @irontrack/api test:e2e -- --runTestsByPath test/sessions.routing.e2e-spec.ts test/session-sets.validation.e2e-spec.ts`
 - `pnpm --filter @irontrack/api typecheck`
 - `pnpm lint:code`
 - `pnpm format:check`

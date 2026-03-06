@@ -272,24 +272,33 @@ export class ExercisesService {
   }
 
   async softDelete(userId: string, exerciseId: string) {
-    const result = await this.prisma.exerciseTemplate.updateMany({
-      where: {
-        id: exerciseId,
-        ownerUserId: userId,
-        isGlobal: false,
-        deletedAt: null,
-      },
-      data: { deletedAt: new Date() },
-    });
-
-    if (!result.count) {
-      throw new ForbiddenException({
-        code: 'EXERCISE_NOT_DELETABLE',
-        message: 'Only your custom exercises can be deleted',
+    return this.prisma.$transaction(async (tx) => {
+      const result = await tx.exerciseTemplate.updateMany({
+        where: {
+          id: exerciseId,
+          ownerUserId: userId,
+          isGlobal: false,
+          deletedAt: null,
+        },
+        data: { deletedAt: new Date() },
       });
-    }
 
-    return { success: true };
+      if (!result.count) {
+        throw new ForbiddenException({
+          code: 'EXERCISE_NOT_DELETABLE',
+          message: 'Only your custom exercises can be deleted',
+        });
+      }
+
+      await tx.pRRecord.deleteMany({
+        where: {
+          userId,
+          exerciseTemplateId: exerciseId,
+        },
+      });
+
+      return { success: true };
+    });
   }
 
   async history(userId: string, exerciseId: string, page = 1, pageSize = 20) {

@@ -27,6 +27,8 @@ import {
   UpdateSetDto,
 } from './dto/session.schemas';
 
+type SetMutationClient = Pick<PrismaService, 'sessionExercise' | 'set'>;
+
 @Injectable()
 export class SessionsService {
   constructor(
@@ -267,17 +269,6 @@ export class SessionsService {
       Math.round((finishedAt.getTime() - existing.startedAt.getTime()) / 1000),
     );
 
-    const totalVolume = await this.volumeService.cacheSessionVolume(sessionId);
-    const newPrs = await this.prDetectionService.detectForSession(
-      userId,
-      sessionId,
-    );
-    await this.streakService.onSessionFinished(
-      userId,
-      finishedAt,
-      existing.user?.timezone ?? 'UTC',
-    );
-    const completion = await this.completionService.calculate(sessionId);
     const updated = await this.prisma.workoutSession.updateMany({
       where: {
         id: sessionId,
@@ -315,6 +306,41 @@ export class SessionsService {
       }
     }
 
+    let totalVolume: number;
+    let newPrs: Awaited<ReturnType<PrDetectionService['detectForSession']>>;
+    let completion: Awaited<ReturnType<CompletionService['calculate']>>;
+    try {
+      totalVolume = await this.volumeService.cacheSessionVolume(sessionId);
+      newPrs = await this.prDetectionService.detectForSession(
+        userId,
+        sessionId,
+      );
+      await this.streakService.onSessionFinished(
+        userId,
+        finishedAt,
+        existing.user?.timezone ?? 'UTC',
+      );
+      completion = await this.completionService.calculate(sessionId);
+    } catch (error) {
+      await this.prisma.workoutSession.updateMany({
+        where: {
+          id: sessionId,
+          userId,
+          deletedAt: null,
+          status: 'FINISHED',
+          finishedAt,
+        },
+        data: {
+          status: 'IN_PROGRESS',
+          finishedAt: null,
+          endedReason: existing.endedReason,
+          durationSeconds: null,
+          version: { increment: 1 },
+        },
+      });
+      throw error;
+    }
+
     const session = await this.prisma.workoutSession.findFirst({
       where: {
         id: sessionId,
@@ -337,6 +363,7 @@ export class SessionsService {
   }
 
   async listSessions(userId: string, query: ListSessionsQuery) {
+    assertSessionListDateRange(query);
     const skip = (query.page - 1) * query.pageSize;
     const where = {
       userId,
@@ -465,14 +492,14 @@ export class SessionsService {
     sessionId: string,
     input: AddSessionExerciseDto,
   ) {
-    await this.assertSessionOwnership(userId, sessionId);
+    const session = await this.assertSessionOwnership(userId, sessionId);
     await this.assertExerciseTemplateAccessible(
       userId,
       input.exerciseTemplateId,
     );
 
     try {
-      return await this.prisma.sessionExercise.create({
+      const created = await this.prisma.sessionExercise.create({
         data: {
           sessionId,
           exerciseTemplateId: input.exerciseTemplateId,
@@ -481,6 +508,12 @@ export class SessionsService {
           supersetGroupKey: input.supersetGroupKey,
         },
       });
+
+      if (session.status === 'FINISHED') {
+        await this.volumeService.cacheSessionVolume(session.id);
+      }
+
+      return created;
     } catch (error) {
       if (isSessionExerciseOrderUniqueConstraintError(error)) {
         this.throwSessionExerciseOrderConflict();
@@ -788,10 +821,23 @@ export class SessionsService {
       ),
     );
 
-    return {
-      ...exercise,
-      exerciseTemplateId: input.toExerciseTemplateId,
-    };
+    const refreshed = await this.prisma.sessionExercise.findFirst({
+      where: {
+        id: exercise.id,
+        sessionId,
+        deletedAt: null,
+        session: {
+          userId,
+          deletedAt: null,
+        },
+      },
+    });
+
+    if (!refreshed) {
+      this.throwSessionExerciseNotFound();
+    }
+
+    return refreshed;
   }
 
   async createSet(
@@ -1067,15 +1113,31 @@ export class SessionsService {
     sessionExerciseId: string,
     input: BatchCreateSetsDto,
   ) {
-    const sessionExercise = await this.assertSessionExerciseOwnership(
-      userId,
-      sessionExerciseId,
-    );
+    const { sessionExercise, createdSets } = await this.prisma.$transaction(
+      async (tx) => {
+        const ownedSessionExercise = await this.assertSessionExerciseOwnership(
+          userId,
+          sessionExerciseId,
+          tx,
+        );
 
-    const createdSets = await Promise.all(
-      input.sets.map((set) =>
-        this.createSetInternal(userId, sessionExerciseId, set, sessionExercise),
-      ),
+        const created = await Promise.all(
+          input.sets.map((set) =>
+            this.createSetInternal(
+              userId,
+              sessionExerciseId,
+              set,
+              ownedSessionExercise,
+              tx,
+            ),
+          ),
+        );
+
+        return {
+          sessionExercise: ownedSessionExercise,
+          createdSets: created,
+        };
+      },
     );
     const results = createdSets.map((createdSet) => createdSet.item);
     const shouldRecalculatePrs = createdSets.some(
@@ -1105,11 +1167,17 @@ export class SessionsService {
         userId,
         deletedAt: null,
       },
+      select: {
+        id: true,
+        status: true,
+      },
     });
 
     if (!session) {
       this.throwSessionForbidden();
     }
+
+    return session;
   }
 
   private async assertWorkoutTemplateOwnership(
@@ -1160,8 +1228,9 @@ export class SessionsService {
   private async assertSessionExerciseOwnership(
     userId: string,
     sessionExerciseId: string,
+    client: SetMutationClient = this.prisma,
   ) {
-    const sessionExercise = await this.prisma.sessionExercise.findFirst({
+    const sessionExercise = await client.sessionExercise.findFirst({
       where: {
         id: sessionExerciseId,
         deletedAt: null,
@@ -1201,10 +1270,11 @@ export class SessionsService {
         status: 'IN_PROGRESS' | 'FINISHED';
       };
     },
+    client: SetMutationClient = this.prisma,
   ) {
     const sessionExercise =
       existingSessionExercise ??
-      (await this.prisma.sessionExercise.findFirst({
+      (await client.sessionExercise.findFirst({
         where: {
           id: sessionExerciseId,
           deletedAt: null,
@@ -1230,10 +1300,11 @@ export class SessionsService {
     }
 
     if (input.idempotencyKey) {
-      const existing = await this.prisma.set.findFirst({
+      const existing = await client.set.findFirst({
         where: {
           sessionExerciseId,
           idempotencyKey: input.idempotencyKey,
+          deletedAt: null,
         },
       });
       if (existing) {
@@ -1249,7 +1320,7 @@ export class SessionsService {
 
     let created;
     try {
-      created = await this.prisma.set.create({
+      created = await client.set.create({
         data: {
           sessionExerciseId,
           orderIndex: input.orderIndex,
@@ -1287,10 +1358,11 @@ export class SessionsService {
         input.idempotencyKey &&
         isSetIdempotencyUniqueConstraintError(error)
       ) {
-        const existing = await this.prisma.set.findFirst({
+        const existing = await client.set.findFirst({
           where: {
             sessionExerciseId,
             idempotencyKey: input.idempotencyKey,
+            deletedAt: null,
           },
         });
 
@@ -1436,6 +1508,30 @@ function assertUniqueSessionExerciseOrderIndexes(
     }
 
     seenOrderIndexes.add(item.orderIndex);
+  }
+}
+
+function assertSessionListDateRange(query: ListSessionsQuery) {
+  if (!query.startDate || !query.endDate) {
+    return;
+  }
+
+  const start = new Date(query.startDate);
+  const end = new Date(query.endDate);
+  if (end < start) {
+    throw new BadRequestException({
+      code: 'SESSION_LIST_DATE_RANGE_INVALID',
+      message: 'endDate must be greater than or equal to startDate',
+    });
+  }
+
+  const rangeMs = end.getTime() - start.getTime();
+  const maxRangeMs = 366 * 24 * 60 * 60 * 1000;
+  if (rangeMs > maxRangeMs) {
+    throw new BadRequestException({
+      code: 'SESSION_LIST_DATE_RANGE_TOO_LARGE',
+      message: 'Date range must not exceed 366 days',
+    });
   }
 }
 

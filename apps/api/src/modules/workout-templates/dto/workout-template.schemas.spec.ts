@@ -153,6 +153,33 @@ describe('workout-template schemas', () => {
     expect(() => reorderWorkoutTemplateSchema.parse({ items: [] })).toThrow();
   });
 
+  it('rejects create payloads with more than 200 exercises', () => {
+    expect(() =>
+      createWorkoutTemplateSchema.parse({
+        name: 'Large Template',
+        exercises: Array.from({ length: 201 }, (_, index) => ({
+          exerciseTemplateId: `11111111-1111-4111-8111-${String(index)
+            .padStart(12, '0')
+            .slice(-12)}`,
+          orderIndex: index,
+        })),
+      }),
+    ).toThrow();
+  });
+
+  it('rejects update payloads with more than 200 exercises', () => {
+    expect(() =>
+      updateWorkoutTemplateSchema.parse({
+        exercises: Array.from({ length: 201 }, (_, index) => ({
+          exerciseTemplateId: `11111111-1111-4111-8111-${String(index)
+            .padStart(12, '0')
+            .slice(-12)}`,
+          orderIndex: index,
+        })),
+      }),
+    ).toThrow();
+  });
+
   it('rejects reorder payloads with duplicate template ids or order indexes', () => {
     expect(() =>
       reorderWorkoutTemplateSchema.parse({

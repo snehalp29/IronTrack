@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 import { optionalTrimmed } from '../../../common/validation/optional-trimmed';
 
+const MAX_TEMPLATE_EXERCISES = 200;
+
 const optionalSupersetGroupKeySchema = optionalTrimmed(z.string());
 
 const templateExerciseSchema = z
@@ -31,14 +33,17 @@ export const createWorkoutTemplateSchema = z.object({
   name: z.string().min(2).max(120),
   description: z.string().max(4000).optional(),
   orderIndex: z.number().int().nonnegative().optional(),
-  exercises: z.array(templateExerciseSchema).min(1),
+  exercises: z.array(templateExerciseSchema).min(1).max(MAX_TEMPLATE_EXERCISES),
 });
 
 export const updateWorkoutTemplateSchema = z.object({
   name: z.string().min(2).max(120).optional(),
   description: z.string().max(4000).optional(),
   orderIndex: z.number().int().nonnegative().optional(),
-  exercises: z.array(templateExerciseSchema).optional(),
+  exercises: z
+    .array(templateExerciseSchema)
+    .max(MAX_TEMPLATE_EXERCISES)
+    .optional(),
 });
 
 export const reorderWorkoutTemplateSchema = z.object({

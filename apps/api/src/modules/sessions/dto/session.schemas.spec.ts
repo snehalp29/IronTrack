@@ -1,6 +1,8 @@
 import {
   addSessionExerciseSchema,
+  batchCreateSetsSchema,
   createSetSchema,
+  listSessionsQuerySchema,
   reorderSessionExercisesSchema,
   startSessionSchema,
   updateSessionExerciseSchema,
@@ -96,6 +98,18 @@ describe('session set schemas', () => {
     expect(result.success).toBe(true);
   });
 
+  it('rejects oversized set payloads', () => {
+    const result = createSetSchema.safeParse({
+      orderIndex: 0,
+      type: 'WEIGHT_REPS',
+      payload: {
+        notes: 'x'.repeat(5000),
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
   it('rejects reorder payloads with no items', () => {
     const result = reorderSessionExercisesSchema.safeParse({
       items: [],
@@ -188,5 +202,39 @@ describe('session set schemas', () => {
         supersetGroupKey: null,
       }).supersetGroupKey,
     ).toBeNull();
+  });
+
+  it('rejects startSession payloads with more than 200 inline exercises', () => {
+    const result = startSessionSchema.safeParse({
+      exercises: Array.from({ length: 201 }, (_, index) => ({
+        exerciseTemplateId: `11111111-1111-4111-8111-${String(index)
+          .padStart(12, '0')
+          .slice(-12)}`,
+        orderIndex: index,
+      })),
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects batch set payloads with more than 100 sets', () => {
+    const result = batchCreateSetsSchema.safeParse({
+      sets: Array.from({ length: 101 }, (_, index) => ({
+        orderIndex: index,
+        type: 'WEIGHT_REPS' as const,
+        payload: {},
+      })),
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects session list queries that span more than 366 days', () => {
+    const result = listSessionsQuerySchema.safeParse({
+      startDate: '2024-01-01T00:00:00.000Z',
+      endDate: '2025-01-02T00:00:00.000Z',
+    });
+
+    expect(result.success).toBe(false);
   });
 });

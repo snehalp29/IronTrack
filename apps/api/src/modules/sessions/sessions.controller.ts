@@ -91,6 +91,20 @@ export class SessionsController {
     return this.sessionsService.addSessionExercise(user.sub, sessionId, body);
   }
 
+  @Patch(':sessionId/exercises/reorder')
+  async reorderExercises(
+    @CurrentUser() user: { sub: string },
+    @Param('sessionId') sessionId: string,
+    @Body(new ZodValidationPipe(reorderSessionExercisesSchema))
+    body: ReorderSessionExercisesDto,
+  ) {
+    return this.sessionsService.reorderSessionExercises(
+      user.sub,
+      sessionId,
+      body,
+    );
+  }
+
   @Patch(':sessionId/exercises/:id')
   async updateExercise(
     @CurrentUser() user: { sub: string },
@@ -114,20 +128,6 @@ export class SessionsController {
     @Param('id') id: string,
   ) {
     return this.sessionsService.deleteSessionExercise(user.sub, sessionId, id);
-  }
-
-  @Patch(':sessionId/exercises/reorder')
-  async reorderExercises(
-    @CurrentUser() user: { sub: string },
-    @Param('sessionId') sessionId: string,
-    @Body(new ZodValidationPipe(reorderSessionExercisesSchema))
-    body: ReorderSessionExercisesDto,
-  ) {
-    return this.sessionsService.reorderSessionExercises(
-      user.sub,
-      sessionId,
-      body,
-    );
   }
 
   @Post(':sessionId/exercises/swap')

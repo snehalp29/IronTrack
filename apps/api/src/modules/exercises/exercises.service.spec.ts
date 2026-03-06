@@ -14,6 +14,9 @@ describe('ExercisesService', () => {
         updateMany: jest.fn(async () => ({ count: 1 })),
         findFirst: jest.fn(async () => ({ id: 'exercise-1' })),
       },
+      pRRecord: {
+        deleteMany: jest.fn(async () => ({ count: 0 })),
+      },
       exerciseTemplateSecondaryMuscle: {
         deleteMany: jest.fn(async () => ({ count: 1 })),
         createMany: jest.fn(async () => ({ count: 1 })),
@@ -31,6 +34,9 @@ describe('ExercisesService', () => {
         count: jest.fn(),
         create: jest.fn(),
         updateMany: jest.fn(),
+      },
+      pRRecord: {
+        deleteMany: jest.fn(),
       },
       set: {
         findMany: jest.fn(),
@@ -726,7 +732,7 @@ describe('ExercisesService', () => {
   });
 
   it('soft deletes user-owned custom exercise', async () => {
-    const { service, prismaMock } = createService();
+    const { service, prismaMock, tx } = createService();
     (prismaMock.exerciseTemplate.updateMany as jest.Mock).mockResolvedValue({
       count: 1,
     });
@@ -734,7 +740,7 @@ describe('ExercisesService', () => {
     await expect(service.softDelete('user-1', 'exercise-1')).resolves.toEqual({
       success: true,
     });
-    expect(prismaMock.exerciseTemplate.updateMany).toHaveBeenCalledWith(
+    expect(tx.exerciseTemplate.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
           id: 'exercise-1',
@@ -745,11 +751,17 @@ describe('ExercisesService', () => {
         data: expect.objectContaining({ deletedAt: expect.any(Date) }),
       }),
     );
+    expect(tx.pRRecord.deleteMany).toHaveBeenCalledWith({
+      where: {
+        userId: 'user-1',
+        exerciseTemplateId: 'exercise-1',
+      },
+    });
   });
 
   it('rejects soft delete for inaccessible exercise', async () => {
-    const { service, prismaMock } = createService();
-    (prismaMock.exerciseTemplate.updateMany as jest.Mock).mockResolvedValue({
+    const { service, tx } = createService();
+    (tx.exerciseTemplate.updateMany as jest.Mock).mockResolvedValue({
       count: 0,
     });
 
