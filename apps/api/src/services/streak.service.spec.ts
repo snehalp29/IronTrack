@@ -713,7 +713,7 @@ describe('StreakService', () => {
     });
   });
 
-  it('resets checklist streak when provided completion date is before previous date', async () => {
+  it('ignores checklist completions older than the stored streak date', async () => {
     const prismaMock = {
       user: {
         findUnique: jest.fn(async () => ({
@@ -746,19 +746,7 @@ describe('StreakService', () => {
     const service = moduleRef.get(StreakService);
     await service.onChecklistCompleted('user-1', '2024-01-02');
 
-    expect(prismaMock.userStreak.updateMany).toHaveBeenCalledWith({
-      where: {
-        id: 'streak-1',
-        currentStreakDays: 5,
-        longestStreakDays: 7,
-        lastCompletedDate: new Date('2024-01-03T00:00:00.000Z'),
-      },
-      data: {
-        currentStreakDays: 1,
-        longestStreakDays: 7,
-        lastCompletedDate: new Date('2024-01-02T00:00:00.000Z'),
-      },
-    });
+    expect(prismaMock.userStreak.updateMany).not.toHaveBeenCalled();
   });
 
   it('does not increment checklist streak when fewer than four items are completed', async () => {
@@ -1028,6 +1016,41 @@ describe('StreakService', () => {
 
     const service = moduleRef.get(StreakService);
     await service.onSessionFinished('user-1');
+
+    expect(prismaMock.userStreak.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('ignores completions older than the stored streak date', async () => {
+    const prismaMock = {
+      user: {
+        findUnique: jest.fn(async () => ({ id: 'user-1', timezone: 'UTC' })),
+      },
+      userStreak: {
+        findUnique: jest.fn(async () => ({
+          id: 'streak-1',
+          userId: 'user-1',
+          currentStreakDays: 6,
+          longestStreakDays: 10,
+          lastCompletedDate: new Date('2024-01-05T00:00:00.000Z'),
+        })),
+        updateMany: jest.fn(async () => ({ count: 1 })),
+      },
+      checklistItem: { findMany: jest.fn(async () => []) },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        StreakService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(StreakService);
+    await service.onSessionFinished(
+      'user-1',
+      new Date('2024-01-04T12:00:00.000Z'),
+      'UTC',
+    );
 
     expect(prismaMock.userStreak.updateMany).not.toHaveBeenCalled();
   });

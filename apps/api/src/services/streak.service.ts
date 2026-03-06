@@ -101,9 +101,15 @@ export class StreakService {
       return;
     }
 
-    const isConsecutive = previousDateString
-      ? this.daysBetween(previousDateString, localDate) === 1
-      : false;
+    const dayDelta = previousDateString
+      ? this.daysBetween(previousDateString, localDate)
+      : null;
+
+    if (dayDelta !== null && dayDelta < 0) {
+      return;
+    }
+
+    const isConsecutive = dayDelta === 1;
 
     const currentStreakDays = isConsecutive ? streak.currentStreakDays + 1 : 1;
     const updateResult = await this.prisma.userStreak.updateMany({

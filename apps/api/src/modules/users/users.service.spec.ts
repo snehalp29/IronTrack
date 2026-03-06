@@ -26,6 +26,7 @@ describe('UsersService', () => {
     const prismaMock = {
       user: {
         findFirst: jest.fn(),
+        updateMany: jest.fn(async () => ({ count: 1 })),
         update: jest.fn(),
       },
       exerciseTemplate: {
@@ -88,9 +89,6 @@ describe('UsersService', () => {
     const { service, prismaMock } = createService();
     (prismaMock.user.findFirst as jest.Mock).mockResolvedValueOnce({
       id: 'u1',
-    });
-    (prismaMock.user.update as jest.Mock).mockResolvedValue({
-      id: 'u1',
       name: 'Name',
     });
 
@@ -98,22 +96,29 @@ describe('UsersService', () => {
       id: 'u1',
       name: 'Name',
     });
-    expect(prismaMock.user.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: 'u1' },
-        data: { name: 'Name' },
-      }),
-    );
+    expect(prismaMock.user.updateMany).toHaveBeenCalledWith({
+      where: { id: 'u1', deletedAt: null },
+      data: { name: 'Name' },
+    });
   });
 
   it('throws not found when updating a deleted user', async () => {
     const { service, prismaMock } = createService();
-    (prismaMock.user.findFirst as jest.Mock).mockResolvedValue(null);
+    (prismaMock.user.updateMany as jest.Mock).mockResolvedValue({ count: 0 });
 
     await expect(
       service.updateMe('u1', { name: 'Name' }),
     ).rejects.toBeInstanceOf(NotFoundException);
-    expect(prismaMock.user.update).not.toHaveBeenCalled();
+    expect(prismaMock.user.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('maps concurrent user deletion during updateMe back to USER_NOT_FOUND', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.user.findFirst as jest.Mock).mockResolvedValueOnce(null);
+
+    await expect(
+      service.updateMe('u1', { name: 'Name' }),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('soft deletes active user-related records in a transaction', async () => {

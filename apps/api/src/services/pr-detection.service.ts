@@ -42,6 +42,7 @@ export class PrDetectionService {
           },
         },
       },
+      orderBy: { completedAt: 'asc' },
     });
 
     const grouped = new Map<string, ExerciseSetInput[]>();

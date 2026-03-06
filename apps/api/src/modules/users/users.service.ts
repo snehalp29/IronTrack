@@ -35,23 +35,23 @@ export class UsersService {
   }
 
   async updateMe(userId: string, input: UpdateMeDto) {
-    const existingUser = await this.prisma.user.findFirst({
+    const updated = await this.prisma.user.updateMany({
       where: {
         id: userId,
         deletedAt: null,
       },
-      select: {
-        id: true,
-      },
+      data: input,
     });
 
-    if (!existingUser) {
+    if (!updated.count) {
       this.throwUserNotFound();
     }
 
-    return this.prisma.user.update({
-      where: { id: userId },
-      data: input,
+    const user = await this.prisma.user.findFirst({
+      where: {
+        id: userId,
+        deletedAt: null,
+      },
       select: {
         id: true,
         email: true,
@@ -62,6 +62,12 @@ export class UsersService {
         updatedAt: true,
       },
     });
+
+    if (!user) {
+      this.throwUserNotFound();
+    }
+
+    return user;
   }
 
   async deleteMe(userId: string) {

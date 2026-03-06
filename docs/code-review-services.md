@@ -24,9 +24,9 @@
 
 ## Current Status
 
-- Total findings tracked: **68**
+- Total findings tracked: **78**
 - Open findings: **0**
-- Fixed findings: **68**
+- Fixed findings: **78**
 - Historical implementation snippets were removed to keep this document compact.
 
 ---
@@ -74,6 +74,16 @@
 - `#66`: ✅ Fixed (`P3`) — `CatalogService.muscleGroups()` now sorts null `sortOrder` rows last.
 - `#67`: ✅ Fixed (`P3`) — `CatalogService.equipment()` now sorts null `sortOrder` rows last.
 - `#68`: ✅ Fixed (`P4`) — `MlClientService.resolveBasePath()` now strips repeated trailing slashes.
+- `#69`: ✅ Fixed (`P1`) — `SessionsService.updateSession()` now enforces optimistic version checks atomically at write time.
+- `#70`: ✅ Fixed (`P2`) — `SessionsService.addSessionExercise()` now maps duplicate `orderIndex` writes to a conflict error.
+- `#71`: ✅ Fixed (`P1`) — `SessionsService.updateSessionExercise()` now enforces optimistic version checks atomically at write time.
+- `#72`: ✅ Fixed (`P2`) — `SessionsService.updateSessionExercise()` now maps duplicate `orderIndex` writes to a conflict error.
+- `#73`: ✅ Fixed (`P1`) — `SessionsService.reorderSessionExercises()` now uses a two-phase reorder to avoid transient unique collisions during swaps.
+- `#74`: ✅ Fixed (`P2`) — `SessionsService.createSet()` now maps duplicate `orderIndex` writes to a conflict error.
+- `#75`: ✅ Fixed (`P2`) — `SessionsService.updateSet()` now maps duplicate `orderIndex` writes to a conflict error.
+- `#76`: ✅ Fixed (`P1`) — `UsersService.updateMe()` now returns `USER_NOT_FOUND` when the user disappears during the write.
+- `#77`: ✅ Fixed (`P2`) — `StreakService.incrementStreak()` now ignores out-of-order older completions instead of regressing streak state.
+- `#78`: ✅ Fixed (`P3`) — `PrDetectionService.detectForSession()` now loads completed sets in deterministic `completedAt` order.
 
 ---
 
@@ -150,6 +160,26 @@
 - Updated catalog list ordering for both muscle groups and equipment to use `sortOrder asc nulls last`, then `name asc`.
 - Reworked ML client base-path normalization to strip all trailing slashes instead of only one.
 
+## Final Resolutions (69–78)
+
+- Reworked `SessionsService.updateSession()` to:
+  - gate the write with `updateMany(... version: input.version ...)`,
+  - re-read current state on a zero-row update,
+  - and return `SESSION_VERSION_CONFLICT` instead of allowing stale overwrites.
+- Reworked `SessionsService.updateSessionExercise()` with the same atomic version-write pattern and post-failure re-read to preserve conflict semantics under concurrent edits.
+- Added duplicate-`orderIndex` conflict mapping for:
+  - `addSessionExercise()`
+  - `updateSessionExercise()`
+  - `createSet()`
+  - `updateSet()`
+- Rebuilt session-exercise reorder writes as a two-phase transaction:
+  - first move targeted rows to temporary negative indexes,
+  - then apply the requested final indexes,
+  - so valid swaps no longer trip the `(sessionId, orderIndex)` unique constraint mid-flight.
+- Reworked `UsersService.updateMe()` to use an active-row `updateMany()` guard plus post-write reload, returning `USER_NOT_FOUND` if the row vanishes during the update.
+- Updated streak increment logic to ignore older completion dates so late-arriving historical events do not rewind `lastCompletedDate` or reset active streaks.
+- Added deterministic `completedAt asc` ordering to `PrDetectionService.detectForSession()` so equal-value candidate selection is stable across runs.
+
 ---
 
 ## Validation Snapshot
@@ -158,5 +188,6 @@
 - `pnpm --filter @irontrack/api test -- src/services/completion.service.spec.ts src/services/volume.service.spec.ts src/services/streak.service.spec.ts src/modules/progress/progress.service.spec.ts src/modules/exercises/exercises.service.spec.ts src/modules/sessions/sessions.service.spec.ts src/modules/workout-templates/workout-templates.service.spec.ts src/modules/users/users.service.spec.ts` ✅
 - `pnpm --filter @irontrack/api test -- src/modules/sessions/sessions.service.spec.ts src/modules/workout-templates/workout-templates.service.spec.ts src/modules/auth/auth.service.spec.ts src/modules/checklist/checklist.service.spec.ts` ✅
 - `pnpm --filter @irontrack/api test -- src/modules/auth/auth.service.spec.ts src/modules/exercises/exercises.service.spec.ts src/modules/catalog/catalog.service.spec.ts src/modules/ml-client/ml-client.service.spec.ts` ✅
+- `pnpm --filter @irontrack/api test -- src/modules/sessions/sessions.service.spec.ts src/modules/users/users.service.spec.ts src/services/streak.service.spec.ts src/services/pr-detection.service.spec.ts` ✅
 - `pnpm --filter @irontrack/api typecheck` ✅
 - `pnpm --filter @irontrack/api test:cov` ✅ (`100/100/100/100`)

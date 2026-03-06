@@ -181,6 +181,34 @@ describe('PrDetectionService', () => {
     );
   });
 
+  it('loads completed session sets in deterministic completedAt order', async () => {
+    const prismaMock = {
+      set: {
+        findMany: jest.fn(async () => []),
+      },
+      pRRecord: {
+        findMany: jest.fn(async () => []),
+        upsert: jest.fn(async () => undefined),
+      },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        PrDetectionService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(PrDetectionService);
+    await service.detectForSession('user-1', 'session-1');
+
+    expect(prismaMock.set.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderBy: { completedAt: 'asc' },
+      }),
+    );
+  });
+
   it('skips candidate types with non-positive values', async () => {
     const prismaMock = {
       set: {

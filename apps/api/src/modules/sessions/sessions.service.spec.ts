@@ -57,13 +57,16 @@ describe('SessionsService', () => {
         create: jest.fn(),
         update: jest.fn(),
       },
-      $transaction: jest.fn(async (arg: unknown) => {
-        if (Array.isArray(arg)) {
-          return Promise.all(arg as Promise<unknown>[]);
-        }
-        throw new Error('Unsupported transaction shape in test');
-      }),
-    } as unknown as PrismaService;
+    } as PrismaService;
+    prismaMock.$transaction = jest.fn(async (arg: unknown) => {
+      if (Array.isArray(arg)) {
+        return Promise.all(arg as Promise<unknown>[]);
+      }
+      if (typeof arg === 'function') {
+        return (arg as (client: PrismaService) => unknown)(prismaMock);
+      }
+      throw new Error('Unsupported transaction shape in test');
+    });
 
     const prDetectionMock = {
       detectForSession: jest.fn(),
@@ -395,13 +398,17 @@ describe('SessionsService', () => {
 
   it('updates a session with optimistic versioning', async () => {
     const { service, prismaMock } = createService();
-    (prismaMock.workoutSession.findFirst as jest.Mock).mockResolvedValue({
-      id: 'session-1',
-      version: 2,
-    });
-    (prismaMock.workoutSession.update as jest.Mock).mockResolvedValue({
-      id: 'session-1',
-      version: 3,
+    (prismaMock.workoutSession.findFirst as jest.Mock)
+      .mockResolvedValueOnce({
+        id: 'session-1',
+        version: 2,
+      })
+      .mockResolvedValueOnce({
+        id: 'session-1',
+        version: 3,
+      });
+    (prismaMock.workoutSession.updateMany as jest.Mock).mockResolvedValue({
+      count: 1,
     });
 
     await expect(
@@ -424,6 +431,33 @@ describe('SessionsService', () => {
         version: 2,
       }),
     ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('throws conflict when session version changes after precheck and before write', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.workoutSession.findFirst as jest.Mock)
+      .mockResolvedValueOnce({
+        id: 'session-1',
+        version: 2,
+      })
+      .mockResolvedValueOnce({
+        id: 'session-1',
+        version: 3,
+      });
+    (prismaMock.workoutSession.updateMany as jest.Mock).mockResolvedValue({
+      count: 0,
+    });
+
+    await expect(
+      service.updateSession('user-1', 'session-1', {
+        version: 2,
+        notes: 'stale write',
+      }),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'SESSION_VERSION_CONFLICT',
+      },
+    });
   });
 
   it('throws when updating a missing session', async () => {
@@ -860,14 +894,43 @@ describe('SessionsService', () => {
     expect(prismaMock.sessionExercise.create).not.toHaveBeenCalled();
   });
 
+  it('maps duplicate session-exercise orderIndex writes to a conflict error', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.workoutSession.findFirst as jest.Mock).mockResolvedValue({
+      id: 'session-1',
+    });
+    (prismaMock.sessionExercise.create as jest.Mock).mockRejectedValue({
+      code: 'P2002',
+      meta: {
+        target: ['sessionId', 'orderIndex'],
+      },
+    });
+
+    await expect(
+      service.addSessionExercise('user-1', 'session-1', {
+        exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+        orderIndex: 0,
+      }),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'SESSION_EXERCISE_ORDER_CONFLICT',
+      },
+    });
+  });
+
   it('updates session exercise with version check', async () => {
     const { service, prismaMock } = createService();
-    (prismaMock.sessionExercise.findFirst as jest.Mock).mockResolvedValue({
-      id: 'se1',
-      version: 2,
-    });
-    (prismaMock.sessionExercise.update as jest.Mock).mockResolvedValue({
-      id: 'se1',
+    (prismaMock.sessionExercise.findFirst as jest.Mock)
+      .mockResolvedValueOnce({
+        id: 'se1',
+        version: 2,
+      })
+      .mockResolvedValueOnce({
+        id: 'se1',
+        version: 3,
+      });
+    (prismaMock.sessionExercise.updateMany as jest.Mock).mockResolvedValue({
+      count: 1,
     });
 
     await expect(
@@ -875,7 +938,7 @@ describe('SessionsService', () => {
         version: 2,
         orderIndex: 4,
       }),
-    ).resolves.toEqual({ id: 'se1' });
+    ).resolves.toEqual({ id: 'se1', version: 3 });
   });
 
   it('throws conflict for stale session exercise version', async () => {
@@ -890,6 +953,57 @@ describe('SessionsService', () => {
         version: 4,
       }),
     ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('throws conflict when session exercise version changes after precheck and before write', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.sessionExercise.findFirst as jest.Mock)
+      .mockResolvedValueOnce({
+        id: 'se1',
+        version: 2,
+      })
+      .mockResolvedValueOnce({
+        id: 'se1',
+        version: 3,
+      });
+    (prismaMock.sessionExercise.updateMany as jest.Mock).mockResolvedValue({
+      count: 0,
+    });
+
+    await expect(
+      service.updateSessionExercise('user-1', 'session-1', 'se1', {
+        version: 2,
+        orderIndex: 4,
+      }),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'SESSION_EXERCISE_VERSION_CONFLICT',
+      },
+    });
+  });
+
+  it('maps duplicate session-exercise orderIndex updates to a conflict error', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.sessionExercise.findFirst as jest.Mock).mockResolvedValue({
+      id: 'se1',
+      version: 2,
+    });
+    (prismaMock.sessionExercise.updateMany as jest.Mock).mockRejectedValue({
+      code: 'P2002',
+      meta: {
+        target: ['sessionId', 'orderIndex'],
+      },
+    });
+
+    await expect(
+      service.updateSessionExercise('user-1', 'session-1', 'se1', {
+        orderIndex: 4,
+      }),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'SESSION_EXERCISE_ORDER_CONFLICT',
+      },
+    });
   });
 
   it('throws when updating missing session exercise', async () => {
@@ -1067,6 +1181,39 @@ describe('SessionsService', () => {
       },
     });
     expect(prismaMock.sessionExercise.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('reorders session exercises without transient unique collisions when swapping indexes', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.workoutSession.findFirst as jest.Mock).mockResolvedValue({
+      id: 'session-1',
+    });
+    (prismaMock.sessionExercise.count as jest.Mock).mockResolvedValue(2);
+    let updateCalls = 0;
+    (prismaMock.sessionExercise.updateMany as jest.Mock).mockImplementation(
+      async (args: { data: { orderIndex: number } }) => {
+        updateCalls += 1;
+        if (updateCalls === 1 && args.data.orderIndex === 1) {
+          throw {
+            code: 'P2002',
+            meta: {
+              target: ['sessionId', 'orderIndex'],
+            },
+          };
+        }
+
+        return { count: 1 };
+      },
+    );
+
+    await expect(
+      service.reorderSessionExercises('user-1', 'session-1', {
+        items: [
+          { id: 'se1', orderIndex: 1 },
+          { id: 'se2', orderIndex: 0 },
+        ],
+      }),
+    ).resolves.toEqual({ success: true });
   });
 
   it('swaps session exercise template and recalculates PRs for old/new templates', async () => {
@@ -1363,6 +1510,37 @@ describe('SessionsService', () => {
         idempotencyKey: 'idem-race-2',
       }),
     ).rejects.toEqual(dbError);
+  });
+
+  it('maps duplicate set orderIndex creates to a conflict error', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.sessionExercise.findFirst as jest.Mock).mockResolvedValue({
+      id: 'se1',
+      exerciseTemplateId: 'exercise-1',
+      session: {
+        id: 'session-1',
+        status: 'IN_PROGRESS',
+      },
+    });
+    (prismaMock.set.findFirst as jest.Mock).mockResolvedValue(null);
+    (prismaMock.set.create as jest.Mock).mockRejectedValue({
+      code: 'P2002',
+      meta: {
+        target: ['sessionExerciseId', 'orderIndex'],
+      },
+    });
+
+    await expect(
+      service.createSet('user-1', 'se1', {
+        orderIndex: 0,
+        type: 'WEIGHT_REPS',
+        payload: {},
+      }),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'SET_ORDER_CONFLICT',
+      },
+    });
   });
 
   it('handles idempotency unique constraint errors when Prisma target is returned as a string', async () => {
@@ -1714,6 +1892,38 @@ describe('SessionsService', () => {
     await expect(
       service.updateSet('user-1', 'se1', 'set-1', {}),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('maps duplicate set orderIndex updates to a conflict error', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.set.findFirst as jest.Mock).mockResolvedValue({
+      id: 'set-1',
+      isCompleted: false,
+      completedAt: null,
+      sessionExercise: {
+        exerciseTemplateId: 'exercise-1',
+        session: {
+          id: 'session-1',
+          status: 'IN_PROGRESS',
+        },
+      },
+    });
+    (prismaMock.set.update as jest.Mock).mockRejectedValue({
+      code: 'P2002',
+      meta: {
+        target: ['sessionExerciseId', 'orderIndex'],
+      },
+    });
+
+    await expect(
+      service.updateSet('user-1', 'se1', 'set-1', {
+        orderIndex: 2,
+      }),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'SET_ORDER_CONFLICT',
+      },
+    });
   });
 
   it('deletes set and refreshes dependencies', async () => {

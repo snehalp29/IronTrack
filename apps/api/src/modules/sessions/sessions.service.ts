@@ -174,14 +174,52 @@ export class SessionsService {
       this.throwSessionVersionConflict(existing.version, input.version);
     }
 
-    return this.prisma.workoutSession.update({
-      where: { id: sessionId },
+    const updated = await this.prisma.workoutSession.updateMany({
+      where: {
+        id: sessionId,
+        userId,
+        deletedAt: null,
+        version: input.version,
+      },
       data: {
         notes: input.notes,
         endedReason: input.endedReason,
         version: { increment: 1 },
       },
     });
+
+    if (!updated.count) {
+      const current = await this.prisma.workoutSession.findFirst({
+        where: {
+          id: sessionId,
+          userId,
+          deletedAt: null,
+        },
+        select: {
+          version: true,
+        },
+      });
+
+      if (!current) {
+        this.throwSessionNotFound();
+      }
+
+      this.throwSessionVersionConflict(current.version, input.version);
+    }
+
+    const session = await this.prisma.workoutSession.findFirst({
+      where: {
+        id: sessionId,
+        userId,
+        deletedAt: null,
+      },
+    });
+
+    if (!session) {
+      this.throwSessionNotFound();
+    }
+
+    return session;
   }
 
   async finishSession(userId: string, sessionId: string) {
@@ -381,15 +419,23 @@ export class SessionsService {
       input.exerciseTemplateId,
     );
 
-    return this.prisma.sessionExercise.create({
-      data: {
-        sessionId,
-        exerciseTemplateId: input.exerciseTemplateId,
-        orderIndex: input.orderIndex,
-        notes: input.notes,
-        supersetGroupKey: input.supersetGroupKey,
-      },
-    });
+    try {
+      return await this.prisma.sessionExercise.create({
+        data: {
+          sessionId,
+          exerciseTemplateId: input.exerciseTemplateId,
+          orderIndex: input.orderIndex,
+          notes: input.notes,
+          supersetGroupKey: input.supersetGroupKey,
+        },
+      });
+    } catch (error) {
+      if (isSessionExerciseOrderUniqueConstraintError(error)) {
+        this.throwSessionExerciseOrderConflict();
+      }
+
+      throw error;
+    }
   }
 
   async updateSessionExercise(
@@ -418,15 +464,74 @@ export class SessionsService {
       this.throwSessionExerciseVersionConflict();
     }
 
-    return this.prisma.sessionExercise.update({
-      where: { id: target.id },
-      data: {
-        notes: input.notes,
-        supersetGroupKey: input.supersetGroupKey,
-        orderIndex: input.orderIndex,
-        version: { increment: 1 },
+    let updated;
+    try {
+      updated = await this.prisma.sessionExercise.updateMany({
+        where: {
+          id: target.id,
+          sessionId,
+          deletedAt: null,
+          session: {
+            userId,
+            deletedAt: null,
+          },
+          version: input.version,
+        },
+        data: {
+          notes: input.notes,
+          supersetGroupKey: input.supersetGroupKey,
+          orderIndex: input.orderIndex,
+          version: { increment: 1 },
+        },
+      });
+    } catch (error) {
+      if (isSessionExerciseOrderUniqueConstraintError(error)) {
+        this.throwSessionExerciseOrderConflict();
+      }
+
+      throw error;
+    }
+
+    if (!updated.count) {
+      const current = await this.prisma.sessionExercise.findFirst({
+        where: {
+          id: sessionExerciseId,
+          sessionId,
+          deletedAt: null,
+          session: {
+            userId,
+            deletedAt: null,
+          },
+        },
+        select: {
+          version: true,
+        },
+      });
+
+      if (!current) {
+        this.throwSessionExerciseNotFound();
+      }
+
+      this.throwSessionExerciseVersionConflict();
+    }
+
+    const sessionExercise = await this.prisma.sessionExercise.findFirst({
+      where: {
+        id: target.id,
+        sessionId,
+        deletedAt: null,
+        session: {
+          userId,
+          deletedAt: null,
+        },
       },
     });
+
+    if (!sessionExercise) {
+      this.throwSessionExerciseNotFound();
+    }
+
+    return sessionExercise;
   }
 
   async deleteSessionExercise(
@@ -510,20 +615,53 @@ export class SessionsService {
       this.throwSessionExerciseNotFound();
     }
 
-    await this.prisma.$transaction(
-      input.items.map((item) =>
-        this.prisma.sessionExercise.updateMany({
-          where: {
-            id: item.id,
-            sessionId,
-            deletedAt: null,
-          },
-          data: {
-            orderIndex: item.orderIndex,
-          },
-        }),
-      ),
-    );
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        const temporaryResults = await Promise.all(
+          input.items.map((item, index) =>
+            tx.sessionExercise.updateMany({
+              where: {
+                id: item.id,
+                sessionId,
+                deletedAt: null,
+              },
+              data: {
+                orderIndex: -(index + 1),
+              },
+            }),
+          ),
+        );
+
+        if (temporaryResults.some((result) => result.count === 0)) {
+          this.throwSessionExerciseNotFound();
+        }
+
+        const finalResults = await Promise.all(
+          input.items.map((item) =>
+            tx.sessionExercise.updateMany({
+              where: {
+                id: item.id,
+                sessionId,
+                deletedAt: null,
+              },
+              data: {
+                orderIndex: item.orderIndex,
+              },
+            }),
+          ),
+        );
+
+        if (finalResults.some((result) => result.count === 0)) {
+          this.throwSessionExerciseNotFound();
+        }
+      });
+    } catch (error) {
+      if (isSessionExerciseOrderUniqueConstraintError(error)) {
+        this.throwSessionExerciseOrderConflict();
+      }
+
+      throw error;
+    }
 
     return { success: true };
   }
@@ -661,22 +799,31 @@ export class SessionsService {
       updateData.completedAt = new Date(input.completedAt);
     }
 
-    const updated = await this.prisma.set.update({
-      where: { id: setId },
-      data: updateData,
-      include: {
-        sessionExercise: {
-          include: {
-            session: {
-              select: {
-                id: true,
-                status: true,
+    let updated;
+    try {
+      updated = await this.prisma.set.update({
+        where: { id: setId },
+        data: updateData,
+        include: {
+          sessionExercise: {
+            include: {
+              session: {
+                select: {
+                  id: true,
+                  status: true,
+                },
               },
             },
           },
         },
-      },
-    });
+      });
+    } catch (error) {
+      if (isSetOrderUniqueConstraintError(error)) {
+        this.throwSetOrderConflict();
+      }
+
+      throw error;
+    }
 
     if (isPrAffectingSetUpdate(input)) {
       await this.prDetectionService.recalculateForExercise(
@@ -1045,6 +1192,10 @@ export class SessionsService {
         }
       }
 
+      if (isSetOrderUniqueConstraintError(error)) {
+        this.throwSetOrderConflict();
+      }
+
       throw error;
     }
 
@@ -1099,6 +1250,20 @@ export class SessionsService {
     });
   }
 
+  private throwSessionExerciseOrderConflict(): never {
+    throw new ConflictException({
+      code: 'SESSION_EXERCISE_ORDER_CONFLICT',
+      message: 'Another session exercise already uses that orderIndex',
+    });
+  }
+
+  private throwSetOrderConflict(): never {
+    throw new ConflictException({
+      code: 'SET_ORDER_CONFLICT',
+      message: 'Another set already uses that orderIndex',
+    });
+  }
+
   private throwSessionAlreadyFinished(): never {
     throw new ConflictException({
       code: 'SESSION_ALREADY_FINISHED',
@@ -1146,6 +1311,27 @@ function isPrAffectingSetUpdate(input: UpdateSetDto): boolean {
 }
 
 function isSetIdempotencyUniqueConstraintError(error: unknown): boolean {
+  return isUniqueConstraintErrorForFields(error, [
+    'sessionexerciseid',
+    'idempotencykey',
+  ]);
+}
+
+function isSessionExerciseOrderUniqueConstraintError(error: unknown): boolean {
+  return isUniqueConstraintErrorForFields(error, ['sessionid', 'orderindex']);
+}
+
+function isSetOrderUniqueConstraintError(error: unknown): boolean {
+  return isUniqueConstraintErrorForFields(error, [
+    'sessionexerciseid',
+    'orderindex',
+  ]);
+}
+
+function isUniqueConstraintErrorForFields(
+  error: unknown,
+  expectedFields: string[],
+): boolean {
   if (typeof error !== 'object' || error === null) {
     return false;
   }
@@ -1166,18 +1352,12 @@ function isSetIdempotencyUniqueConstraintError(error: unknown): boolean {
     const lowered = target
       .filter((entry): entry is string => typeof entry === 'string')
       .map((entry) => entry.toLowerCase());
-    return (
-      lowered.includes('sessionexerciseid') &&
-      lowered.includes('idempotencykey')
-    );
+    return expectedFields.every((field) => lowered.includes(field));
   }
 
   if (typeof target === 'string') {
     const normalized = target.toLowerCase();
-    return (
-      normalized.includes('sessionexerciseid') &&
-      normalized.includes('idempotencykey')
-    );
+    return expectedFields.every((field) => normalized.includes(field));
   }
 
   return false;
