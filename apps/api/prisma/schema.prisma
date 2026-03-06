@@ -106,8 +106,8 @@ model RefreshToken {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([userId])
   @@unique([tokenHash])
+  @@index([userId])
 }
 
 // ─── Catalog: MuscleGroup ──────────────────────────────
