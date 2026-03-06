@@ -171,6 +171,10 @@ describe('PrDetectionService', () => {
           sessionExercise: expect.objectContaining({
             sessionId: 'session-1',
             deletedAt: null,
+            session: {
+              userId: 'user-1',
+              deletedAt: null,
+            },
           }),
         }),
       }),
@@ -601,6 +605,10 @@ describe('PrDetectionService', () => {
           sessionExercise: expect.objectContaining({
             exerciseTemplateId: 'exercise-1',
             deletedAt: null,
+            session: {
+              userId: 'user-1',
+              deletedAt: null,
+            },
           }),
         }),
       }),

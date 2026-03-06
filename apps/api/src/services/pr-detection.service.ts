@@ -27,6 +27,7 @@ export class PrDetectionService {
           deletedAt: null,
           session: {
             userId,
+            deletedAt: null,
           },
         },
       },
@@ -164,6 +165,7 @@ export class PrDetectionService {
           deletedAt: null,
           session: {
             userId,
+            deletedAt: null,
           },
         },
       },
