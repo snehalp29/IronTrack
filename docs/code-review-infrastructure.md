@@ -1,17 +1,14 @@
 # Code Review — Infrastructure & Cross-Cutting
 
-Branch: `phase_one`  
-Date: `2026-03-06`
-
-Scope: `app.module.ts`, `main.ts`, auth guards/strategies, exception filter, correlation-id interceptor, Winston logger, `env.schema.ts`, health controller, related specs.
+Scope: `app.module.ts`, `main.ts`, auth guards/strategies, exception filter, correlation-id interceptor, Winston logger, `env.schema.ts`, health controller, and related specs.
 
 Status: `13 total` | `13 fixed` | `0 open`
 
-Fixed:
+Fixed History:
 
-- `#1–#5`: 5xx masking, correlation-id propagation/sanitization, production CORS enforcement, circular message safety.
-- `#6–#10`: JWT payload validation, secret separation, production Swagger gating, `fatal()` logger support, import-safe bootstrap.
-- `#11–#13`: config-driven Google strategy environment checks, circular `details` safety, health-probe throttler bypass.
+- `#1–#5`: 5xx masking, correlation-id propagation/sanitization, production CORS enforcement, and circular message safety.
+- `#6–#10`: JWT payload validation, secret separation, production Swagger gating, `fatal()` logger support, and import-safe bootstrap.
+- `#11–#13`: config-driven Google strategy environment checks, circular `details` safety, and health-probe throttler bypass.
 
 Outcomes:
 

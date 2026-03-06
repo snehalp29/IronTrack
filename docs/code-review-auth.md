@@ -1,19 +1,15 @@
 # Code Review — Auth Module
 
-Branch: `phase_one`  
-Date: `2026-03-06`
-
 Scope: auth controller, service, module, Google verifier, strategies, related unit specs, and `apps/api/test/auth.e2e-spec.ts`.
 
 Status: `23 total` | `23 fixed` | `0 open`
 
-Fixed:
+Fixed History:
 
-- `#1–#6`: account-state enforcement, verifier hardening, expiry parsing, unused strategy cleanup, initial coverage gaps.
-- `#7–#12`: register race handling, e2e/query-shape alignment, delete races, defensive-path cleanup.
-- `#13–#17`: login timing-oracle reduction, provider-migration prevention, unique-error scoping, token-hash uniqueness, safer Google-user creation.
-- `#18–#21`: soft-delete edge cases, `googleLogin` TOCTOU tightening, unnecessary bcrypt work removal, startup blocking cleanup.
-- `#22–#23`: multi-audience Google token `azp` enforcement and httpOnly cookie-based refresh/logout flow.
+- `#1–#6`: account-state enforcement, verifier hardening, expiry parsing, unused strategy cleanup, and initial coverage gaps.
+- `#7–#12`: register race handling, e2e/query-shape alignment, delete races, and defensive-path cleanup.
+- `#13–#17`: login timing-oracle reduction, provider-migration prevention, unique-error scoping, token-hash uniqueness, and safer Google-user creation.
+- `#18–#23`: soft-delete edge cases, `googleLogin` TOCTOU tightening, unnecessary bcrypt work removal, startup blocking cleanup, multi-audience `azp` enforcement, and httpOnly refresh/logout flow.
 
 Outcomes:
 
