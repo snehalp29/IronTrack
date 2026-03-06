@@ -565,3 +565,160 @@ Validation:
 - `pnpm --filter @irontrack/api test -- src/modules/sessions/sessions.service.spec.ts src/modules/workout-templates/workout-templates.service.spec.ts src/modules/workout-templates/dto/workout-template.schemas.spec.ts`
 - `pnpm --filter @irontrack/api typecheck`
 - `pnpm --filter @irontrack/api test:cov` → 100/100/100/100
+
+---
+
+## Verification Pass 5 — 2026-03-05
+
+Verified against current `streak.service.ts`, `pr-detection.service.spec.ts`.
+
+| #   | Finding                                                                | Status   | Notes                                                                                                                                                                                                     |
+| --- | ---------------------------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 15  | `incrementStreak` TOCTOU race on `create` branch                       | ✅ Fixed | `streak.service.ts:63–77` wraps `userStreak.create` in try/catch; catches P2002 and returns silently (idempotent). Consistent with the pattern described in the finding.                                  |
+| 16  | `detectForSession` "skips candidate types" test missing `$transaction` | ✅ Fixed | `pr-detection.service.spec.ts:149` includes `$transaction: jest.fn(async () => undefined)` in the mock; test asserts `expect(prismaMock.$transaction).not.toHaveBeenCalled()` at the end of the scenario. |
+
+---
+
+## New Findings — 2026-03-05 (Pass 5)
+
+### P3 — Nice to Have
+
+#### 20. `StreakService` retains the old broad `isPrismaUniqueConstraintError` duck-type helper (`streak.service.ts:139–146`)
+
+```ts
+function isPrismaUniqueConstraintError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'P2002'
+  );
+}
+```
+
+This is the same broad helper replaced in `auth.service.ts` by finding #15. For `userStreak.create`, the only unique constraint is `@@unique([userId, streakType])`, so in the current schema this catches the right error. However:
+
+1. It does not use `instanceof Prisma.PrismaClientKnownRequestError`, so it could match any thrown object with `code: 'P2002'`.
+2. If a new unique field is added to `UserStreak`, a P2002 on that field would be silently swallowed, hiding data bugs.
+3. It creates a maintenance inconsistency with the stricter `isEmailUniqueConstraintError` pattern now in `auth.service.ts`.
+
+**Fix:** Replace with the stricter pattern (or a shared helper), narrowing on `meta.target` to the specific constraint field:
+
+```ts
+import { Prisma } from '@prisma/client';
+
+function isStreakUniqueConstraintError(error: unknown): boolean {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === 'P2002'
+  );
+}
+```
+
+---
+
+#### 21. `incrementStreak` queries the user to resolve timezone on every call, adding an unnecessary DB round-trip (`streak.service.ts:41–44`)
+
+```ts
+const user = await this.prisma.user.findUnique({ where: { id: userId } });
+if (!user) return;
+const timezone = user.timezone ?? 'UTC';
+```
+
+`incrementStreak` is always called from `onSessionFinished` (→ triggered by `SessionsService.finishSession`, which already holds a user context) or `onChecklistCompleted`. This query fetches the full `User` row solely to read `timezone`, adding a round-trip on every workout completion and every checklist completion.
+
+**Fix:** Add an optional `timezone` parameter and resolve it at the call site:
+
+```ts
+async onSessionFinished(
+  userId: string,
+  timezone?: string,
+  completedAt?: Date,
+): Promise<void> {
+  await this.incrementStreak(userId, StreakType.WORKOUT, timezone ?? 'UTC', completedAt);
+}
+```
+
+Pass `user.timezone ?? 'UTC'` from `SessionsService.finishSession` (which already has the user), eliminating the `findUnique` in `incrementStreak`. Retain the `findUnique` as a fallback only for callers that do not have the user available.
+
+---
+
+#### 22. `incrementStreak` update branch is not protected against concurrent writes — last writer wins on `currentStreakDays` (`streak.service.ts:95–105`)
+
+```ts
+// Step 1 — read
+const streak = await this.prisma.userStreak.findUnique({ ... });
+
+// ← concurrent call reads the same row here
+
+// Step 2 — compute
+const currentStreakDays = isConsecutive ? streak.currentStreakDays + 1 : 1;
+
+// Step 3 — blind write (no version check)
+await this.prisma.userStreak.update({
+  where: { id: streak.id },
+  data: { currentStreakDays, longestStreakDays: ..., lastCompletedDate: dateValue },
+});
+```
+
+Finding #15 fixed the _create_ branch race. The _update_ branch has an analogous lost-update problem: two concurrent calls can both read the same `currentStreakDays` and `lastCompletedDate`, both pass the `previousDateString === localDate` idempotency check (since neither has written yet), and both write independently. Whichever write arrives last wins, potentially overwriting a valid intermediate increment with a stale value.
+
+The practical risk is low — it requires two concurrent session finishes for the same user on different days — but the outcome (a streak count based on a stale read) is silently incorrect.
+
+**Fix (option A — optimistic lock):** Add a `version` field to `UserStreak` (or reuse the existing `id`-based update predicate) and use `updateMany` with the expected `currentStreakDays` as the condition:
+
+```ts
+const result = await this.prisma.userStreak.updateMany({
+  where: { id: streak.id, currentStreakDays: streak.currentStreakDays },
+  data: { currentStreakDays, longestStreakDays: ..., lastCompletedDate: dateValue },
+});
+if (result.count === 0) {
+  // Concurrent update won; re-read and retry or no-op
+}
+```
+
+**Fix (option B — DB-level increment):** Use Prisma's atomic `{ increment: 1 }` operator instead of computing the new value in application code.
+
+---
+
+#### 23. `PrDetectionService` inlines the Epley 1RM formula instead of using `estimateOneRm` from `@irontrack/shared` (`pr-detection.service.ts:276`)
+
+```ts
+// pr-detection.service.ts:276
+const oneRm = weight > 0 && reps > 0 ? weight * (1 + reps / 30) : 0;
+
+// libs/shared/src/utils/one-rm.ts (identical logic)
+export function estimateOneRm(weight: number, reps: number): number {
+  if (weight <= 0 || reps <= 0) return 0;
+  return weight * (1 + reps / 30);
+}
+```
+
+Both implement the same formula. If the estimation approach changes (e.g. Epley → Brzycki), or the zero-guard logic is updated in the shared lib, the duplicate in `PrDetectionService` will silently diverge — causing PRs stored via the API to differ from estimates displayed in the UI.
+
+**Fix:** Import and delegate to the shared function:
+
+```ts
+import { estimateOneRm } from '@irontrack/shared';
+
+const oneRm = estimateOneRm(weight, reps);
+```
+
+---
+
+## Verification Pass 6 — 2026-03-05
+
+Verified against current `streak.service.ts`, `sessions.service.ts`, `pr-detection.service.ts`, and related specs.
+
+| #   | Finding                                                    | Status   | Notes                                                                                                                                                                                                                                                                                                |
+| --- | ---------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 20  | `StreakService` broad P2002 helper                         | ✅ Fixed | `isPrismaUniqueConstraintError` now requires `code === 'P2002'` _and_ `meta.target` containing both `userId` and `streakType` (array or string target), so unrelated/ambiguous unique violations are no longer swallowed.                                                                            |
+| 21  | `incrementStreak` always queries user for timezone         | ✅ Fixed | `onSessionFinished`/`onChecklistCompleted` accept optional `timezone`; `incrementStreak` now resolves timezone from caller first (with trim/blank normalization) and only falls back to `user.findUnique` when timezone is absent/blank. `SessionsService.finishSession` now forwards user timezone. |
+| 22  | `incrementStreak` update branch can lose concurrent writes | ✅ Fixed | Replaced blind `update` with optimistic `updateMany` guard on prior streak state (`id`, `currentStreakDays`, `longestStreakDays`, `lastCompletedDate`); when `count === 0`, call no-ops to avoid stale overwrite.                                                                                    |
+| 23  | Inline Epley formula in PR detection                       | ✅ Fixed | Formula centralized into a single API helper `src/common/utils/one-rm.ts`; `PrDetectionService` now delegates to `estimateOneRm(...)`. Added unit coverage for helper and service-level assertion that PR detection uses the centralized function.                                                   |
+
+Validation:
+
+- `pnpm --filter @irontrack/api test -- --runTestsByPath src/services/streak.service.spec.ts src/services/pr-detection.service.spec.ts src/modules/sessions/sessions.service.spec.ts src/common/utils/one-rm.spec.ts`
+- `pnpm --filter @irontrack/api typecheck`
+- `pnpm --filter @irontrack/api test:cov` → `100/100/100/100`

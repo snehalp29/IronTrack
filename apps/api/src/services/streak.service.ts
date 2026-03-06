@@ -14,11 +14,24 @@ const REQUIRED_CHECKLIST_TYPES = [
 export class StreakService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async onSessionFinished(userId: string, completedAt?: Date): Promise<void> {
-    await this.incrementStreak(userId, StreakType.WORKOUT, completedAt);
+  async onSessionFinished(
+    userId: string,
+    completedAt?: Date,
+    timezone?: string,
+  ): Promise<void> {
+    await this.incrementStreak(
+      userId,
+      StreakType.WORKOUT,
+      completedAt,
+      timezone,
+    );
   }
 
-  async onChecklistCompleted(userId: string, date: string): Promise<void> {
+  async onChecklistCompleted(
+    userId: string,
+    date: string,
+    timezone?: string,
+  ): Promise<void> {
     const completedCount = await this.prisma.checklistItem.count({
       where: {
         userId,
@@ -29,7 +42,7 @@ export class StreakService {
     });
 
     if (completedCount >= REQUIRED_CHECKLIST_TYPES.length) {
-      await this.incrementStreak(userId, StreakType.CHECKLIST, date);
+      await this.incrementStreak(userId, StreakType.CHECKLIST, date, timezone);
     }
   }
 
@@ -37,17 +50,17 @@ export class StreakService {
     userId: string,
     streakType: StreakType,
     forcedDate?: string | Date,
+    timezone?: string,
   ): Promise<void> {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
+    const resolvedTimezone = await this.resolveTimezone(userId, timezone);
+    if (!resolvedTimezone) {
       return;
     }
 
-    const timezone = user.timezone ?? 'UTC';
     const localDate =
       typeof forcedDate === 'string'
         ? forcedDate
-        : this.formatDateInTimezone(forcedDate ?? new Date(), timezone);
+        : this.formatDateInTimezone(forcedDate ?? new Date(), resolvedTimezone);
     const dateValue = new Date(`${localDate}T00:00:00.000Z`);
 
     const streak = await this.prisma.userStreak.findUnique({
@@ -91,9 +104,13 @@ export class StreakService {
       : false;
 
     const currentStreakDays = isConsecutive ? streak.currentStreakDays + 1 : 1;
-
-    await this.prisma.userStreak.update({
-      where: { id: streak.id },
+    const updateResult = await this.prisma.userStreak.updateMany({
+      where: {
+        id: streak.id,
+        currentStreakDays: streak.currentStreakDays,
+        longestStreakDays: streak.longestStreakDays,
+        lastCompletedDate: streak.lastCompletedDate ?? null,
+      },
       data: {
         currentStreakDays,
         longestStreakDays: Math.max(
@@ -103,6 +120,32 @@ export class StreakService {
         lastCompletedDate: dateValue,
       },
     });
+    if (updateResult.count === 0) {
+      // Another write already updated this streak row.
+      return;
+    }
+  }
+
+  private async resolveTimezone(
+    userId: string,
+    timezone?: string,
+  ): Promise<string | null> {
+    if (typeof timezone === 'string') {
+      const trimmedTimezone = timezone.trim();
+      if (trimmedTimezone.length > 0) {
+        return trimmedTimezone;
+      }
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      return null;
+    }
+
+    const trimmedUserTimezone = user.timezone?.trim();
+    return trimmedUserTimezone && trimmedUserTimezone.length > 0
+      ? trimmedUserTimezone
+      : 'UTC';
   }
 
   private formatDateInTimezone(date: Date, timezone: string): string {
@@ -137,10 +180,32 @@ export class StreakService {
 }
 
 function isPrismaUniqueConstraintError(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code?: unknown }).code === 'P2002'
-  );
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+
+  const maybeError = error as {
+    code?: unknown;
+    meta?: {
+      target?: unknown;
+    };
+  };
+  if (maybeError.code !== 'P2002') {
+    return false;
+  }
+
+  const target = maybeError.meta?.target;
+  if (Array.isArray(target)) {
+    const lowered = target
+      .filter((entry): entry is string => typeof entry === 'string')
+      .map((entry) => entry.toLowerCase());
+    return lowered.includes('userid') && lowered.includes('streaktype');
+  }
+
+  if (typeof target === 'string') {
+    const normalized = target.toLowerCase();
+    return normalized.includes('userid') && normalized.includes('streaktype');
+  }
+
+  return false;
 }

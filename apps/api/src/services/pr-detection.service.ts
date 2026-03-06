@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrType } from '@prisma/client';
 
+import { estimateOneRm } from '../common/utils/one-rm';
 import { PrismaService } from '../prisma/prisma.service';
 
 interface ExerciseSetInput {
@@ -273,7 +274,7 @@ export class PrDetectionService {
       const weight = set.weight ?? 0;
       const reps = set.reps ?? 0;
       const volume = weight * reps;
-      const oneRm = weight > 0 && reps > 0 ? weight * (1 + reps / 30) : 0;
+      const oneRm = estimateOneRm(weight, reps);
 
       this.replaceIfHigher(
         candidates,

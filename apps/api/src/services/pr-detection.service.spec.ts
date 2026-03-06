@@ -1,8 +1,19 @@
 import { Test } from '@nestjs/testing';
 import { PrType } from '@prisma/client';
 
+import * as oneRmUtils from '../common/utils/one-rm';
 import { PrismaService } from '../prisma/prisma.service';
 import { PrDetectionService } from './pr-detection.service';
+
+jest.mock('../common/utils/one-rm', () => {
+  const actual = jest.requireActual<typeof import('../common/utils/one-rm')>(
+    '../common/utils/one-rm',
+  );
+  return {
+    ...actual,
+    estimateOneRm: jest.fn(actual.estimateOneRm),
+  };
+});
 
 type DetectedPr = Awaited<
   ReturnType<PrDetectionService['detectForSession']>
@@ -382,6 +393,42 @@ describe('PrDetectionService', () => {
     ).resolves.toEqual([]);
     expect(prismaMock.pRRecord.upsert).not.toHaveBeenCalled();
     expect(prismaMock.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('uses shared estimateOneRm utility when evaluating 1RM candidates', async () => {
+    const estimateSpy = oneRmUtils.estimateOneRm as unknown as jest.Mock;
+    estimateSpy.mockClear();
+
+    const prismaMock = {
+      set: {
+        findMany: jest.fn(async () => [
+          {
+            id: 'set-1',
+            weight: 100,
+            reps: 5,
+            completedAt: new Date('2024-01-01T10:00:00.000Z'),
+            sessionExercise: { exerciseTemplateId: 'exercise-1' },
+          },
+        ]),
+      },
+      $transaction: jest.fn(async () => undefined),
+      pRRecord: {
+        findMany: jest.fn(async () => []),
+        upsert: jest.fn(async () => undefined),
+      },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        PrDetectionService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(PrDetectionService);
+    await service.detectForSession('user-1', 'session-1');
+
+    expect(estimateSpy).toHaveBeenCalledWith(100, 5);
   });
 
   it('recalculates and upserts current PRs for one exercise', async () => {

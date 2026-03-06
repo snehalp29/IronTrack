@@ -428,6 +428,7 @@ describe('SessionsService', () => {
     expect(streakMock.onSessionFinished).toHaveBeenCalledWith(
       'user-1',
       expect.any(Date),
+      'UTC',
     );
   });
 

@@ -46,11 +46,15 @@ describe('StreakService', () => {
         create: jest.fn(async () => {
           const error = new Error('Unique constraint failed') as Error & {
             code?: string;
+            meta?: {
+              target?: string[];
+            };
           };
           error.code = 'P2002';
+          error.meta = { target: ['userId', 'streakType'] };
           throw error;
         }),
-        update: jest.fn(async ({ data }) => data),
+        updateMany: jest.fn(async () => ({ count: 1 })),
       },
       checklistItem: { findMany: jest.fn(async () => []) },
     } as unknown as PrismaService;
@@ -64,10 +68,45 @@ describe('StreakService', () => {
 
     const service = moduleRef.get(StreakService);
     await expect(service.onSessionFinished('user-1')).resolves.toBeUndefined();
-    expect(prismaMock.userStreak.update).not.toHaveBeenCalled();
+    expect(prismaMock.userStreak.updateMany).not.toHaveBeenCalled();
   });
 
   it('rethrows non-unique errors during initial streak creation', async () => {
+    const prismaMock = {
+      user: {
+        findUnique: jest.fn(async () => ({ id: 'user-1', timezone: 'UTC' })),
+      },
+      userStreak: {
+        findUnique: jest.fn(async () => null),
+        create: jest.fn(async () => {
+          const error = new Error('Unique constraint failed') as Error & {
+            code?: string;
+            meta?: {
+              target?: string[];
+            };
+          };
+          error.code = 'P2002';
+          error.meta = { target: ['differentField'] };
+          throw error;
+        }),
+      },
+      checklistItem: { findMany: jest.fn(async () => []) },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        StreakService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(StreakService);
+    await expect(service.onSessionFinished('user-1')).rejects.toThrow(
+      'Unique constraint failed',
+    );
+  });
+
+  it('rethrows non-P2002 errors during initial streak creation', async () => {
     const prismaMock = {
       user: {
         findUnique: jest.fn(async () => ({ id: 'user-1', timezone: 'UTC' })),
@@ -94,6 +133,219 @@ describe('StreakService', () => {
     );
   });
 
+  it('treats string-targeted streak unique constraint errors as idempotent', async () => {
+    const prismaMock = {
+      user: {
+        findUnique: jest.fn(async () => ({ id: 'user-1', timezone: 'UTC' })),
+      },
+      userStreak: {
+        findUnique: jest.fn(async () => null),
+        create: jest.fn(async () => {
+          const error = new Error('Unique constraint failed') as Error & {
+            code?: string;
+            meta?: {
+              target?: string;
+            };
+          };
+          error.code = 'P2002';
+          error.meta = { target: 'UserStreak_userId_streakType_key' };
+          throw error;
+        }),
+        updateMany: jest.fn(async () => ({ count: 1 })),
+      },
+      checklistItem: { findMany: jest.fn(async () => []) },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        StreakService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(StreakService);
+    await expect(service.onSessionFinished('user-1')).resolves.toBeUndefined();
+  });
+
+  it('rethrows P2002 errors when unique target metadata is missing', async () => {
+    const prismaMock = {
+      user: {
+        findUnique: jest.fn(async () => ({ id: 'user-1', timezone: 'UTC' })),
+      },
+      userStreak: {
+        findUnique: jest.fn(async () => null),
+        create: jest.fn(async () => {
+          const error = new Error('Unique constraint failed') as Error & {
+            code?: string;
+          };
+          error.code = 'P2002';
+          throw error;
+        }),
+      },
+      checklistItem: { findMany: jest.fn(async () => []) },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        StreakService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(StreakService);
+    await expect(service.onSessionFinished('user-1')).rejects.toThrow(
+      'Unique constraint failed',
+    );
+  });
+
+  it('rethrows non-object errors during initial streak creation', async () => {
+    const prismaMock = {
+      user: {
+        findUnique: jest.fn(async () => ({ id: 'user-1', timezone: 'UTC' })),
+      },
+      userStreak: {
+        findUnique: jest.fn(async () => null),
+        create: jest.fn(async () => {
+          throw 'boom';
+        }),
+      },
+      checklistItem: { findMany: jest.fn(async () => []) },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        StreakService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(StreakService);
+    await expect(service.onSessionFinished('user-1')).rejects.toBe('boom');
+  });
+
+  it('uses provided timezone without querying user profile', async () => {
+    const prismaMock = {
+      user: {
+        findUnique: jest.fn(async () => ({ id: 'user-1', timezone: 'UTC' })),
+      },
+      userStreak: {
+        findUnique: jest.fn(async () => null),
+        create: jest.fn(async ({ data }) => data),
+      },
+      checklistItem: { findMany: jest.fn(async () => []) },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        StreakService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(StreakService) as {
+      onSessionFinished: (
+        userId: string,
+        completedAt?: Date,
+        timezone?: string,
+      ) => Promise<void>;
+    };
+    await service.onSessionFinished(
+      'user-1',
+      new Date('2024-01-31T23:30:00.000Z'),
+      'UTC',
+    );
+
+    expect(prismaMock.user.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('normalizes provided timezone values before local-date calculation', async () => {
+    const prismaMock = {
+      user: {
+        findUnique: jest.fn(async () => ({ id: 'user-1', timezone: 'UTC' })),
+      },
+      userStreak: {
+        findUnique: jest.fn(async () => null),
+        create: jest.fn(async ({ data }) => data),
+      },
+      checklistItem: { findMany: jest.fn(async () => []) },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        StreakService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(StreakService) as {
+      onSessionFinished: (
+        userId: string,
+        completedAt?: Date,
+        timezone?: string,
+      ) => Promise<void>;
+    };
+    await service.onSessionFinished(
+      'user-1',
+      new Date('2024-01-01T01:00:00.000Z'),
+      ' America/Los_Angeles ',
+    );
+
+    expect(prismaMock.userStreak.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          lastCompletedDate: new Date('2023-12-31T00:00:00.000Z'),
+        }),
+      }),
+    );
+  });
+
+  it('falls back to user timezone when provided timezone is blank after trim', async () => {
+    const prismaMock = {
+      user: {
+        findUnique: jest.fn(async () => ({
+          id: 'user-1',
+          timezone: 'America/Los_Angeles',
+        })),
+      },
+      userStreak: {
+        findUnique: jest.fn(async () => null),
+        create: jest.fn(async ({ data }) => data),
+      },
+      checklistItem: { findMany: jest.fn(async () => []) },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        StreakService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(StreakService) as {
+      onSessionFinished: (
+        userId: string,
+        completedAt?: Date,
+        timezone?: string,
+      ) => Promise<void>;
+    };
+    await service.onSessionFinished(
+      'user-1',
+      new Date('2024-01-01T01:00:00.000Z'),
+      '   ',
+    );
+
+    expect(prismaMock.user.findUnique).toHaveBeenCalledWith({
+      where: { id: 'user-1' },
+    });
+    expect(prismaMock.userStreak.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          lastCompletedDate: new Date('2023-12-31T00:00:00.000Z'),
+        }),
+      }),
+    );
+  });
+
   it('uses the provided completion timestamp when finishing workout streak', async () => {
     jest.useFakeTimers().setSystemTime(new Date('2024-02-01T12:00:00.000Z'));
 
@@ -116,7 +368,11 @@ describe('StreakService', () => {
     }).compile();
 
     const service = moduleRef.get(StreakService) as {
-      onSessionFinished: (userId: string, completedAt?: Date) => Promise<void>;
+      onSessionFinished: (
+        userId: string,
+        completedAt?: Date,
+        timezone?: string,
+      ) => Promise<void>;
     };
     await service.onSessionFinished(
       'user-1',
@@ -192,7 +448,7 @@ describe('StreakService', () => {
           // Date-only DB field materializes as midnight UTC.
           lastCompletedDate: new Date('2024-01-02T00:00:00.000Z'),
         })),
-        update: jest.fn(async ({ data }) => data),
+        updateMany: jest.fn(async () => ({ count: 1 })),
       },
       checklistItem: {
         count: jest.fn(async () => 4),
@@ -209,9 +465,9 @@ describe('StreakService', () => {
     const service = moduleRef.get(StreakService);
     await service.onChecklistCompleted('user-1', '2024-01-02');
 
-    expect((prismaMock.userStreak.update as jest.Mock).mock.calls.length).toBe(
-      0,
-    );
+    expect(
+      (prismaMock.userStreak.updateMany as jest.Mock).mock.calls.length,
+    ).toBe(0);
   });
 
   it('returns early when user no longer exists', async () => {
@@ -222,7 +478,7 @@ describe('StreakService', () => {
       userStreak: {
         findUnique: jest.fn(),
         create: jest.fn(),
-        update: jest.fn(),
+        updateMany: jest.fn(),
       },
       checklistItem: { findMany: jest.fn(async () => []) },
     } as unknown as PrismaService;
@@ -239,7 +495,7 @@ describe('StreakService', () => {
 
     expect(prismaMock.userStreak.findUnique).not.toHaveBeenCalled();
     expect(prismaMock.userStreak.create).not.toHaveBeenCalled();
-    expect(prismaMock.userStreak.update).not.toHaveBeenCalled();
+    expect(prismaMock.userStreak.updateMany).not.toHaveBeenCalled();
   });
 
   it('increments checklist streak on consecutive day completion', async () => {
@@ -258,7 +514,7 @@ describe('StreakService', () => {
           longestStreakDays: 5,
           lastCompletedDate: new Date('2024-01-01T00:00:00.000Z'),
         })),
-        update: jest.fn(async ({ data }) => data),
+        updateMany: jest.fn(async () => ({ count: 1 })),
       },
       checklistItem: {
         count: jest.fn(async () => 4),
@@ -275,14 +531,56 @@ describe('StreakService', () => {
     const service = moduleRef.get(StreakService);
     await service.onChecklistCompleted('user-1', '2024-01-02');
 
-    expect(prismaMock.userStreak.update).toHaveBeenCalledWith({
-      where: { id: 'streak-1' },
+    expect(prismaMock.userStreak.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'streak-1',
+        currentStreakDays: 3,
+        longestStreakDays: 5,
+        lastCompletedDate: new Date('2024-01-01T00:00:00.000Z'),
+      },
       data: {
         currentStreakDays: 4,
         longestStreakDays: 5,
         lastCompletedDate: new Date('2024-01-02T00:00:00.000Z'),
       },
     });
+  });
+
+  it('treats optimistic update conflicts as no-op when another writer wins', async () => {
+    const prismaMock = {
+      user: {
+        findUnique: jest.fn(async () => ({
+          id: 'user-1',
+          timezone: 'UTC',
+        })),
+      },
+      userStreak: {
+        findUnique: jest.fn(async () => ({
+          id: 'streak-1',
+          userId: 'user-1',
+          currentStreakDays: 3,
+          longestStreakDays: 5,
+          lastCompletedDate: new Date('2024-01-01T00:00:00.000Z'),
+        })),
+        updateMany: jest.fn(async () => ({ count: 0 })),
+      },
+      checklistItem: {
+        count: jest.fn(async () => 4),
+      },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        StreakService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(StreakService);
+    await expect(
+      service.onChecklistCompleted('user-1', '2024-01-02'),
+    ).resolves.toBeUndefined();
+    expect(prismaMock.userStreak.updateMany).toHaveBeenCalledTimes(1);
   });
 
   it('updates longest streak when consecutive completion exceeds previous longest', async () => {
@@ -301,7 +599,7 @@ describe('StreakService', () => {
           longestStreakDays: 4,
           lastCompletedDate: new Date('2024-01-01T00:00:00.000Z'),
         })),
-        update: jest.fn(async ({ data }) => data),
+        updateMany: jest.fn(async () => ({ count: 1 })),
       },
       checklistItem: {
         count: jest.fn(async () => 4),
@@ -318,8 +616,13 @@ describe('StreakService', () => {
     const service = moduleRef.get(StreakService);
     await service.onChecklistCompleted('user-1', '2024-01-02');
 
-    expect(prismaMock.userStreak.update).toHaveBeenCalledWith({
-      where: { id: 'streak-1' },
+    expect(prismaMock.userStreak.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'streak-1',
+        currentStreakDays: 4,
+        longestStreakDays: 4,
+        lastCompletedDate: new Date('2024-01-01T00:00:00.000Z'),
+      },
       data: {
         currentStreakDays: 5,
         longestStreakDays: 5,
@@ -344,7 +647,7 @@ describe('StreakService', () => {
           longestStreakDays: 7,
           lastCompletedDate: new Date('2024-01-01T00:00:00.000Z'),
         })),
-        update: jest.fn(async ({ data }) => data),
+        updateMany: jest.fn(async () => ({ count: 1 })),
       },
       checklistItem: {
         count: jest.fn(async () => 4),
@@ -361,8 +664,13 @@ describe('StreakService', () => {
     const service = moduleRef.get(StreakService);
     await service.onChecklistCompleted('user-1', '2024-01-03');
 
-    expect(prismaMock.userStreak.update).toHaveBeenCalledWith({
-      where: { id: 'streak-1' },
+    expect(prismaMock.userStreak.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'streak-1',
+        currentStreakDays: 5,
+        longestStreakDays: 7,
+        lastCompletedDate: new Date('2024-01-01T00:00:00.000Z'),
+      },
       data: {
         currentStreakDays: 1,
         longestStreakDays: 7,
@@ -387,7 +695,7 @@ describe('StreakService', () => {
           longestStreakDays: 7,
           lastCompletedDate: new Date('2024-01-03T00:00:00.000Z'),
         })),
-        update: jest.fn(async ({ data }) => data),
+        updateMany: jest.fn(async () => ({ count: 1 })),
       },
       checklistItem: {
         count: jest.fn(async () => 4),
@@ -404,8 +712,13 @@ describe('StreakService', () => {
     const service = moduleRef.get(StreakService);
     await service.onChecklistCompleted('user-1', '2024-01-02');
 
-    expect(prismaMock.userStreak.update).toHaveBeenCalledWith({
-      where: { id: 'streak-1' },
+    expect(prismaMock.userStreak.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'streak-1',
+        currentStreakDays: 5,
+        longestStreakDays: 7,
+        lastCompletedDate: new Date('2024-01-03T00:00:00.000Z'),
+      },
       data: {
         currentStreakDays: 1,
         longestStreakDays: 7,
@@ -422,7 +735,7 @@ describe('StreakService', () => {
       userStreak: {
         findUnique: jest.fn(),
         create: jest.fn(),
-        update: jest.fn(),
+        updateMany: jest.fn(),
       },
       checklistItem: {
         count: jest.fn(async () => 3),
@@ -499,7 +812,11 @@ describe('StreakService', () => {
     }).compile();
 
     const service = moduleRef.get(StreakService) as {
-      onSessionFinished: (userId: string, completedAt?: Date) => Promise<void>;
+      onSessionFinished: (
+        userId: string,
+        completedAt?: Date,
+        timezone?: string,
+      ) => Promise<void>;
     };
     await expect(
       service.onSessionFinished('user-1', new Date('2024-01-31T23:30:00.000Z')),
@@ -528,7 +845,7 @@ describe('StreakService', () => {
           longestStreakDays: 9,
           lastCompletedDate: null,
         })),
-        update: jest.fn(async ({ data }) => data),
+        updateMany: jest.fn(async () => ({ count: 1 })),
       },
       checklistItem: { findMany: jest.fn(async () => []) },
     } as unknown as PrismaService;
@@ -543,8 +860,13 @@ describe('StreakService', () => {
     const service = moduleRef.get(StreakService);
     await service.onSessionFinished('user-1');
 
-    expect(prismaMock.userStreak.update).toHaveBeenCalledWith(
+    expect(prismaMock.userStreak.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
+        where: expect.objectContaining({
+          currentStreakDays: 8,
+          longestStreakDays: 9,
+          lastCompletedDate: null,
+        }),
         data: expect.objectContaining({
           currentStreakDays: 1,
         }),
@@ -570,7 +892,7 @@ describe('StreakService', () => {
           longestStreakDays: 10,
           lastCompletedDate: new Date('2024-01-02T00:00:00.000Z'),
         })),
-        update: jest.fn(async ({ data }) => data),
+        updateMany: jest.fn(async () => ({ count: 1 })),
       },
       checklistItem: { findMany: jest.fn(async () => []) },
     } as unknown as PrismaService;
@@ -585,7 +907,7 @@ describe('StreakService', () => {
     const service = moduleRef.get(StreakService);
     await service.onSessionFinished('user-1');
 
-    expect(prismaMock.userStreak.update).not.toHaveBeenCalled();
+    expect(prismaMock.userStreak.updateMany).not.toHaveBeenCalled();
   });
 
   it('uses timezone-local day near UTC midnight for workout idempotency', async () => {
@@ -607,7 +929,7 @@ describe('StreakService', () => {
           longestStreakDays: 10,
           lastCompletedDate: new Date('2024-01-01T00:00:00.000Z'),
         })),
-        update: jest.fn(async ({ data }) => data),
+        updateMany: jest.fn(async () => ({ count: 1 })),
       },
       checklistItem: { findMany: jest.fn(async () => []) },
     } as unknown as PrismaService;
@@ -622,6 +944,6 @@ describe('StreakService', () => {
     const service = moduleRef.get(StreakService);
     await service.onSessionFinished('user-1');
 
-    expect(prismaMock.userStreak.update).not.toHaveBeenCalled();
+    expect(prismaMock.userStreak.updateMany).not.toHaveBeenCalled();
   });
 });

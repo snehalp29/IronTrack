@@ -169,6 +169,18 @@ export class SessionsService {
   async finishSession(userId: string, sessionId: string) {
     const existing = await this.prisma.workoutSession.findFirst({
       where: { id: sessionId, userId, deletedAt: null },
+      select: {
+        id: true,
+        userId: true,
+        startedAt: true,
+        status: true,
+        endedReason: true,
+        user: {
+          select: {
+            timezone: true,
+          },
+        },
+      },
     });
 
     if (!existing) {
@@ -201,7 +213,11 @@ export class SessionsService {
       userId,
       session.id,
     );
-    await this.streakService.onSessionFinished(userId, finishedAt);
+    await this.streakService.onSessionFinished(
+      userId,
+      finishedAt,
+      existing.user?.timezone ?? 'UTC',
+    );
     const completion = await this.completionService.calculate(session.id);
 
     return {
