@@ -145,7 +145,7 @@ model Equipment {
 model ExerciseTemplate {
   id                   String       @id @default(uuid()) @db.Uuid
   name                 String       @db.VarChar(120)
-  description          String?      @db.Text
+  description          String?      @db.VarChar(4000)
   exerciseType         ExerciseType
   isGlobal             Boolean      @default(false)
   ownerUserId          String?      @db.Uuid
@@ -153,7 +153,7 @@ model ExerciseTemplate {
   defaultSets          Int?
   repMin               Int?
   repMax               Int?
-  defaultCues          String?      @db.Text
+  defaultCues          String?      @db.VarChar(4000)
   deletedAt            DateTime?
   createdAt            DateTime     @default(now())
   updatedAt            DateTime     @updatedAt
@@ -225,7 +225,7 @@ model WorkoutTemplate {
   id          String    @id @default(uuid()) @db.Uuid
   userId      String    @db.Uuid
   name        String    @db.VarChar(120)
-  description String?   @db.Text
+  description String?   @db.VarChar(4000)
   orderIndex  Int?
   deletedAt   DateTime?
   createdAt   DateTime  @default(now())
@@ -297,7 +297,7 @@ model SessionExercise {
   exerciseTemplateId String    @db.Uuid
   orderIndex         Int
   supersetGroupKey   String?   @db.VarChar(64)
-  notes              String?   @db.Text
+  notes              String?   @db.VarChar(4000)
   version            Int       @default(1)
   deletedAt          DateTime?
   createdAt          DateTime  @default(now())
@@ -347,7 +347,7 @@ model ExerciseNote {
   id                 String   @id @default(uuid()) @db.Uuid
   userId             String   @db.Uuid
   exerciseTemplateId String   @db.Uuid
-  note               String   @db.Text
+  note               String   @db.VarChar(4000)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -363,7 +363,7 @@ model ExerciseNote {
 model SessionNote {
   id        String   @id @default(uuid()) @db.Uuid
   sessionId String   @db.Uuid
-  note      String   @db.Text
+  note      String   @db.VarChar(4000)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

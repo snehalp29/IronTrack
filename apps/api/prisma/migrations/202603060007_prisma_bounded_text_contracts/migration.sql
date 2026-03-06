@@ -1,0 +1,17 @@
+ALTER TABLE "ExerciseTemplate"
+ALTER COLUMN "description" TYPE VARCHAR(4000);
+
+ALTER TABLE "ExerciseTemplate"
+ALTER COLUMN "defaultCues" TYPE VARCHAR(4000);
+
+ALTER TABLE "WorkoutTemplate"
+ALTER COLUMN "description" TYPE VARCHAR(4000);
+
+ALTER TABLE "SessionExercise"
+ALTER COLUMN "notes" TYPE VARCHAR(4000);
+
+ALTER TABLE "ExerciseNote"
+ALTER COLUMN "note" TYPE VARCHAR(4000);
+
+ALTER TABLE "SessionNote"
+ALTER COLUMN "note" TYPE VARCHAR(4000);

@@ -27,6 +27,13 @@ describe('Prisma schema hardening', () => {
     ),
     'utf8',
   );
+  const boundedTextContractsMigration = readFileSync(
+    join(
+      __dirname,
+      '../../prisma/migrations/202603060007_prisma_bounded_text_contracts/migration.sql',
+    ),
+    'utf8',
+  );
 
   it('uses bounded database types for user emails and refresh token hashes', () => {
     expect(prismaSchema).toContain(
@@ -102,6 +109,35 @@ describe('Prisma schema hardening', () => {
     );
     expect(nativeStringTypesMigration).toContain(
       'ALTER TABLE "Set"\nALTER COLUMN "idempotencyKey" TYPE VARCHAR(128);',
+    );
+  });
+
+  it('uses bounded database types for text fields already capped in the API contract', () => {
+    expect(prismaSchema).toContain(
+      'description          String?      @db.VarChar(4000)',
+    );
+    expect(prismaSchema).toContain(
+      'defaultCues          String?      @db.VarChar(4000)',
+    );
+    expect(prismaSchema).toContain('description String?   @db.VarChar(4000)');
+    expect(prismaSchema).toContain(
+      'notes              String?   @db.VarChar(4000)',
+    );
+    expect(prismaSchema).toContain(
+      'note               String   @db.VarChar(4000)',
+    );
+    expect(prismaSchema).toContain('note      String   @db.VarChar(4000)');
+  });
+
+  it('adds migration coverage for bounded text contract columns', () => {
+    expect(boundedTextContractsMigration).toContain(
+      'ALTER TABLE "ExerciseTemplate"\nALTER COLUMN "description" TYPE VARCHAR(4000);',
+    );
+    expect(boundedTextContractsMigration).toContain(
+      'ALTER TABLE "SessionExercise"\nALTER COLUMN "notes" TYPE VARCHAR(4000);',
+    );
+    expect(boundedTextContractsMigration).toContain(
+      'ALTER TABLE "ExerciseNote"\nALTER COLUMN "note" TYPE VARCHAR(4000);',
     );
   });
 });
