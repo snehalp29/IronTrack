@@ -61,6 +61,14 @@ describe('AuthService', () => {
     where: { id: string };
     data: Partial<UserRecord>;
   };
+  type UserUpdateManyArgs = {
+    where: {
+      id?: string;
+      deletedAt?: null;
+      authProvider?: 'GOOGLE';
+    };
+    data: Partial<UserRecord>;
+  };
   type UserUpsertArgs = {
     where: { email: string };
     update: Partial<UserRecord>;
@@ -153,6 +161,22 @@ describe('AuthService', () => {
         }
         Object.assign(existing, data);
         return existing;
+      }),
+      updateMany: jest.fn(async ({ where, data }: UserUpdateManyArgs) => {
+        let count = 0;
+        for (const user of users) {
+          const matchesId = where.id === undefined || user.id === where.id;
+          const matchesDeletedAt =
+            where.deletedAt === undefined || (user.deletedAt ?? null) === null;
+          const matchesAuthProvider =
+            where.authProvider === undefined ||
+            user.authProvider === where.authProvider;
+          if (matchesId && matchesDeletedAt && matchesAuthProvider) {
+            Object.assign(user, data);
+            count += 1;
+          }
+        }
+        return { count };
       }),
       upsert: jest.fn(async ({ where, update, create }: UserUpsertArgs) => {
         const existing = users.find((user) => user.email === where.email);
@@ -402,6 +426,19 @@ describe('AuthService', () => {
     parserSpy.mockRestore();
   });
 
+  it('rejects registration when timezone is invalid', async () => {
+    await expect(
+      authService.register({
+        email: 'timezone@example.com',
+        password: 'Str0ngPassword!',
+        name: 'Timezone',
+        timezone: 'Mars/Olympus',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(prismaMock.user.create).not.toHaveBeenCalled();
+  });
+
   it('google login uses verified token identity', async () => {
     const tokens = await authService.googleLogin({
       idToken: 'valid-google-id-token-1234567890',
@@ -422,7 +459,7 @@ describe('AuthService', () => {
         }),
       }),
     );
-    expect(prismaMock.user.update).not.toHaveBeenCalled();
+    expect(prismaMock.user.updateMany).not.toHaveBeenCalled();
   });
 
   it('normalizes verified google email before matching existing accounts', async () => {
@@ -450,7 +487,7 @@ describe('AuthService', () => {
       },
     });
     expect(prismaMock.user.create).not.toHaveBeenCalled();
-    expect(prismaMock.user.update).not.toHaveBeenCalled();
+    expect(prismaMock.user.updateMany).not.toHaveBeenCalled();
   });
 
   it('rejects google login for accounts registered with password auth', async () => {
@@ -472,7 +509,7 @@ describe('AuthService', () => {
       },
     });
     expect(prismaMock.user.create).not.toHaveBeenCalled();
-    expect(prismaMock.user.update).not.toHaveBeenCalled();
+    expect(prismaMock.user.updateMany).not.toHaveBeenCalled();
   });
 
   it('rejects google login when create races with concurrent LOCAL account creation', async () => {
@@ -513,14 +550,46 @@ describe('AuthService', () => {
       deletedAt: null,
       googleId: 'google-user-id-123',
     });
-    (prismaMock.user.update as jest.Mock).mockResolvedValueOnce({
+    (prismaMock.user.updateMany as jest.Mock).mockResolvedValueOnce({
+      count: 1,
+    });
+    (prismaMock.user.findFirst as jest.Mock).mockResolvedValueOnce({
       id: googleUserId,
       email: 'verified@irontrack.local',
       passwordHash: 'hash',
-      authProvider: 'LOCAL',
+      authProvider: 'GOOGLE',
       deletedAt: null,
       googleId: 'google-user-id-123',
     });
+
+    await expect(
+      authService.googleLogin({
+        idToken: 'valid-google-id-token-1234567890',
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        accessToken: expect.any(String),
+        refreshToken: expect.any(String),
+      }),
+    );
+  });
+
+  it('rejects google login when existing google account becomes LOCAL before guarded update', async () => {
+    const googleUserId = randomUUID();
+    users.push({
+      id: googleUserId,
+      email: 'verified@irontrack.local',
+      passwordHash: 'hash',
+      authProvider: 'GOOGLE',
+      deletedAt: null,
+      googleId: 'google-user-id-123',
+    });
+    (prismaMock.user.updateMany as jest.Mock).mockImplementationOnce(
+      async () => {
+        users[0]!.authProvider = 'LOCAL';
+        return { count: 0 };
+      },
+    );
 
     await expect(
       authService.googleLogin({
@@ -632,8 +701,12 @@ describe('AuthService', () => {
 
     expect(tokens.accessToken).toBeTruthy();
     expect(tokens.refreshToken).toBeTruthy();
-    expect(prismaMock.user.update).toHaveBeenCalledWith({
-      where: { id: concurrentGoogleId },
+    expect(prismaMock.user.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: concurrentGoogleId,
+        deletedAt: null,
+        authProvider: 'GOOGLE',
+      },
       data: {
         authProvider: 'GOOGLE',
         googleId: 'google-user-id-123',
@@ -713,7 +786,7 @@ describe('AuthService', () => {
       }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
     expect(prismaMock.user.create).not.toHaveBeenCalled();
-    expect(prismaMock.user.update).not.toHaveBeenCalled();
+    expect(prismaMock.user.updateMany).not.toHaveBeenCalled();
   });
 
   it('rejects registration when email is already taken', async () => {
@@ -1159,6 +1232,38 @@ describe('AuthService', () => {
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
+  it('rejects refresh when user is deleted after token consume but before issuance', async () => {
+    const userId = randomUUID();
+    users.push({
+      id: userId,
+      email: 'race-delete@example.com',
+      passwordHash: 'hash',
+      authProvider: 'LOCAL',
+      deletedAt: null,
+    });
+
+    const rawRefreshToken = 'refresh-token-race-delete-123';
+    refreshTokens.push({
+      id: randomUUID(),
+      userId,
+      tokenHash: createHash('sha256').update(rawRefreshToken).digest('hex'),
+      revokedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    (prismaMock.refreshToken.updateMany as jest.Mock).mockImplementationOnce(
+      async ({ data }: RefreshTokenUpdateManyArgs) => {
+        users[0]!.deletedAt = data.revokedAt;
+        return { count: 1 };
+      },
+    );
+
+    await expect(
+      authService.refresh({
+        refreshToken: rawRefreshToken,
+      }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
   it('rejects google login for soft-deleted accounts', async () => {
     users.push({
       id: randomUUID(),
@@ -1174,7 +1279,7 @@ describe('AuthService', () => {
       }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
     expect(prismaMock.user.create).not.toHaveBeenCalled();
-    expect(prismaMock.user.update).not.toHaveBeenCalled();
+    expect(prismaMock.user.updateMany).not.toHaveBeenCalled();
   });
 
   it('rejects google login when account becomes soft-deleted before token issuance', async () => {

@@ -204,7 +204,7 @@ describe('PrDetectionService', () => {
 
     expect(prismaMock.set.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        orderBy: { completedAt: 'asc' },
+        orderBy: [{ completedAt: 'asc' }, { id: 'asc' }],
       }),
     );
   });
@@ -639,6 +639,38 @@ describe('PrDetectionService', () => {
             },
           }),
         }),
+      }),
+    );
+  });
+
+  it('loads recalculate candidates in deterministic completedAt/id order', async () => {
+    const transaction = jest.fn(async (ops: Array<Promise<unknown>>) =>
+      Promise.all(ops),
+    );
+    const prismaMock = {
+      set: {
+        findMany: jest.fn(async () => []),
+      },
+      $transaction: transaction,
+      pRRecord: {
+        upsert: jest.fn(async () => undefined),
+        deleteMany: jest.fn(async () => ({ count: 0 })),
+      },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        PrDetectionService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(PrDetectionService);
+    await service.recalculateForExercise('user-1', 'exercise-1');
+
+    expect(prismaMock.set.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderBy: [{ completedAt: 'asc' }, { id: 'asc' }],
       }),
     );
   });

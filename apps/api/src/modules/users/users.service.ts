@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 
+import { normalizeTimezoneOrThrow } from '../../common/validation/timezone';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UpdateMeDto } from './user.schemas';
 
@@ -35,12 +36,19 @@ export class UsersService {
   }
 
   async updateMe(userId: string, input: UpdateMeDto) {
+    const data = {
+      ...input,
+      timezone:
+        input.timezone === undefined
+          ? undefined
+          : normalizeTimezoneOrThrow(input.timezone),
+    };
     const updated = await this.prisma.user.updateMany({
       where: {
         id: userId,
         deletedAt: null,
       },
-      data: input,
+      data,
     });
 
     if (!updated.count) {
@@ -102,6 +110,25 @@ export class UsersService {
         tx.refreshToken.updateMany({
           where: { userId, revokedAt: null },
           data: { revokedAt: now },
+        }),
+        tx.exerciseNote.deleteMany({
+          where: { userId },
+        }),
+        tx.pRRecord.deleteMany({
+          where: { userId },
+        }),
+        tx.userStreak.deleteMany({
+          where: { userId },
+        }),
+        tx.checklistItem.deleteMany({
+          where: { userId },
+        }),
+        tx.sessionNote.deleteMany({
+          where: {
+            session: {
+              userId,
+            },
+          },
         }),
       ]);
     });

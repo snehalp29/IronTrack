@@ -42,7 +42,7 @@ export class PrDetectionService {
           },
         },
       },
-      orderBy: { completedAt: 'asc' },
+      orderBy: [{ completedAt: 'asc' }, { id: 'asc' }],
     });
 
     const grouped = new Map<string, ExerciseSetInput[]>();
@@ -181,7 +181,7 @@ export class PrDetectionService {
           },
         },
       },
-      orderBy: { completedAt: 'asc' },
+      orderBy: [{ completedAt: 'asc' }, { id: 'asc' }],
     });
 
     const candidates = this.calculateCandidates(

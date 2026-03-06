@@ -84,7 +84,7 @@ describe('VolumeService', () => {
 
     await expect(service.cacheSessionVolume('session-1')).resolves.toBe(500);
     expect(prismaMock.workoutSession.updateMany).toHaveBeenCalledWith({
-      where: { id: 'session-1' },
+      where: { id: 'session-1', deletedAt: null },
       data: { totalVolume: 500 },
     });
   });
@@ -101,7 +101,7 @@ describe('VolumeService', () => {
       320,
     );
     expect(prismaMock.workoutSession.updateMany).toHaveBeenCalledWith({
-      where: { id: 'missing-session' },
+      where: { id: 'missing-session', deletedAt: null },
       data: { totalVolume: 320 },
     });
   });

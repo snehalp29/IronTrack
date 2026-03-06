@@ -19,32 +19,35 @@ export class ExercisesService {
 
   async list(userId: string, query: ListExercisesQuery) {
     const skip = (query.page - 1) * query.pageSize;
+    const search = normalizeQueryFilter(query.search);
+    const muscleGroup = normalizeQueryFilter(query.muscleGroup);
+    const equipment = normalizeQueryFilter(query.equipment);
 
     const where = {
       deletedAt: null,
       exerciseType: query.type,
       isGlobal: query.isGlobal,
       OR: [{ isGlobal: true }, { ownerUserId: userId }],
-      name: query.search
+      name: search
         ? {
-            contains: query.search,
+            contains: search,
             mode: 'insensitive' as const,
           }
         : undefined,
-      primaryMuscle: query.muscleGroup
+      primaryMuscle: muscleGroup
         ? {
             name: {
-              equals: query.muscleGroup,
+              equals: muscleGroup,
               mode: 'insensitive' as const,
             },
           }
         : undefined,
-      equipment: query.equipment
+      equipment: equipment
         ? {
             some: {
               equipment: {
                 name: {
-                  equals: query.equipment,
+                  equals: equipment,
                   mode: 'insensitive' as const,
                 },
               },
@@ -107,38 +110,47 @@ export class ExercisesService {
   }
 
   async create(userId: string, input: CreateExerciseDto) {
-    await this.ensureUniqueNameForOwner(userId, input.name);
+    const name = normalizeExerciseNameOrThrow(input.name);
+    await this.ensureUniqueNameForOwner(userId, name);
     const secondaryMuscleGroupIds = uniqueStrings(
       input.secondaryMuscleGroupIds,
     );
     const equipmentIds = uniqueStrings(input.equipmentIds);
 
-    return this.prisma.exerciseTemplate.create({
-      data: {
-        name: input.name,
-        description: input.description,
-        exerciseType: input.exerciseType,
-        isGlobal: false,
-        ownerUserId: userId,
-        primaryMuscleGroupId: input.primaryMuscleGroupId,
-        defaultSets: input.defaultSets,
-        repMin: input.repMin,
-        repMax: input.repMax,
-        defaultCues: input.defaultCues,
-        secondaryMuscles: {
-          create: secondaryMuscleGroupIds.map((muscleGroupId) => ({
-            muscleGroupId,
-          })),
+    try {
+      return await this.prisma.exerciseTemplate.create({
+        data: {
+          name,
+          description: input.description,
+          exerciseType: input.exerciseType,
+          isGlobal: false,
+          ownerUserId: userId,
+          primaryMuscleGroupId: input.primaryMuscleGroupId,
+          defaultSets: input.defaultSets,
+          repMin: input.repMin,
+          repMax: input.repMax,
+          defaultCues: input.defaultCues,
+          secondaryMuscles: {
+            create: secondaryMuscleGroupIds.map((muscleGroupId) => ({
+              muscleGroupId,
+            })),
+          },
+          equipment: {
+            create: equipmentIds.map((equipmentId) => ({ equipmentId })),
+          },
         },
-        equipment: {
-          create: equipmentIds.map((equipmentId) => ({ equipmentId })),
+        include: {
+          secondaryMuscles: true,
+          equipment: true,
         },
-      },
-      include: {
-        secondaryMuscles: true,
-        equipment: true,
-      },
-    });
+      });
+    } catch (error) {
+      if (isExerciseNameUniqueConstraintError(error)) {
+        this.throwExerciseNameExists();
+      }
+
+      throw error;
+    }
   }
 
   async update(userId: string, exerciseId: string, input: UpdateExerciseDto) {
@@ -147,6 +159,7 @@ export class ExercisesService {
         id: exerciseId,
         ownerUserId: userId,
         isGlobal: false,
+        deletedAt: null,
       },
     });
 
@@ -157,14 +170,53 @@ export class ExercisesService {
       });
     }
 
+    const normalizedName = input.name
+      ? normalizeExerciseNameOrThrow(input.name)
+      : undefined;
+
     if (
-      input.name &&
-      input.name.toLowerCase() !== exercise.name.toLowerCase()
+      normalizedName &&
+      normalizedName.toLowerCase() !== exercise.name.toLowerCase()
     ) {
-      await this.ensureUniqueNameForOwner(userId, input.name, exerciseId);
+      await this.ensureUniqueNameForOwner(userId, normalizedName, exerciseId);
     }
 
     return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.exerciseTemplate
+        .updateMany({
+          where: {
+            id: exerciseId,
+            ownerUserId: userId,
+            isGlobal: false,
+            deletedAt: null,
+          },
+          data: {
+            name: normalizedName,
+            description: input.description,
+            exerciseType: input.exerciseType,
+            primaryMuscleGroupId: input.primaryMuscleGroupId,
+            defaultSets: input.defaultSets,
+            repMin: input.repMin,
+            repMax: input.repMax,
+            defaultCues: input.defaultCues,
+            updatedAt: new Date(),
+          },
+        })
+        .catch((error: unknown) => {
+          if (isExerciseNameUniqueConstraintError(error)) {
+            this.throwExerciseNameExists();
+          }
+
+          throw error;
+        });
+
+      if (!updated.count) {
+        throw new ForbiddenException({
+          code: 'EXERCISE_NOT_EDITABLE',
+          message: 'Only your custom exercises can be edited',
+        });
+      }
+
       if (input.secondaryMuscleGroupIds) {
         const secondaryMuscleGroupIds = uniqueStrings(
           input.secondaryMuscleGroupIds,
@@ -199,25 +251,34 @@ export class ExercisesService {
         }
       }
 
-      return tx.exerciseTemplate.update({
-        where: { id: exerciseId },
-        data: {
-          name: input.name,
-          description: input.description,
-          exerciseType: input.exerciseType,
-          primaryMuscleGroupId: input.primaryMuscleGroupId,
-          defaultSets: input.defaultSets,
-          repMin: input.repMin,
-          repMax: input.repMax,
-          defaultCues: input.defaultCues,
+      const updatedExercise = await tx.exerciseTemplate.findFirst({
+        where: {
+          id: exerciseId,
+          ownerUserId: userId,
+          isGlobal: false,
+          deletedAt: null,
         },
       });
+
+      if (!updatedExercise) {
+        throw new ForbiddenException({
+          code: 'EXERCISE_NOT_EDITABLE',
+          message: 'Only your custom exercises can be edited',
+        });
+      }
+
+      return updatedExercise;
     });
   }
 
   async softDelete(userId: string, exerciseId: string) {
     const result = await this.prisma.exerciseTemplate.updateMany({
-      where: { id: exerciseId, ownerUserId: userId, isGlobal: false },
+      where: {
+        id: exerciseId,
+        ownerUserId: userId,
+        isGlobal: false,
+        deletedAt: null,
+      },
       data: { deletedAt: new Date() },
     });
 
@@ -299,6 +360,7 @@ export class ExercisesService {
     input: UpsertExerciseNoteDto,
   ) {
     await this.getById(userId, exerciseId);
+    const note = normalizeExerciseNote(input.note);
 
     return this.prisma.exerciseNote.upsert({
       where: {
@@ -308,12 +370,12 @@ export class ExercisesService {
         },
       },
       update: {
-        note: input.note,
+        note,
       },
       create: {
         userId,
         exerciseTemplateId: exerciseId,
-        note: input.note,
+        note,
       },
     });
   }
@@ -336,14 +398,73 @@ export class ExercisesService {
     });
 
     if (existing) {
-      throw new BadRequestException({
-        code: 'EXERCISE_NAME_EXISTS',
-        message: 'Exercise name already exists for this user',
-      });
+      this.throwExerciseNameExists();
     }
+  }
+
+  private throwExerciseNameExists(): never {
+    throw new BadRequestException({
+      code: 'EXERCISE_NAME_EXISTS',
+      message: 'Exercise name already exists for this user',
+    });
   }
 }
 
 function uniqueStrings(values: string[]): string[] {
   return Array.from(new Set(values));
+}
+
+function normalizeExerciseNameOrThrow(name: string): string {
+  const normalized = name.trim();
+  if (normalized.length < 2) {
+    throw new BadRequestException({
+      code: 'EXERCISE_NAME_INVALID',
+      message: 'Exercise name must be at least 2 characters',
+    });
+  }
+
+  return normalized;
+}
+
+function normalizeExerciseNote(note: string): string {
+  const normalized = note.trim();
+  if (normalized.length === 0) {
+    throw new BadRequestException({
+      code: 'EXERCISE_NOTE_REQUIRED',
+      message: 'Exercise note cannot be empty',
+    });
+  }
+
+  return normalized;
+}
+
+function normalizeQueryFilter(value: string | undefined): string | undefined {
+  const normalized = value?.trim();
+  return normalized && normalized.length > 0 ? normalized : undefined;
+}
+
+function isExerciseNameUniqueConstraintError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+
+  const maybeError = error as {
+    code?: unknown;
+    meta?: {
+      target?: unknown;
+    };
+  };
+  if (maybeError.code !== 'P2002') {
+    return false;
+  }
+
+  const target = maybeError.meta?.target;
+  if (Array.isArray(target)) {
+    return target.some(
+      (entry) =>
+        typeof entry === 'string' && entry.toLowerCase().includes('name'),
+    );
+  }
+
+  return typeof target === 'string' && target.toLowerCase().includes('name');
 }

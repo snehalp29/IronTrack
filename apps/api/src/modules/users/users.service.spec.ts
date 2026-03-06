@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 import type { PrismaService } from '../../prisma/prisma.service';
 import { UsersService } from './users.service';
@@ -21,6 +21,21 @@ describe('UsersService', () => {
       refreshToken: {
         updateMany: jest.fn(async () => ({ count: 0 })),
       },
+      exerciseNote: {
+        deleteMany: jest.fn(async () => ({ count: 0 })),
+      },
+      pRRecord: {
+        deleteMany: jest.fn(async () => ({ count: 0 })),
+      },
+      userStreak: {
+        deleteMany: jest.fn(async () => ({ count: 0 })),
+      },
+      checklistItem: {
+        deleteMany: jest.fn(async () => ({ count: 0 })),
+      },
+      sessionNote: {
+        deleteMany: jest.fn(async () => ({ count: 0 })),
+      },
     };
 
     const prismaMock = {
@@ -40,6 +55,21 @@ describe('UsersService', () => {
       },
       refreshToken: {
         updateMany: jest.fn(),
+      },
+      exerciseNote: {
+        deleteMany: jest.fn(),
+      },
+      pRRecord: {
+        deleteMany: jest.fn(),
+      },
+      userStreak: {
+        deleteMany: jest.fn(),
+      },
+      checklistItem: {
+        deleteMany: jest.fn(),
+      },
+      sessionNote: {
+        deleteMany: jest.fn(),
       },
       $transaction: jest.fn(async (arg: unknown) => {
         if (typeof arg === 'function') {
@@ -121,6 +151,16 @@ describe('UsersService', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
+  it('rejects invalid timezone values during profile updates', async () => {
+    const { service, prismaMock } = createService();
+
+    await expect(
+      service.updateMe('u1', { timezone: 'Mars/Olympus' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(prismaMock.user.updateMany).not.toHaveBeenCalled();
+  });
+
   it('soft deletes active user-related records in a transaction', async () => {
     const { service, prismaMock, tx } = createService();
 
@@ -149,6 +189,25 @@ describe('UsersService', () => {
     expect(
       (tx.refreshToken.updateMany as jest.Mock).mock.calls[0][0].data.revokedAt,
     ).toBe(userDeleteDate);
+    expect(tx.exerciseNote.deleteMany).toHaveBeenCalledWith({
+      where: { userId: 'u1' },
+    });
+    expect(tx.pRRecord.deleteMany).toHaveBeenCalledWith({
+      where: { userId: 'u1' },
+    });
+    expect(tx.userStreak.deleteMany).toHaveBeenCalledWith({
+      where: { userId: 'u1' },
+    });
+    expect(tx.checklistItem.deleteMany).toHaveBeenCalledWith({
+      where: { userId: 'u1' },
+    });
+    expect(tx.sessionNote.deleteMany).toHaveBeenCalledWith({
+      where: {
+        session: {
+          userId: 'u1',
+        },
+      },
+    });
   });
 
   it('throws not found when deleting an already deleted user', async () => {
@@ -162,5 +221,10 @@ describe('UsersService', () => {
     expect(tx.workoutTemplate.updateMany).not.toHaveBeenCalled();
     expect(tx.workoutSession.updateMany).not.toHaveBeenCalled();
     expect(tx.refreshToken.updateMany).not.toHaveBeenCalled();
+    expect(tx.exerciseNote.deleteMany).not.toHaveBeenCalled();
+    expect(tx.pRRecord.deleteMany).not.toHaveBeenCalled();
+    expect(tx.userStreak.deleteMany).not.toHaveBeenCalled();
+    expect(tx.checklistItem.deleteMany).not.toHaveBeenCalled();
+    expect(tx.sessionNote.deleteMany).not.toHaveBeenCalled();
   });
 });

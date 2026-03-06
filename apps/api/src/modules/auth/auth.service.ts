@@ -9,6 +9,7 @@ import { AuthProvider, User } from '@prisma/client';
 import { compare, hash } from 'bcryptjs';
 import { createHash, randomUUID } from 'node:crypto';
 
+import { normalizeTimezoneOrThrow } from '../../common/validation/timezone';
 import { durationToSeconds } from '../../config/env.schema';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -38,6 +39,7 @@ export class AuthService {
 
   async register(input: RegisterDto): Promise<AuthTokens> {
     const normalizedEmail = normalizeEmail(input.email);
+    const timezone = normalizeTimezoneOrThrow(input.timezone, 'UTC');
     const existingUser = await this.prisma.user.findFirst({
       where: {
         email: normalizedEmail,
@@ -60,7 +62,7 @@ export class AuthService {
           email: normalizedEmail,
           passwordHash,
           name: input.name,
-          timezone: input.timezone ?? 'UTC',
+          timezone,
           unitPreference: input.unitPreference ?? 'METRIC',
         },
       });
@@ -138,7 +140,20 @@ export class AuthService {
       });
     }
 
-    return this.issueTokens(stored.user.id, stored.user.email);
+    const activeUser = await this.prisma.user.findFirst({
+      where: {
+        id: stored.user.id,
+        deletedAt: null,
+      },
+    });
+    if (!activeUser) {
+      throw new UnauthorizedException({
+        code: 'INVALID_REFRESH_TOKEN',
+        message: 'Refresh token is invalid or expired',
+      });
+    }
+
+    return this.issueTokens(activeUser.id, activeUser.email);
   }
 
   async logout(refreshToken: string): Promise<{ success: boolean }> {
@@ -178,15 +193,7 @@ export class AuthService {
     }
 
     const user = existingUser
-      ? await this.prisma.user.update({
-          where: { id: existingUser.id },
-          data: {
-            authProvider: AuthProvider.GOOGLE,
-            googleId: identity.googleId,
-            name: identity.name,
-            avatarUrl: identity.avatarUrl,
-          },
-        })
+      ? await this.updateGoogleUser(existingUser.id, identity)
       : await this.createOrRecoverGoogleUser({
           ...identity,
           email: normalizedEmail,
@@ -238,16 +245,57 @@ export class AuthService {
         this.throwEmailRegisteredWithPassword();
       }
 
-      return this.prisma.user.update({
-        where: { id: concurrentUser.id },
-        data: {
-          authProvider: AuthProvider.GOOGLE,
-          googleId: identity.googleId,
-          name: identity.name,
-          avatarUrl: identity.avatarUrl,
-        },
+      return this.updateGoogleUser(concurrentUser.id, identity);
+    }
+  }
+
+  private async updateGoogleUser(
+    userId: string,
+    identity: {
+      googleId: string;
+      name?: string;
+      avatarUrl?: string;
+    },
+  ) {
+    const updated = await this.prisma.user.updateMany({
+      where: {
+        id: userId,
+        deletedAt: null,
+        authProvider: AuthProvider.GOOGLE,
+      },
+      data: {
+        authProvider: AuthProvider.GOOGLE,
+        googleId: identity.googleId,
+        name: identity.name,
+        avatarUrl: identity.avatarUrl,
+      },
+    });
+
+    if (!updated.count) {
+      const currentUser = await this.prisma.user.findFirst({
+        where: { id: userId },
+      });
+      if (!currentUser || currentUser.deletedAt !== null) {
+        this.throwUserDisabled();
+      }
+      if (currentUser.authProvider === AuthProvider.LOCAL) {
+        this.throwEmailRegisteredWithPassword();
+      }
+
+      throw new UnauthorizedException({
+        code: 'INVALID_GOOGLE_TOKEN',
+        message: 'Google authentication could not be completed',
       });
     }
+
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId },
+    });
+    if (!user || user.deletedAt !== null) {
+      this.throwUserDisabled();
+    }
+
+    return user;
   }
 
   private async issueTokens(

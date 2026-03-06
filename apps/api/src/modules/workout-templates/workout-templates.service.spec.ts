@@ -1,4 +1,8 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 
 import type { PrismaService } from '../../prisma/prisma.service';
 import { WorkoutTemplatesService } from './workout-templates.service';
@@ -11,7 +15,8 @@ describe('WorkoutTemplatesService', () => {
         createMany: jest.fn(async () => ({ count: 1 })),
       },
       workoutTemplate: {
-        update: jest.fn(async () => ({ id: 'template-1' })),
+        updateMany: jest.fn(async () => ({ count: 1 })),
+        findFirst: jest.fn(async () => ({ id: 'template-1' })),
       },
     };
 
@@ -204,6 +209,53 @@ describe('WorkoutTemplatesService', () => {
     );
   });
 
+  it('trims template names before create persistence', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.workoutTemplate.create as jest.Mock).mockResolvedValue({
+      id: 't1',
+    });
+
+    await service.create('user-1', {
+      name: '  Push Day  ',
+      exercises: [
+        {
+          exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+          orderIndex: 0,
+        },
+      ],
+    });
+
+    expect(prismaMock.workoutTemplate.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          name: 'Push Day',
+        }),
+      }),
+    );
+  });
+
+  it('rejects create when the trimmed template name is shorter than 2 characters', async () => {
+    const { service, prismaMock } = createService();
+
+    await expect(
+      service.create('user-1', {
+        name: '  a  ',
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            orderIndex: 0,
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'TEMPLATE_NAME_INVALID',
+      },
+    });
+
+    expect(prismaMock.workoutTemplate.create).not.toHaveBeenCalled();
+  });
+
   it('throws forbidden when creating template with inaccessible exercises', async () => {
     const { service, prismaMock } = createService();
     (prismaMock.exerciseTemplate.findMany as jest.Mock).mockResolvedValue([
@@ -225,6 +277,28 @@ describe('WorkoutTemplatesService', () => {
         ],
       }),
     ).rejects.toBeInstanceOf(ForbiddenException);
+
+    expect(prismaMock.workoutTemplate.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects template create when exercise order indexes are duplicated', async () => {
+    const { service, prismaMock } = createService();
+
+    await expect(
+      service.create('user-1', {
+        name: 'Push Day',
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            orderIndex: 0,
+          },
+          {
+            exerciseTemplateId: '22222222-2222-4222-8222-222222222222',
+            orderIndex: 0,
+          },
+        ],
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
 
     expect(prismaMock.workoutTemplate.create).not.toHaveBeenCalled();
   });
@@ -264,14 +338,56 @@ describe('WorkoutTemplatesService', () => {
         },
       ],
     });
-    expect(tx.workoutTemplate.update).toHaveBeenCalledWith({
-      where: { id: 'template-1' },
+    expect(tx.workoutTemplate.updateMany).toHaveBeenCalledWith({
+      where: { id: 'template-1', userId: 'user-1', deletedAt: null },
       data: {
         name: 'Updated',
         description: undefined,
         orderIndex: undefined,
+        updatedAt: expect.any(Date),
       },
     });
+    expect(tx.workoutTemplate.findFirst).toHaveBeenCalledWith({
+      where: { id: 'template-1', userId: 'user-1', deletedAt: null },
+    });
+  });
+
+  it('trims template names before guarded update persistence', async () => {
+    const { service, prismaMock, tx } = createService();
+    (prismaMock.workoutTemplate.findFirst as jest.Mock).mockResolvedValue({
+      id: 'template-1',
+    });
+
+    await service.update('user-1', 'template-1', {
+      name: '  Updated  ',
+    });
+
+    expect(tx.workoutTemplate.updateMany).toHaveBeenCalledWith({
+      where: { id: 'template-1', userId: 'user-1', deletedAt: null },
+      data: {
+        name: 'Updated',
+        description: undefined,
+        orderIndex: undefined,
+        updatedAt: expect.any(Date),
+      },
+    });
+  });
+
+  it('rejects update when the trimmed template name is shorter than 2 characters', async () => {
+    const { service, prismaMock, tx } = createService();
+    (prismaMock.workoutTemplate.findFirst as jest.Mock).mockResolvedValue({
+      id: 'template-1',
+    });
+
+    await expect(
+      service.update('user-1', 'template-1', { name: '  a  ' }),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'TEMPLATE_NAME_INVALID',
+      },
+    });
+
+    expect(tx.workoutTemplate.updateMany).not.toHaveBeenCalled();
   });
 
   it('updates template metadata without replacing exercises when omitted', async () => {
@@ -287,12 +403,13 @@ describe('WorkoutTemplatesService', () => {
 
     expect(tx.workoutTemplateExercise.deleteMany).not.toHaveBeenCalled();
     expect(tx.workoutTemplateExercise.createMany).not.toHaveBeenCalled();
-    expect(tx.workoutTemplate.update).toHaveBeenCalledWith({
-      where: { id: 'template-1' },
+    expect(tx.workoutTemplate.updateMany).toHaveBeenCalledWith({
+      where: { id: 'template-1', userId: 'user-1', deletedAt: null },
       data: {
         name: undefined,
         description: 'New description',
         orderIndex: 2,
+        updatedAt: expect.any(Date),
       },
     });
   });
@@ -323,7 +440,71 @@ describe('WorkoutTemplatesService', () => {
 
     expect(tx.workoutTemplateExercise.deleteMany).not.toHaveBeenCalled();
     expect(tx.workoutTemplateExercise.createMany).not.toHaveBeenCalled();
-    expect(tx.workoutTemplate.update).not.toHaveBeenCalled();
+    expect(tx.workoutTemplate.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('rejects template update when exercise order indexes are duplicated', async () => {
+    const { service, prismaMock, tx } = createService();
+    (prismaMock.workoutTemplate.findFirst as jest.Mock).mockResolvedValue({
+      id: 'template-1',
+    });
+
+    await expect(
+      service.update('user-1', 'template-1', {
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            orderIndex: 0,
+          },
+          {
+            exerciseTemplateId: '22222222-2222-4222-8222-222222222222',
+            orderIndex: 0,
+          },
+        ],
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(tx.workoutTemplateExercise.deleteMany).not.toHaveBeenCalled();
+    expect(tx.workoutTemplateExercise.createMany).not.toHaveBeenCalled();
+    expect(tx.workoutTemplate.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('throws forbidden when template disappears before the guarded update write', async () => {
+    const { service, prismaMock, tx } = createService();
+    (prismaMock.workoutTemplate.findFirst as jest.Mock).mockResolvedValue({
+      id: 'template-1',
+    });
+    (tx.workoutTemplate.updateMany as jest.Mock).mockResolvedValue({
+      count: 0,
+    });
+
+    await expect(
+      service.update('user-1', 'template-1', { name: 'Updated' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('does not rewrite template exercises when the guarded template update fails', async () => {
+    const { service, prismaMock, tx } = createService();
+    (prismaMock.workoutTemplate.findFirst as jest.Mock).mockResolvedValue({
+      id: 'template-1',
+    });
+    (tx.workoutTemplate.updateMany as jest.Mock).mockResolvedValue({
+      count: 0,
+    });
+
+    await expect(
+      service.update('user-1', 'template-1', {
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            orderIndex: 0,
+          },
+        ],
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+
+    expect(tx.workoutTemplateExercise.deleteMany).not.toHaveBeenCalled();
+    expect(tx.workoutTemplateExercise.createMany).not.toHaveBeenCalled();
   });
 
   it('throws forbidden when updating inaccessible template', async () => {
@@ -340,19 +521,33 @@ describe('WorkoutTemplatesService', () => {
     (prismaMock.workoutTemplate.findFirst as jest.Mock).mockResolvedValue({
       id: 'template-1',
     });
-    (prismaMock.workoutTemplate.update as jest.Mock).mockResolvedValue({
-      id: 'template-1',
+    (prismaMock.workoutTemplate.updateMany as jest.Mock).mockResolvedValue({
+      count: 1,
     });
 
     await expect(service.softDelete('user-1', 'template-1')).resolves.toEqual({
       success: true,
     });
-    expect(prismaMock.workoutTemplate.update).toHaveBeenCalledWith(
+    expect(prismaMock.workoutTemplate.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'template-1' },
+        where: { id: 'template-1', userId: 'user-1', deletedAt: null },
         data: expect.objectContaining({ deletedAt: expect.any(Date) }),
       }),
     );
+  });
+
+  it('throws forbidden when template disappears before the guarded soft delete write', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.workoutTemplate.findFirst as jest.Mock).mockResolvedValue({
+      id: 'template-1',
+    });
+    (prismaMock.workoutTemplate.updateMany as jest.Mock).mockResolvedValue({
+      count: 0,
+    });
+
+    await expect(
+      service.softDelete('user-1', 'template-1'),
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('reorders templates in a transaction', async () => {

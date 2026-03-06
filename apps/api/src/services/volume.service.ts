@@ -34,7 +34,10 @@ export class VolumeService {
     const totalVolume = await this.calculateSessionVolume(sessionId);
 
     await this.prisma.workoutSession.updateMany({
-      where: { id: sessionId },
+      where: {
+        id: sessionId,
+        deletedAt: null,
+      },
       data: { totalVolume },
     });
 

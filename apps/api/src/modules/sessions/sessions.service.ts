@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -61,6 +62,9 @@ export class SessionsService {
           orderBy: { orderIndex: 'asc' },
         })
       : [];
+    if (input.workoutTemplateId && templateExercises.length === 0) {
+      this.throwTemplateForbidden();
+    }
 
     const sessionExerciseCreates = input.workoutTemplateId
       ? templateExercises.map((exercise, index) => ({
@@ -75,25 +79,35 @@ export class SessionsService {
           notes: exercise.notes,
           supersetGroupKey: exercise.supersetGroupKey,
         }));
+    assertUniqueSessionExerciseOrderIndexes(sessionExerciseCreates);
 
-    const session = await this.prisma.workoutSession.create({
-      data: {
-        userId,
-        workoutTemplateId: input.workoutTemplateId,
-        notes: input.notes,
-        sessionExercises: {
-          create: sessionExerciseCreates,
-        },
-      },
-      include: {
-        sessionExercises: {
-          include: {
-            exercise: true,
+    let session;
+    try {
+      session = await this.prisma.workoutSession.create({
+        data: {
+          userId,
+          workoutTemplateId: input.workoutTemplateId,
+          notes: input.notes,
+          sessionExercises: {
+            create: sessionExerciseCreates,
           },
-          orderBy: { orderIndex: 'asc' },
         },
-      },
-    });
+        include: {
+          sessionExercises: {
+            include: {
+              exercise: true,
+            },
+            orderBy: { orderIndex: 'asc' },
+          },
+        },
+      });
+    } catch (error) {
+      if (isSessionExerciseOrderUniqueConstraintError(error)) {
+        this.throwSessionExerciseOrderConflict();
+      }
+
+      throw error;
+    }
 
     if (!Array.isArray(session.sessionExercises)) {
       return session;
@@ -264,8 +278,13 @@ export class SessionsService {
       existing.user?.timezone ?? 'UTC',
     );
     const completion = await this.completionService.calculate(sessionId);
-    const session = await this.prisma.workoutSession.update({
-      where: { id: sessionId },
+    const updated = await this.prisma.workoutSession.updateMany({
+      where: {
+        id: sessionId,
+        userId,
+        deletedAt: null,
+        status: 'IN_PROGRESS',
+      },
       data: {
         status: 'FINISHED',
         finishedAt,
@@ -274,6 +293,39 @@ export class SessionsService {
         version: { increment: 1 },
       },
     });
+
+    if (!updated.count) {
+      const current = await this.prisma.workoutSession.findFirst({
+        where: {
+          id: sessionId,
+          userId,
+          deletedAt: null,
+        },
+        select: {
+          status: true,
+        },
+      });
+
+      if (!current) {
+        this.throwSessionNotFound();
+      }
+
+      if (current.status !== 'IN_PROGRESS') {
+        this.throwSessionAlreadyFinished();
+      }
+    }
+
+    const session = await this.prisma.workoutSession.findFirst({
+      where: {
+        id: sessionId,
+        userId,
+        deletedAt: null,
+      },
+    });
+
+    if (!session) {
+      this.throwSessionNotFound();
+    }
 
     return {
       ...session,
@@ -624,6 +676,10 @@ export class SessionsService {
                 id: item.id,
                 sessionId,
                 deletedAt: null,
+                session: {
+                  userId,
+                  deletedAt: null,
+                },
               },
               data: {
                 orderIndex: -(index + 1),
@@ -643,6 +699,10 @@ export class SessionsService {
                 id: item.id,
                 sessionId,
                 deletedAt: null,
+                session: {
+                  userId,
+                  deletedAt: null,
+                },
               },
               data: {
                 orderIndex: item.orderIndex,
@@ -696,13 +756,25 @@ export class SessionsService {
       input.toExerciseTemplateId,
     );
 
-    const updated = await this.prisma.sessionExercise.update({
-      where: { id: exercise.id },
+    const updated = await this.prisma.sessionExercise.updateMany({
+      where: {
+        id: exercise.id,
+        sessionId,
+        deletedAt: null,
+        session: {
+          userId,
+          deletedAt: null,
+        },
+      },
       data: {
         exerciseTemplateId: input.toExerciseTemplateId,
         version: { increment: 1 },
       },
     });
+
+    if (!updated.count) {
+      this.throwSessionExerciseNotFound();
+    }
 
     const affectedExerciseTemplateIds = Array.from(
       new Set([exercise.exerciseTemplateId, input.toExerciseTemplateId]),
@@ -716,7 +788,10 @@ export class SessionsService {
       ),
     );
 
-    return updated;
+    return {
+      ...exercise,
+      exerciseTemplateId: input.toExerciseTemplateId,
+    };
   }
 
   async createSet(
@@ -774,7 +849,7 @@ export class SessionsService {
       this.throwSetNotFound();
     }
 
-    const updateData: Prisma.SetUpdateInput = {
+    const updateData: SetWriteData = {
       orderIndex: input.orderIndex,
       type: input.type,
       payload: input.payload as Prisma.InputJsonValue | undefined,
@@ -801,21 +876,20 @@ export class SessionsService {
 
     let updated;
     try {
-      updated = await this.prisma.set.update({
-        where: { id: setId },
-        data: updateData,
-        include: {
+      updated = await this.prisma.set.updateMany({
+        where: {
+          id: setId,
+          sessionExerciseId,
+          deletedAt: null,
           sessionExercise: {
-            include: {
-              session: {
-                select: {
-                  id: true,
-                  status: true,
-                },
-              },
+            deletedAt: null,
+            session: {
+              userId,
+              deletedAt: null,
             },
           },
         },
+        data: updateData,
       });
     } catch (error) {
       if (isSetOrderUniqueConstraintError(error)) {
@@ -823,6 +897,10 @@ export class SessionsService {
       }
 
       throw error;
+    }
+
+    if (!updated.count) {
+      this.throwSetNotFound();
     }
 
     if (isPrAffectingSetUpdate(input)) {
@@ -838,7 +916,7 @@ export class SessionsService {
       );
     }
 
-    return updated;
+    return mergeSetWithUpdateData(existing, updateData);
   }
 
   async deleteSet(userId: string, sessionExerciseId: string, setId: string) {
@@ -868,10 +946,25 @@ export class SessionsService {
       this.throwSetNotFound();
     }
 
-    await this.prisma.set.update({
-      where: { id: existing.id },
+    const updated = await this.prisma.set.updateMany({
+      where: {
+        id: existing.id,
+        sessionExerciseId,
+        deletedAt: null,
+        sessionExercise: {
+          deletedAt: null,
+          session: {
+            userId,
+            deletedAt: null,
+          },
+        },
+      },
       data: { deletedAt: new Date() },
     });
+
+    if (!updated.count) {
+      this.throwSetNotFound();
+    }
 
     await this.prDetectionService.recalculateForExercise(
       userId,
@@ -924,17 +1017,33 @@ export class SessionsService {
       this.throwSetNotFound();
     }
 
-    const updated = await this.prisma.set.update({
-      where: { id: setId },
+    const completedAt = input.isCompleted
+      ? existing.isCompleted
+        ? (existing.completedAt ?? new Date())
+        : new Date()
+      : null;
+    const updated = await this.prisma.set.updateMany({
+      where: {
+        id: setId,
+        sessionExerciseId,
+        deletedAt: null,
+        sessionExercise: {
+          deletedAt: null,
+          session: {
+            userId,
+            deletedAt: null,
+          },
+        },
+      },
       data: {
         isCompleted: input.isCompleted,
-        completedAt: input.isCompleted
-          ? existing.isCompleted
-            ? (existing.completedAt ?? new Date())
-            : new Date()
-          : null,
+        completedAt,
       },
     });
+
+    if (!updated.count) {
+      this.throwSetNotFound();
+    }
 
     await this.prDetectionService.recalculateForExercise(
       userId,
@@ -946,7 +1055,11 @@ export class SessionsService {
       );
     }
 
-    return updated;
+    return {
+      ...existing,
+      isCompleted: input.isCompleted,
+      completedAt,
+    };
   }
 
   async batchCreateSets(
@@ -1308,6 +1421,77 @@ function isPrAffectingSetUpdate(input: UpdateSetDto): boolean {
     input.isCompleted !== undefined ||
     input.completedAt !== undefined
   );
+}
+
+function assertUniqueSessionExerciseOrderIndexes(
+  items: Array<{ orderIndex: number }>,
+) {
+  const seenOrderIndexes = new Set<number>();
+  for (const item of items) {
+    if (seenOrderIndexes.has(item.orderIndex)) {
+      throw new BadRequestException({
+        code: 'DUPLICATE_SESSION_EXERCISE_ORDER_INDEX',
+        message: 'Duplicate orderIndex in session exercises payload',
+      });
+    }
+
+    seenOrderIndexes.add(item.orderIndex);
+  }
+}
+
+type SetReturnMergeData = {
+  orderIndex?: number | null;
+  type?: UpdateSetDto['type'];
+  payload?: unknown;
+  idempotencyKey?: string | null;
+  weight?: number | null;
+  reps?: number | null;
+  durationSeconds?: number | null;
+  rpe?: number | null;
+  isCompleted?: boolean;
+  completedAt?: Date | null;
+};
+
+type SetWriteData = {
+  orderIndex?: number;
+  type?: UpdateSetDto['type'];
+  payload?: Prisma.InputJsonValue;
+  idempotencyKey?: string;
+  weight?: number | null;
+  reps?: number | null;
+  durationSeconds?: number | null;
+  rpe?: number | null;
+  isCompleted?: boolean;
+  completedAt?: Date | null;
+};
+
+function mergeSetWithUpdateData<T extends Record<string, unknown>>(
+  existing: T,
+  updateData: SetReturnMergeData,
+): T {
+  return {
+    ...existing,
+    orderIndex: pickUpdatedValue(existing.orderIndex, updateData.orderIndex),
+    type: pickUpdatedValue(existing.type, updateData.type),
+    payload: pickUpdatedValue(existing.payload, updateData.payload),
+    idempotencyKey: pickUpdatedValue(
+      existing.idempotencyKey,
+      updateData.idempotencyKey,
+    ),
+    weight: pickUpdatedValue(existing.weight, updateData.weight),
+    reps: pickUpdatedValue(existing.reps, updateData.reps),
+    durationSeconds: pickUpdatedValue(
+      existing.durationSeconds,
+      updateData.durationSeconds,
+    ),
+    rpe: pickUpdatedValue(existing.rpe, updateData.rpe),
+    isCompleted: pickUpdatedValue(existing.isCompleted, updateData.isCompleted),
+    completedAt: pickUpdatedValue(existing.completedAt, updateData.completedAt),
+  } as T;
+}
+
+function pickUpdatedValue<T>(existingValue: T, updatedValue: T | undefined): T {
+  return updatedValue === undefined ? existingValue : updatedValue;
 }
 
 function isSetIdempotencyUniqueConstraintError(error: unknown): boolean {

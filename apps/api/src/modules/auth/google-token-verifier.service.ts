@@ -158,21 +158,33 @@ export class GoogleTokenVerifierService {
   }
 
   private async resolveSigningKey(kid: string): Promise<GoogleJwk> {
+    const hasValidCachedKeys =
+      this.jwksCache && this.jwksCache.expiresAtMs > Date.now();
     const keys = await this.getGoogleSigningKeys();
-    const key = keys.find((entry) => entry.kid === kid);
-    if (!key) {
-      throw new UnauthorizedException({
-        code: 'INVALID_GOOGLE_TOKEN',
-        message: 'Google ID token claims are invalid',
-      });
+    const key = findSigningKey(keys, kid);
+    if (key && key !== 'invalid') {
+      return key;
     }
 
-    return key;
+    if (key === null && hasValidCachedKeys) {
+      const refreshedKeys = await this.getGoogleSigningKeys(true);
+      const refreshedKey = findSigningKey(refreshedKeys, kid);
+      if (refreshedKey && refreshedKey !== 'invalid') {
+        return refreshedKey;
+      }
+    }
+
+    throw new UnauthorizedException({
+      code: 'INVALID_GOOGLE_TOKEN',
+      message: 'Google ID token claims are invalid',
+    });
   }
 
-  private async getGoogleSigningKeys(): Promise<GoogleJwk[]> {
+  private async getGoogleSigningKeys(
+    forceRefresh = false,
+  ): Promise<GoogleJwk[]> {
     const now = Date.now();
-    if (this.jwksCache && this.jwksCache.expiresAtMs > now) {
+    if (!forceRefresh && this.jwksCache && this.jwksCache.expiresAtMs > now) {
       return this.jwksCache.keys;
     }
 
@@ -239,6 +251,25 @@ function normalizeEmailVerified(value: boolean | string): boolean {
   }
 
   return value.toLowerCase() === 'true';
+}
+
+function findSigningKey(
+  keys: GoogleJwk[],
+  kid: string,
+): GoogleJwk | 'invalid' | null {
+  const key = keys.find((entry) => entry.kid === kid);
+  if (!key) {
+    return null;
+  }
+
+  if (
+    (key.use !== undefined && key.use !== 'sig') ||
+    (key.alg !== undefined && key.alg !== 'RS256')
+  ) {
+    return 'invalid';
+  }
+
+  return key;
 }
 
 function hasAudience(audience: string | string[], clientId: string): boolean {

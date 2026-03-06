@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -85,6 +86,8 @@ export class WorkoutTemplatesService {
   }
 
   async create(userId: string, input: CreateWorkoutTemplateDto) {
+    const name = normalizeTemplateNameOrThrow(input.name);
+    assertUniqueTemplateExerciseOrderIndexes(input.exercises);
     await this.assertExerciseTemplatesAccessible(
       userId,
       input.exercises.map((exercise) => exercise.exerciseTemplateId),
@@ -99,7 +102,7 @@ export class WorkoutTemplatesService {
     return this.prisma.workoutTemplate.create({
       data: {
         userId,
-        name: input.name,
+        name,
         description: input.description,
         orderIndex,
         exercises: {
@@ -125,7 +128,12 @@ export class WorkoutTemplatesService {
     input: UpdateWorkoutTemplateDto,
   ) {
     await this.assertOwnership(userId, templateId);
+    const normalizedName =
+      input.name === undefined
+        ? undefined
+        : normalizeTemplateNameOrThrow(input.name);
     if (input.exercises) {
+      assertUniqueTemplateExerciseOrderIndexes(input.exercises);
       await this.assertExerciseTemplatesAccessible(
         userId,
         input.exercises.map((exercise) => exercise.exerciseTemplateId),
@@ -133,6 +141,27 @@ export class WorkoutTemplatesService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.workoutTemplate.updateMany({
+        where: {
+          id: templateId,
+          userId,
+          deletedAt: null,
+        },
+        data: {
+          name: normalizedName,
+          description: input.description,
+          orderIndex: input.orderIndex,
+          updatedAt: new Date(),
+        },
+      });
+
+      if (!updated.count) {
+        throw new ForbiddenException({
+          code: 'TEMPLATE_FORBIDDEN',
+          message: 'Template not found or not accessible',
+        });
+      }
+
       if (input.exercises) {
         await tx.workoutTemplateExercise.deleteMany({
           where: { workoutTemplateId: templateId },
@@ -150,24 +179,43 @@ export class WorkoutTemplatesService {
         });
       }
 
-      return tx.workoutTemplate.update({
-        where: { id: templateId },
-        data: {
-          name: input.name,
-          description: input.description,
-          orderIndex: input.orderIndex,
+      const template = await tx.workoutTemplate.findFirst({
+        where: {
+          id: templateId,
+          userId,
+          deletedAt: null,
         },
       });
+
+      if (!template) {
+        throw new ForbiddenException({
+          code: 'TEMPLATE_FORBIDDEN',
+          message: 'Template not found or not accessible',
+        });
+      }
+
+      return template;
     });
   }
 
   async softDelete(userId: string, templateId: string) {
     await this.assertOwnership(userId, templateId);
 
-    await this.prisma.workoutTemplate.update({
-      where: { id: templateId },
+    const updated = await this.prisma.workoutTemplate.updateMany({
+      where: {
+        id: templateId,
+        userId,
+        deletedAt: null,
+      },
       data: { deletedAt: new Date() },
     });
+
+    if (!updated.count) {
+      throw new ForbiddenException({
+        code: 'TEMPLATE_FORBIDDEN',
+        message: 'Template not found or not accessible',
+      });
+    }
 
     return { success: true };
   }
@@ -248,4 +296,32 @@ export class WorkoutTemplatesService {
       });
     }
   }
+}
+
+function assertUniqueTemplateExerciseOrderIndexes(
+  exercises: Array<{ orderIndex: number }>,
+) {
+  const seenOrderIndexes = new Set<number>();
+  for (const exercise of exercises) {
+    if (seenOrderIndexes.has(exercise.orderIndex)) {
+      throw new BadRequestException({
+        code: 'DUPLICATE_TEMPLATE_EXERCISE_ORDER_INDEX',
+        message: 'Duplicate orderIndex in template exercises payload',
+      });
+    }
+
+    seenOrderIndexes.add(exercise.orderIndex);
+  }
+}
+
+function normalizeTemplateNameOrThrow(name: string): string {
+  const normalized = name.trim();
+  if (normalized.length < 2) {
+    throw new BadRequestException({
+      code: 'TEMPLATE_NAME_INVALID',
+      message: 'Template name must be at least 2 characters',
+    });
+  }
+
+  return normalized;
 }

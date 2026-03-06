@@ -6,6 +6,7 @@ import { GoogleTokenVerifierService } from './google-token-verifier.service';
 
 const CLIENT_ID = 'test-google-client-id';
 const KID = 'google-key-1';
+const ALT_KID = 'google-key-2';
 
 type TokenClaims = {
   aud: string | string[];
@@ -24,6 +25,8 @@ describe('GoogleTokenVerifierService', () => {
   let alternatePrivateKeyPem: string;
   let keyN: string;
   let keyE: string;
+  let alternateKeyN: string;
+  let alternateKeyE: string;
   let service: GoogleTokenVerifierService;
 
   beforeAll(() => {
@@ -47,6 +50,17 @@ describe('GoogleTokenVerifierService', () => {
     alternatePrivateKeyPem = alternateKeyPair.privateKey
       .export({ type: 'pkcs1', format: 'pem' })
       .toString();
+    const alternatePublicJwk = alternateKeyPair.publicKey.export({
+      format: 'jwk',
+    }) as {
+      n?: string;
+      e?: string;
+    };
+    if (!alternatePublicJwk.n || !alternatePublicJwk.e) {
+      throw new Error('Failed to create alternate RSA JWK fixture');
+    }
+    alternateKeyN = alternatePublicJwk.n;
+    alternateKeyE = alternatePublicJwk.e;
   });
 
   beforeEach(() => {
@@ -285,6 +299,73 @@ describe('GoogleTokenVerifierService', () => {
     });
   });
 
+  it('refreshes JWKS when cached keys miss the requested kid before cache expiry', async () => {
+    fetchSpy
+      .mockResolvedValueOnce(
+        createJwksResponse(
+          { keys: [createSigningJwk()] },
+          { cacheControl: 'public, max-age=600' },
+        ),
+      )
+      .mockResolvedValueOnce(
+        createJwksResponse(
+          { keys: [createSigningJwk(ALT_KID, alternateKeyN, alternateKeyE)] },
+          { cacheControl: 'public, max-age=600' },
+        ),
+      );
+
+    await expect(
+      service.verifyIdToken(createToken({ sub: 'cached-kid-user' })),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        email: 'verified@irontrack.local',
+      }),
+    );
+
+    await expect(
+      service.verifyIdToken(
+        createToken(
+          { sub: 'rotated-kid-user' },
+          { kid: ALT_KID, key: alternatePrivateKeyPem },
+        ),
+      ),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        email: 'verified@irontrack.local',
+      }),
+    );
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects JWKS keys that are not marked for signature use', async () => {
+    fetchSpy.mockResolvedValue(
+      createJwksResponse({
+        keys: [{ ...createSigningJwk(), use: 'enc' }],
+      }),
+    );
+
+    await expect(service.verifyIdToken(createToken())).rejects.toMatchObject({
+      response: {
+        code: 'INVALID_GOOGLE_TOKEN',
+      },
+    });
+  });
+
+  it('rejects JWKS keys that advertise a non-RS256 algorithm', async () => {
+    fetchSpy.mockResolvedValue(
+      createJwksResponse({
+        keys: [{ ...createSigningJwk(), alg: 'HS256' }],
+      }),
+    );
+
+    await expect(service.verifyIdToken(createToken())).rejects.toMatchObject({
+      response: {
+        code: 'INVALID_GOOGLE_TOKEN',
+      },
+    });
+  });
+
   it('rejects malformed JWT payloads', async () => {
     fetchSpy.mockResolvedValue(
       createJwksResponse({ keys: [createSigningJwk()] }),
@@ -495,12 +576,12 @@ describe('GoogleTokenVerifierService', () => {
     return new GoogleTokenVerifierService(configService);
   }
 
-  function createSigningJwk() {
+  function createSigningJwk(kid = KID, n = keyN, e = keyE) {
     return {
-      kid: KID,
+      kid,
       kty: 'RSA' as const,
-      n: keyN,
-      e: keyE,
+      n,
+      e,
       alg: 'RS256',
       use: 'sig',
     };
