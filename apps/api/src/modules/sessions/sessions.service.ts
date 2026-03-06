@@ -54,6 +54,9 @@ export class SessionsService {
       ? await this.prisma.workoutTemplateExercise.findMany({
           where: {
             workoutTemplateId: input.workoutTemplateId,
+            exercise: {
+              deletedAt: null,
+            },
           },
           orderBy: { orderIndex: 'asc' },
         })
@@ -92,7 +95,22 @@ export class SessionsService {
       },
     });
 
-    return session;
+    if (!Array.isArray(session.sessionExercises)) {
+      return session;
+    }
+
+    const interleavedExercises = this.supersetService.interleave(
+      session.sessionExercises.map((exercise) => ({
+        supersetGroupKey: exercise.supersetGroupKey,
+        orderIndex: exercise.orderIndex,
+        item: exercise,
+      })),
+    );
+
+    return {
+      ...session,
+      sessionExercises: interleavedExercises,
+    };
   }
 
   async getSession(userId: string, sessionId: string) {
@@ -255,9 +273,14 @@ export class SessionsService {
       }),
       this.prisma.workoutSession.count({ where }),
     ]);
+    const normalizedItems = items.map((item) => ({
+      ...item,
+      workoutTemplate:
+        item.workoutTemplate?.deletedAt != null ? null : item.workoutTemplate,
+    }));
 
     return {
-      items,
+      items: normalizedItems,
       pagination: {
         page: query.page,
         pageSize: query.pageSize,
@@ -593,6 +616,7 @@ export class SessionsService {
         sessionExerciseId,
         deletedAt: null,
         sessionExercise: {
+          deletedAt: null,
           session: {
             userId,
             deletedAt: null,
@@ -677,6 +701,7 @@ export class SessionsService {
         sessionExerciseId,
         deletedAt: null,
         sessionExercise: {
+          deletedAt: null,
           session: {
             userId,
             deletedAt: null,
@@ -727,6 +752,7 @@ export class SessionsService {
         sessionExerciseId,
         deletedAt: null,
         sessionExercise: {
+          deletedAt: null,
           session: {
             userId,
             deletedAt: null,

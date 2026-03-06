@@ -65,7 +65,27 @@ describe('WorkoutTemplatesService', () => {
 
     await expect(service.list('user-1')).resolves.toEqual([{ id: 't1' }]);
     expect(prismaMock.workoutTemplate.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { userId: 'user-1', deletedAt: null } }),
+      expect.objectContaining({
+        where: { userId: 'user-1', deletedAt: null },
+        include: {
+          exercises: {
+            where: {
+              exercise: {
+                deletedAt: null,
+              },
+            },
+            orderBy: { orderIndex: 'asc' },
+            include: {
+              exercise: {
+                include: {
+                  primaryMuscle: true,
+                  secondaryMuscles: { include: { muscleGroup: true } },
+                },
+              },
+            },
+          },
+        },
+      }),
     );
   });
 
@@ -98,6 +118,27 @@ describe('WorkoutTemplatesService', () => {
         muscleCoverage: ['Chest', 'Triceps', 'Shoulders'],
       }),
     );
+    expect(prismaMock.workoutTemplate.findFirst).toHaveBeenCalledWith({
+      where: { id: 'template-1', userId: 'user-1', deletedAt: null },
+      include: {
+        exercises: {
+          where: {
+            exercise: {
+              deletedAt: null,
+            },
+          },
+          orderBy: { orderIndex: 'asc' },
+          include: {
+            exercise: {
+              include: {
+                primaryMuscle: true,
+                secondaryMuscles: { include: { muscleGroup: true } },
+              },
+            },
+          },
+        },
+      },
+    });
   });
 
   it('throws when template is not found', async () => {

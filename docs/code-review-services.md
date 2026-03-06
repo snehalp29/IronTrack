@@ -21,9 +21,9 @@
 
 ## Current Status
 
-- Total findings tracked: **48**
+- Total findings tracked: **58**
 - Open findings: **0**
-- Fixed findings: **48**
+- Fixed findings: **58**
 - Historical implementation snippets were removed to keep this document compact.
 
 ---
@@ -51,6 +51,16 @@
 - `#46`: ✅ Fixed — `UsersService.updateMe()` now rejects deleted or missing users with `USER_NOT_FOUND`.
 - `#47`: ✅ Fixed — `UsersService.deleteMe()` now guards the root user write before fan-out deletes.
 - `#48`: ✅ Fixed — `StreakService.resolveTimezone()` now stops streak writes for soft-deleted users.
+- `#49`: ✅ Fixed — `SessionsService.startSession()` now clones only active template exercises.
+- `#50`: ✅ Fixed — `SessionsService.startSession()` now returns superset-interleaved exercises.
+- `#51`: ✅ Fixed — `SessionsService.listSessions()` now nulls soft-deleted workout templates.
+- `#52`: ✅ Fixed — `updateSet()` now requires `sessionExercise.deletedAt: null`.
+- `#53`: ✅ Fixed — `deleteSet()` now requires `sessionExercise.deletedAt: null`.
+- `#54`: ✅ Fixed — `toggleSetCompletion()` now requires `sessionExercise.deletedAt: null`.
+- `#55`: ✅ Fixed — `WorkoutTemplatesService.list()` now excludes deleted exercise rows.
+- `#56`: ✅ Fixed — `WorkoutTemplatesService.getById()` now excludes deleted exercise rows from both payload and `muscleCoverage`.
+- `#57`: ✅ Fixed — `AuthService.googleLogin()` now normalizes verified Google emails before matching or creating users.
+- `#58`: ✅ Fixed — `ChecklistService.upsert()` now preserves the original `completedAt` for already-completed items.
 
 ---
 
@@ -99,11 +109,26 @@
   - and only then fans out template/session/token updates.
 - Updated streak timezone resolution to return `null` for soft-deleted users so streak creation/update logic exits early.
 
+## Final Resolutions (49–58)
+
+- Filtered template-clone reads in `startSession()` to `exercise.deletedAt: null` so deleted exercises are not copied into new sessions.
+- Reworked `startSession()` responses to pass created `sessionExercises` through `SupersetService.interleave()` before returning.
+- Normalized session-list payloads so a deleted `workoutTemplate` relation is surfaced as `null` instead of leaking stale metadata.
+- Added `sessionExercise.deletedAt: null` guards to set mutation ownership lookups for:
+  - `updateSet()`
+  - `deleteSet()`
+  - `toggleSetCompletion()`
+- Added nested `exercise.deletedAt: null` relation filters to workout-template list and detail reads.
+- Kept `muscleCoverage` aligned with visible exercises by computing coverage only from non-deleted exercise rows.
+- Normalized verified Google identity emails to lowercase before lookup and creation, keeping Google auth aligned with local-auth email canonicalization.
+- Added a pre-upsert checklist read so re-saving a completed checklist item preserves its original `completedAt` timestamp instead of rewriting it.
+
 ---
 
 ## Validation Snapshot
 
 - `pnpm --filter @irontrack/api test -- src/modules/sessions/sessions.service.spec.ts src/modules/checklist/checklist.service.spec.ts` ✅
 - `pnpm --filter @irontrack/api test -- src/services/completion.service.spec.ts src/services/volume.service.spec.ts src/services/streak.service.spec.ts src/modules/progress/progress.service.spec.ts src/modules/exercises/exercises.service.spec.ts src/modules/sessions/sessions.service.spec.ts src/modules/workout-templates/workout-templates.service.spec.ts src/modules/users/users.service.spec.ts` ✅
+- `pnpm --filter @irontrack/api test -- src/modules/sessions/sessions.service.spec.ts src/modules/workout-templates/workout-templates.service.spec.ts src/modules/auth/auth.service.spec.ts src/modules/checklist/checklist.service.spec.ts` ✅
 - `pnpm --filter @irontrack/api typecheck` ✅
 - `pnpm --filter @irontrack/api test:cov` ✅ (`100/100/100/100`)

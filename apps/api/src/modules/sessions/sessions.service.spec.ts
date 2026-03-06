@@ -108,7 +108,7 @@ describe('SessionsService', () => {
     jest.clearAllMocks();
   });
 
-  it('starts a session from workout template exercises', async () => {
+  it('starts a session from active workout template exercises only', async () => {
     const { service, prismaMock } = createService();
     (prismaMock.workoutTemplate.findFirst as jest.Mock).mockResolvedValue({
       id: 'template-1',
@@ -134,6 +134,15 @@ describe('SessionsService', () => {
       }),
     ).resolves.toEqual({ id: 'session-1' });
 
+    expect(prismaMock.workoutTemplateExercise.findMany).toHaveBeenCalledWith({
+      where: {
+        workoutTemplateId: 'template-1',
+        exercise: {
+          deletedAt: null,
+        },
+      },
+      orderBy: { orderIndex: 'asc' },
+    });
     expect(prismaMock.workoutSession.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -150,6 +159,41 @@ describe('SessionsService', () => {
         }),
       }),
     );
+  });
+
+  it('returns a started session with superset ordering applied', async () => {
+    const { service, prismaMock, supersetMock } = createService();
+    (prismaMock.workoutSession.create as jest.Mock).mockResolvedValue({
+      id: 'session-1',
+      sessionExercises: [
+        { id: 'se-1', orderIndex: 0, supersetGroupKey: null },
+        { id: 'se-2', orderIndex: 1, supersetGroupKey: 'A' },
+      ],
+    });
+    (supersetMock.interleave as jest.Mock).mockReturnValue([
+      { id: 'se-2' },
+      { id: 'se-1' },
+    ]);
+
+    await expect(
+      service.startSession('user-1', {
+        notes: 'inline',
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            orderIndex: 0,
+          },
+          {
+            exerciseTemplateId: '22222222-2222-4222-8222-222222222222',
+            orderIndex: 1,
+            supersetGroupKey: 'A',
+          },
+        ],
+      }),
+    ).resolves.toEqual({
+      id: 'session-1',
+      sessionExercises: [{ id: 'se-2' }, { id: 'se-1' }],
+    });
   });
 
   it('uses template exercise index when orderIndex is missing', async () => {
@@ -544,6 +588,39 @@ describe('SessionsService', () => {
         }),
       }),
     );
+  });
+
+  it('nulls soft-deleted workout templates in session listings', async () => {
+    const { service, prismaMock } = createService();
+    const deletedAt = new Date('2026-03-05T00:00:00.000Z');
+    (prismaMock.workoutSession.findMany as jest.Mock).mockResolvedValue([
+      {
+        id: 's1',
+        workoutTemplate: {
+          id: 'template-1',
+          deletedAt,
+        },
+      },
+    ]);
+    (prismaMock.workoutSession.count as jest.Mock).mockResolvedValue(1);
+
+    await expect(
+      service.listSessions('user-1', {
+        page: 1,
+        pageSize: 10,
+        templateId: undefined,
+        startDate: undefined,
+        endDate: undefined,
+      }),
+    ).resolves.toEqual({
+      items: [
+        {
+          id: 's1',
+          workoutTemplate: null,
+        },
+      ],
+      pagination: { page: 1, pageSize: 10, total: 1 },
+    });
   });
 
   it('lists sessions without startedAt filter when no date bounds are provided', async () => {
@@ -1504,6 +1581,7 @@ describe('SessionsService', () => {
       expect.objectContaining({
         where: expect.objectContaining({
           sessionExercise: {
+            deletedAt: null,
             session: {
               userId: 'user-1',
               deletedAt: null,
@@ -1662,6 +1740,7 @@ describe('SessionsService', () => {
       expect.objectContaining({
         where: expect.objectContaining({
           sessionExercise: {
+            deletedAt: null,
             session: {
               userId: 'user-1',
               deletedAt: null,
@@ -1728,6 +1807,7 @@ describe('SessionsService', () => {
       expect.objectContaining({
         where: expect.objectContaining({
           sessionExercise: {
+            deletedAt: null,
             session: {
               userId: 'user-1',
               deletedAt: null,

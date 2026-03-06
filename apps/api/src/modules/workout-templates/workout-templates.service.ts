@@ -21,6 +21,11 @@ export class WorkoutTemplatesService {
       orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
       include: {
         exercises: {
+          where: {
+            exercise: {
+              deletedAt: null,
+            },
+          },
           orderBy: { orderIndex: 'asc' },
           include: {
             exercise: {
@@ -40,6 +45,11 @@ export class WorkoutTemplatesService {
       where: { id, userId, deletedAt: null },
       include: {
         exercises: {
+          where: {
+            exercise: {
+              deletedAt: null,
+            },
+          },
           orderBy: { orderIndex: 'asc' },
           include: {
             exercise: {

@@ -164,9 +164,10 @@ export class AuthService {
     const identity = await this.googleTokenVerifierService.verifyIdToken(
       input.idToken,
     );
+    const normalizedEmail = identity.email.trim().toLowerCase();
 
     const existingUser = await this.prisma.user.findFirst({
-      where: { email: identity.email },
+      where: { email: normalizedEmail },
     });
     if (existingUser?.deletedAt) {
       this.throwUserDisabled();
@@ -185,7 +186,10 @@ export class AuthService {
             avatarUrl: identity.avatarUrl,
           },
         })
-      : await this.createOrRecoverGoogleUser(identity);
+      : await this.createOrRecoverGoogleUser({
+          ...identity,
+          email: normalizedEmail,
+        });
 
     if (user.deletedAt !== null) {
       this.throwUserDisabled();

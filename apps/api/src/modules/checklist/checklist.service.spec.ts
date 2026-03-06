@@ -13,6 +13,7 @@ describe('ChecklistService', () => {
     const prismaMock = {
       checklistItem: {
         findMany: jest.fn(async () => []),
+        findUnique: jest.fn(async () => null),
         upsert: jest.fn(async () => ({ id: 'item-1' })),
       },
     } as unknown as PrismaService;
@@ -67,6 +68,7 @@ describe('ChecklistService', () => {
 
   it('upserts completed checklist item and records streak check', async () => {
     const { service, prismaMock, streakServiceMock } = createService();
+    (prismaMock.checklistItem.findUnique as jest.Mock).mockResolvedValue(null);
     (prismaMock.checklistItem.upsert as jest.Mock).mockResolvedValue({
       id: 'item-1',
       userId: 'user-1',
@@ -131,6 +133,7 @@ describe('ChecklistService', () => {
 
   it('upserts incomplete checklist item with null completedAt', async () => {
     const { service, prismaMock, streakServiceMock } = createService();
+    (prismaMock.checklistItem.findUnique as jest.Mock).mockResolvedValue(null);
 
     await service.upsert('user-1', {
       date: '2024-01-10',
@@ -155,6 +158,7 @@ describe('ChecklistService', () => {
 
   it('forwards undefined timezone when checklist upsert has no related user timezone', async () => {
     const { service, prismaMock, streakServiceMock } = createService();
+    (prismaMock.checklistItem.findUnique as jest.Mock).mockResolvedValue(null);
     (prismaMock.checklistItem.upsert as jest.Mock).mockResolvedValue({
       id: 'item-1',
       userId: 'user-1',
@@ -175,6 +179,55 @@ describe('ChecklistService', () => {
       'user-1',
       '2024-01-10',
       undefined,
+    );
+  });
+
+  it('preserves completedAt when an already completed checklist item is re-saved', async () => {
+    const { service, prismaMock } = createService();
+    const existingCompletedAt = new Date('2024-01-10T10:00:00.000Z');
+    (prismaMock.checklistItem.findUnique as jest.Mock).mockResolvedValue({
+      id: 'item-1',
+      isCompleted: true,
+      completedAt: existingCompletedAt,
+    });
+    (prismaMock.checklistItem.upsert as jest.Mock).mockResolvedValue({
+      id: 'item-1',
+      userId: 'user-1',
+      date: new Date('2024-01-10T00:00:00.000Z'),
+      type: 'WORKOUT',
+      isCompleted: true,
+      completedAt: existingCompletedAt,
+      user: {
+        timezone: 'UTC',
+      },
+    });
+
+    await service.upsert('user-1', {
+      date: '2024-01-10',
+      type: 'WORKOUT',
+      isCompleted: true,
+    });
+
+    expect(prismaMock.checklistItem.findUnique).toHaveBeenCalledWith({
+      where: {
+        userId_date_type: {
+          userId: 'user-1',
+          date: new Date('2024-01-10T00:00:00.000Z'),
+          type: 'WORKOUT',
+        },
+      },
+      select: {
+        isCompleted: true,
+        completedAt: true,
+      },
+    });
+    expect(prismaMock.checklistItem.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: {
+          isCompleted: true,
+          completedAt: existingCompletedAt,
+        },
+      }),
     );
   });
 });

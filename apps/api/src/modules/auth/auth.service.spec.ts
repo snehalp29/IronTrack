@@ -425,6 +425,34 @@ describe('AuthService', () => {
     expect(prismaMock.user.update).not.toHaveBeenCalled();
   });
 
+  it('normalizes verified google email before matching existing accounts', async () => {
+    users.push({
+      id: randomUUID(),
+      email: 'verified@irontrack.local',
+      passwordHash: await hash('Str0ngPassword!', 12),
+      authProvider: 'LOCAL',
+      deletedAt: null,
+    });
+    googleTokenVerifierMock.verifyIdToken.mockResolvedValueOnce({
+      email: 'Verified@IronTrack.Local',
+      googleId: 'google-user-id-123',
+      name: 'Verified User',
+      avatarUrl: 'https://example.com/avatar.png',
+    });
+
+    await expect(
+      authService.googleLogin({
+        idToken: 'valid-google-id-token-1234567890',
+      }),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'EMAIL_REGISTERED_WITH_PASSWORD',
+      },
+    });
+    expect(prismaMock.user.create).not.toHaveBeenCalled();
+    expect(prismaMock.user.update).not.toHaveBeenCalled();
+  });
+
   it('rejects google login for accounts registered with password auth', async () => {
     users.push({
       id: randomUUID(),
