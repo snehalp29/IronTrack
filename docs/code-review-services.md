@@ -16,14 +16,17 @@
 - `apps/api/src/modules/progress/progress.service.ts` + `.spec.ts`
 - `apps/api/src/modules/users/users.service.ts` + `.spec.ts`
 - `apps/api/src/modules/workout-templates/workout-templates.service.ts` + `.spec.ts`
+- `apps/api/src/modules/auth/auth.service.ts` + `.spec.ts`
+- `apps/api/src/modules/catalog/catalog.service.ts` + `.spec.ts`
+- `apps/api/src/modules/ml-client/ml-client.service.ts` + `.spec.ts`
 
 ---
 
 ## Current Status
 
-- Total findings tracked: **58**
+- Total findings tracked: **68**
 - Open findings: **0**
-- Fixed findings: **58**
+- Fixed findings: **68**
 - Historical implementation snippets were removed to keep this document compact.
 
 ---
@@ -61,6 +64,16 @@
 - `#56`: ✅ Fixed — `WorkoutTemplatesService.getById()` now excludes deleted exercise rows from both payload and `muscleCoverage`.
 - `#57`: ✅ Fixed — `AuthService.googleLogin()` now normalizes verified Google emails before matching or creating users.
 - `#58`: ✅ Fixed — `ChecklistService.upsert()` now preserves the original `completedAt` for already-completed items.
+- `#59`: ✅ Fixed (`P1`) — `AuthService.register()` now trims emails before lookup and persistence.
+- `#60`: ✅ Fixed (`P2`) — `AuthService.login()` now trims emails before lookup.
+- `#61`: ✅ Fixed (`P2`) — `ExercisesService.create()` now deduplicates `secondaryMuscleGroupIds`.
+- `#62`: ✅ Fixed (`P2`) — `ExercisesService.create()` now deduplicates `equipmentIds`.
+- `#63`: ✅ Fixed (`P2`) — `ExercisesService.update()` now deduplicates `secondaryMuscleGroupIds`.
+- `#64`: ✅ Fixed (`P2`) — `ExercisesService.update()` now deduplicates `equipmentIds`.
+- `#65`: ✅ Fixed (`P3`) — `ExercisesService.history()` now pushes null `completedAt` rows behind completed history.
+- `#66`: ✅ Fixed (`P3`) — `CatalogService.muscleGroups()` now sorts null `sortOrder` rows last.
+- `#67`: ✅ Fixed (`P3`) — `CatalogService.equipment()` now sorts null `sortOrder` rows last.
+- `#68`: ✅ Fixed (`P4`) — `MlClientService.resolveBasePath()` now strips repeated trailing slashes.
 
 ---
 
@@ -123,6 +136,20 @@
 - Normalized verified Google identity emails to lowercase before lookup and creation, keeping Google auth aligned with local-auth email canonicalization.
 - Added a pre-upsert checklist read so re-saving a completed checklist item preserves its original `completedAt` timestamp instead of rewriting it.
 
+## Final Resolutions (59–68)
+
+- Added trimmed-lowercase email canonicalization to `AuthService.register()` before both availability checks and `user.create()`.
+- Added the same trimmed-lowercase canonicalization to `AuthService.login()` before user lookup.
+- Deduplicated exercise create payload relation arrays for:
+  - `secondaryMuscleGroupIds`
+  - `equipmentIds`
+- Deduplicated exercise update payload relation arrays before `createMany()` for:
+  - `secondaryMuscleGroupIds`
+  - `equipmentIds`
+- Updated exercise-history ordering to sort by `completedAt desc nulls last`, then `createdAt desc`, so incomplete/null-timestamp rows no longer shadow real history.
+- Updated catalog list ordering for both muscle groups and equipment to use `sortOrder asc nulls last`, then `name asc`.
+- Reworked ML client base-path normalization to strip all trailing slashes instead of only one.
+
 ---
 
 ## Validation Snapshot
@@ -130,5 +157,6 @@
 - `pnpm --filter @irontrack/api test -- src/modules/sessions/sessions.service.spec.ts src/modules/checklist/checklist.service.spec.ts` ✅
 - `pnpm --filter @irontrack/api test -- src/services/completion.service.spec.ts src/services/volume.service.spec.ts src/services/streak.service.spec.ts src/modules/progress/progress.service.spec.ts src/modules/exercises/exercises.service.spec.ts src/modules/sessions/sessions.service.spec.ts src/modules/workout-templates/workout-templates.service.spec.ts src/modules/users/users.service.spec.ts` ✅
 - `pnpm --filter @irontrack/api test -- src/modules/sessions/sessions.service.spec.ts src/modules/workout-templates/workout-templates.service.spec.ts src/modules/auth/auth.service.spec.ts src/modules/checklist/checklist.service.spec.ts` ✅
+- `pnpm --filter @irontrack/api test -- src/modules/auth/auth.service.spec.ts src/modules/exercises/exercises.service.spec.ts src/modules/catalog/catalog.service.spec.ts src/modules/ml-client/ml-client.service.spec.ts` ✅
 - `pnpm --filter @irontrack/api typecheck` ✅
 - `pnpm --filter @irontrack/api test:cov` ✅ (`100/100/100/100`)

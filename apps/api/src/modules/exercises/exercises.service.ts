@@ -108,6 +108,10 @@ export class ExercisesService {
 
   async create(userId: string, input: CreateExerciseDto) {
     await this.ensureUniqueNameForOwner(userId, input.name);
+    const secondaryMuscleGroupIds = uniqueStrings(
+      input.secondaryMuscleGroupIds,
+    );
+    const equipmentIds = uniqueStrings(input.equipmentIds);
 
     return this.prisma.exerciseTemplate.create({
       data: {
@@ -122,12 +126,12 @@ export class ExercisesService {
         repMax: input.repMax,
         defaultCues: input.defaultCues,
         secondaryMuscles: {
-          create: input.secondaryMuscleGroupIds.map((muscleGroupId) => ({
+          create: secondaryMuscleGroupIds.map((muscleGroupId) => ({
             muscleGroupId,
           })),
         },
         equipment: {
-          create: input.equipmentIds.map((equipmentId) => ({ equipmentId })),
+          create: equipmentIds.map((equipmentId) => ({ equipmentId })),
         },
       },
       include: {
@@ -162,13 +166,16 @@ export class ExercisesService {
 
     return this.prisma.$transaction(async (tx) => {
       if (input.secondaryMuscleGroupIds) {
+        const secondaryMuscleGroupIds = uniqueStrings(
+          input.secondaryMuscleGroupIds,
+        );
         await tx.exerciseTemplateSecondaryMuscle.deleteMany({
           where: { exerciseTemplateId: exerciseId },
         });
 
-        if (input.secondaryMuscleGroupIds.length) {
+        if (secondaryMuscleGroupIds.length) {
           await tx.exerciseTemplateSecondaryMuscle.createMany({
-            data: input.secondaryMuscleGroupIds.map((muscleGroupId) => ({
+            data: secondaryMuscleGroupIds.map((muscleGroupId) => ({
               exerciseTemplateId: exerciseId,
               muscleGroupId,
             })),
@@ -177,13 +184,14 @@ export class ExercisesService {
       }
 
       if (input.equipmentIds) {
+        const equipmentIds = uniqueStrings(input.equipmentIds);
         await tx.exerciseTemplateEquipment.deleteMany({
           where: { exerciseTemplateId: exerciseId },
         });
 
-        if (input.equipmentIds.length) {
+        if (equipmentIds.length) {
           await tx.exerciseTemplateEquipment.createMany({
-            data: input.equipmentIds.map((equipmentId) => ({
+            data: equipmentIds.map((equipmentId) => ({
               exerciseTemplateId: exerciseId,
               equipmentId,
             })),
@@ -252,7 +260,15 @@ export class ExercisesService {
             },
           },
         },
-        orderBy: [{ completedAt: 'desc' }, { createdAt: 'desc' }],
+        orderBy: [
+          {
+            completedAt: {
+              sort: 'desc',
+              nulls: 'last',
+            },
+          },
+          { createdAt: 'desc' },
+        ],
         skip,
         take: pageSize,
       }),
@@ -326,4 +342,8 @@ export class ExercisesService {
       });
     }
   }
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values));
 }

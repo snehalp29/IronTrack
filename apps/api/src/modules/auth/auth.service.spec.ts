@@ -837,6 +837,28 @@ describe('AuthService', () => {
     });
   });
 
+  it('trims registration email before availability check and create', async () => {
+    await authService.register({
+      email: '  Trimmed@example.com  ',
+      password: 'Str0ngPassword!',
+      name: 'Trimmed',
+    });
+
+    expect(prismaMock.user.findFirst).toHaveBeenCalledWith({
+      where: {
+        email: 'trimmed@example.com',
+        deletedAt: null,
+      },
+    });
+    expect(prismaMock.user.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          email: 'trimmed@example.com',
+        }),
+      }),
+    );
+  });
+
   it('rejects login when user is missing', async () => {
     await expect(
       authService.login({
@@ -844,6 +866,36 @@ describe('AuthService', () => {
         password: 'Str0ngPassword!',
       }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('trims login email before lookup', async () => {
+    const password = 'Str0ngPassword!';
+    users.push({
+      id: randomUUID(),
+      email: 'trimmed-login@example.com',
+      passwordHash: await hash(password, 12),
+      authProvider: 'LOCAL',
+      deletedAt: null,
+    });
+
+    await expect(
+      authService.login({
+        email: '  Trimmed-Login@example.com  ',
+        password,
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        accessToken: expect.any(String),
+        refreshToken: expect.any(String),
+      }),
+    );
+
+    expect(prismaMock.user.findFirst).toHaveBeenCalledWith({
+      where: {
+        email: 'trimmed-login@example.com',
+        deletedAt: null,
+      },
+    });
   });
 
   it('runs bcrypt compare even when login user is missing', async () => {

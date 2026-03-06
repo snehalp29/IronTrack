@@ -57,7 +57,7 @@ export class MlClientService {
     const trimmed = configuredBasePath?.trim();
     const basePath =
       trimmed && trimmed.length > 0 ? trimmed : 'http://localhost:5000';
-    return basePath.endsWith('/') ? basePath.slice(0, -1) : basePath;
+    return basePath.replace(/\/+$/, '');
   }
 
   private buildUrl(path: `/${string}`): string {

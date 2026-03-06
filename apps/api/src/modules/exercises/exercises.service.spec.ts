@@ -183,6 +183,76 @@ describe('ExercisesService', () => {
     );
   });
 
+  it('deduplicates secondary muscle ids when creating an exercise', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.exerciseTemplate.findFirst as jest.Mock).mockResolvedValueOnce(
+      null,
+    );
+    (prismaMock.exerciseTemplate.create as jest.Mock).mockResolvedValue({
+      id: 'exercise-1',
+    });
+
+    await service.create('user-1', {
+      name: 'Dedup Secondary',
+      exerciseType: 'WEIGHT_REPS',
+      primaryMuscleGroupId: '11111111-1111-4111-8111-111111111111',
+      secondaryMuscleGroupIds: [
+        '22222222-2222-4222-8222-222222222222',
+        '22222222-2222-4222-8222-222222222222',
+      ],
+      equipmentIds: [],
+    });
+
+    expect(prismaMock.exerciseTemplate.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          secondaryMuscles: {
+            create: [
+              {
+                muscleGroupId: '22222222-2222-4222-8222-222222222222',
+              },
+            ],
+          },
+        }),
+      }),
+    );
+  });
+
+  it('deduplicates equipment ids when creating an exercise', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.exerciseTemplate.findFirst as jest.Mock).mockResolvedValueOnce(
+      null,
+    );
+    (prismaMock.exerciseTemplate.create as jest.Mock).mockResolvedValue({
+      id: 'exercise-1',
+    });
+
+    await service.create('user-1', {
+      name: 'Dedup Equipment',
+      exerciseType: 'WEIGHT_REPS',
+      primaryMuscleGroupId: '11111111-1111-4111-8111-111111111111',
+      secondaryMuscleGroupIds: [],
+      equipmentIds: [
+        '33333333-3333-4333-8333-333333333333',
+        '33333333-3333-4333-8333-333333333333',
+      ],
+    });
+
+    expect(prismaMock.exerciseTemplate.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          equipment: {
+            create: [
+              {
+                equipmentId: '33333333-3333-4333-8333-333333333333',
+              },
+            ],
+          },
+        }),
+      }),
+    );
+  });
+
   it('rejects create when duplicate custom name exists', async () => {
     const { service, prismaMock } = createService();
     (prismaMock.exerciseTemplate.findFirst as jest.Mock).mockResolvedValueOnce({
@@ -231,6 +301,54 @@ describe('ExercisesService', () => {
     expect(tx.exerciseTemplateEquipment.deleteMany).toHaveBeenCalledWith({
       where: { exerciseTemplateId: 'exercise-1' },
     });
+    expect(tx.exerciseTemplateEquipment.createMany).toHaveBeenCalledWith({
+      data: [
+        {
+          exerciseTemplateId: 'exercise-1',
+          equipmentId: '33333333-3333-4333-8333-333333333333',
+        },
+      ],
+    });
+  });
+
+  it('deduplicates secondary muscle ids when updating an exercise', async () => {
+    const { service, prismaMock, tx } = createService();
+    (prismaMock.exerciseTemplate.findFirst as jest.Mock).mockResolvedValueOnce({
+      id: 'exercise-1',
+      name: 'Current',
+    });
+
+    await service.update('user-1', 'exercise-1', {
+      secondaryMuscleGroupIds: [
+        '22222222-2222-4222-8222-222222222222',
+        '22222222-2222-4222-8222-222222222222',
+      ],
+    });
+
+    expect(tx.exerciseTemplateSecondaryMuscle.createMany).toHaveBeenCalledWith({
+      data: [
+        {
+          exerciseTemplateId: 'exercise-1',
+          muscleGroupId: '22222222-2222-4222-8222-222222222222',
+        },
+      ],
+    });
+  });
+
+  it('deduplicates equipment ids when updating an exercise', async () => {
+    const { service, prismaMock, tx } = createService();
+    (prismaMock.exerciseTemplate.findFirst as jest.Mock).mockResolvedValueOnce({
+      id: 'exercise-1',
+      name: 'Current',
+    });
+
+    await service.update('user-1', 'exercise-1', {
+      equipmentIds: [
+        '33333333-3333-4333-8333-333333333333',
+        '33333333-3333-4333-8333-333333333333',
+      ],
+    });
+
     expect(tx.exerciseTemplateEquipment.createMany).toHaveBeenCalledWith({
       data: [
         {
@@ -373,6 +491,15 @@ describe('ExercisesService', () => {
             },
           },
         },
+        orderBy: [
+          {
+            completedAt: {
+              sort: 'desc',
+              nulls: 'last',
+            },
+          },
+          { createdAt: 'desc' },
+        ],
         skip: 3,
         take: 3,
       }),

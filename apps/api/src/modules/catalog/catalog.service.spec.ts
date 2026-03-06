@@ -13,25 +13,25 @@ describe('CatalogService', () => {
     jest.clearAllMocks();
   });
 
-  it('lists muscle groups sorted by sortOrder then name', async () => {
+  it('lists muscle groups with null sortOrder rows last', async () => {
     (prismaMock.muscleGroup.findMany as jest.Mock).mockResolvedValue([
       { id: 'm1' },
     ]);
 
     await expect(service.muscleGroups()).resolves.toEqual([{ id: 'm1' }]);
     expect(prismaMock.muscleGroup.findMany).toHaveBeenCalledWith({
-      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { name: 'asc' }],
     });
   });
 
-  it('lists equipment sorted by sortOrder then name', async () => {
+  it('lists equipment with null sortOrder rows last', async () => {
     (prismaMock.equipment.findMany as jest.Mock).mockResolvedValue([
       { id: 'e1' },
     ]);
 
     await expect(service.equipment()).resolves.toEqual([{ id: 'e1' }]);
     expect(prismaMock.equipment.findMany).toHaveBeenCalledWith({
-      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { name: 'asc' }],
     });
   });
 });

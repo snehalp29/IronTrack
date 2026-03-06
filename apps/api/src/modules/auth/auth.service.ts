@@ -37,7 +37,7 @@ export class AuthService {
   ) {}
 
   async register(input: RegisterDto): Promise<AuthTokens> {
-    const normalizedEmail = input.email.toLowerCase();
+    const normalizedEmail = normalizeEmail(input.email);
     const existingUser = await this.prisma.user.findFirst({
       where: {
         email: normalizedEmail,
@@ -75,9 +75,10 @@ export class AuthService {
   }
 
   async login(input: LoginDto): Promise<AuthTokens> {
+    const normalizedEmail = normalizeEmail(input.email);
     const user = await this.prisma.user.findFirst({
       where: {
-        email: input.email.toLowerCase(),
+        email: normalizedEmail,
         deletedAt: null,
       },
     });
@@ -370,4 +371,8 @@ function isEmailUniqueConstraintError(error: unknown): boolean {
   }
 
   return typeof target === 'string' && target.toLowerCase().includes('email');
+}
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
 }

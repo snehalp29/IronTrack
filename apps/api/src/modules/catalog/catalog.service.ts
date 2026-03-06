@@ -8,13 +8,29 @@ export class CatalogService {
 
   async muscleGroups() {
     return this.prisma.muscleGroup.findMany({
-      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      orderBy: [
+        {
+          sortOrder: {
+            sort: 'asc',
+            nulls: 'last',
+          },
+        },
+        { name: 'asc' },
+      ],
     });
   }
 
   async equipment() {
     return this.prisma.equipment.findMany({
-      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      orderBy: [
+        {
+          sortOrder: {
+            sort: 'asc',
+            nulls: 'last',
+          },
+        },
+        { name: 'asc' },
+      ],
     });
   }
 }
