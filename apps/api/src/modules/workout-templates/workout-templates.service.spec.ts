@@ -316,6 +316,7 @@ describe('WorkoutTemplatesService', () => {
 
   it('reorders templates in a transaction', async () => {
     const { service, prismaMock } = createService();
+    (prismaMock.workoutTemplate.count as jest.Mock).mockResolvedValue(1);
 
     await expect(
       service.reorder('user-1', {
@@ -332,14 +333,37 @@ describe('WorkoutTemplatesService', () => {
 
   it('throws when reorder payload contains inaccessible templates', async () => {
     const { service, prismaMock } = createService();
-    (prismaMock.workoutTemplate.updateMany as jest.Mock).mockResolvedValueOnce({
-      count: 0,
-    });
+    (prismaMock.workoutTemplate.count as jest.Mock).mockResolvedValue(0);
 
     await expect(
       service.reorder('user-1', {
         items: [{ id: 'template-1', orderIndex: 10 }],
       }),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('prevalidates reorder ownership before applying updates', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.workoutTemplate.count as jest.Mock).mockResolvedValue(1);
+
+    await expect(
+      service.reorder('user-1', {
+        items: [
+          { id: 'template-1', orderIndex: 10 },
+          { id: 'template-2', orderIndex: 11 },
+        ],
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+
+    expect(prismaMock.workoutTemplate.count).toHaveBeenCalledWith({
+      where: {
+        id: {
+          in: ['template-1', 'template-2'],
+        },
+        userId: 'user-1',
+        deletedAt: null,
+      },
+    });
+    expect(prismaMock.workoutTemplate.updateMany).not.toHaveBeenCalled();
   });
 });

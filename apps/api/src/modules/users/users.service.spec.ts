@@ -4,34 +4,62 @@ import type { PrismaService } from '../../prisma/prisma.service';
 import { UsersService } from './users.service';
 
 describe('UsersService', () => {
-  const prismaMock = {
-    user: {
-      findUnique: jest.fn(),
-      update: jest.fn(),
-    },
-    exerciseTemplate: {
-      updateMany: jest.fn(),
-    },
-    workoutTemplate: {
-      updateMany: jest.fn(),
-    },
-    workoutSession: {
-      updateMany: jest.fn(),
-    },
-    refreshToken: {
-      updateMany: jest.fn(),
-    },
-    $transaction: jest.fn(),
-  } as unknown as PrismaService;
+  const createService = () => {
+    const tx = {
+      user: {
+        updateMany: jest.fn(async () => ({ count: 1 })),
+      },
+      exerciseTemplate: {
+        updateMany: jest.fn(async () => ({ count: 0 })),
+      },
+      workoutTemplate: {
+        updateMany: jest.fn(async () => ({ count: 0 })),
+      },
+      workoutSession: {
+        updateMany: jest.fn(async () => ({ count: 0 })),
+      },
+      refreshToken: {
+        updateMany: jest.fn(async () => ({ count: 0 })),
+      },
+    };
 
-  const service = new UsersService(prismaMock);
+    const prismaMock = {
+      user: {
+        findFirst: jest.fn(),
+        update: jest.fn(),
+      },
+      exerciseTemplate: {
+        updateMany: jest.fn(),
+      },
+      workoutTemplate: {
+        updateMany: jest.fn(),
+      },
+      workoutSession: {
+        updateMany: jest.fn(),
+      },
+      refreshToken: {
+        updateMany: jest.fn(),
+      },
+      $transaction: jest.fn(async (arg: unknown) => {
+        if (typeof arg === 'function') {
+          return (arg as (client: typeof tx) => unknown)(tx);
+        }
+        return Promise.all(arg as Promise<unknown>[]);
+      }),
+    } as unknown as PrismaService;
 
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
+    return {
+      service: new UsersService(prismaMock),
+      prismaMock,
+      tx,
+    };
+  };
+
+  beforeEach(() => jest.clearAllMocks());
 
   it('returns selected profile for getMe', async () => {
-    (prismaMock.user.findUnique as jest.Mock).mockResolvedValue({
+    const { service, prismaMock } = createService();
+    (prismaMock.user.findFirst as jest.Mock).mockResolvedValue({
       id: 'u1',
       email: 'u1@example.com',
     });
@@ -40,10 +68,16 @@ describe('UsersService', () => {
       id: 'u1',
       email: 'u1@example.com',
     });
+    expect(prismaMock.user.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'u1', deletedAt: null },
+      }),
+    );
   });
 
   it('throws not found when user does not exist', async () => {
-    (prismaMock.user.findUnique as jest.Mock).mockResolvedValue(null);
+    const { service, prismaMock } = createService();
+    (prismaMock.user.findFirst as jest.Mock).mockResolvedValue(null);
 
     await expect(service.getMe('missing')).rejects.toBeInstanceOf(
       NotFoundException,
@@ -51,6 +85,10 @@ describe('UsersService', () => {
   });
 
   it('updates profile fields for updateMe', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.user.findFirst as jest.Mock).mockResolvedValueOnce({
+      id: 'u1',
+    });
     (prismaMock.user.update as jest.Mock).mockResolvedValue({
       id: 'u1',
       name: 'Name',
@@ -68,51 +106,56 @@ describe('UsersService', () => {
     );
   });
 
-  it('soft deletes user-related records in a transaction', async () => {
-    (prismaMock.user.update as jest.Mock).mockReturnValue('user-update');
-    (prismaMock.exerciseTemplate.updateMany as jest.Mock).mockReturnValue(
-      'exercise-update-many',
-    );
-    (prismaMock.workoutTemplate.updateMany as jest.Mock).mockReturnValue(
-      'workout-template-update-many',
-    );
-    (prismaMock.workoutSession.updateMany as jest.Mock).mockReturnValue(
-      'workout-session-update-many',
-    );
-    (prismaMock.refreshToken.updateMany as jest.Mock).mockReturnValue(
-      'refresh-token-update-many',
-    );
-    (prismaMock.$transaction as jest.Mock).mockResolvedValue([]);
+  it('throws not found when updating a deleted user', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.user.findFirst as jest.Mock).mockResolvedValue(null);
+
+    await expect(
+      service.updateMe('u1', { name: 'Name' }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(prismaMock.user.update).not.toHaveBeenCalled();
+  });
+
+  it('soft deletes active user-related records in a transaction', async () => {
+    const { service, prismaMock, tx } = createService();
 
     await expect(service.deleteMe('u1')).resolves.toEqual({ success: true });
 
     expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
-    expect((prismaMock.$transaction as jest.Mock).mock.calls[0][0]).toEqual([
-      'user-update',
-      'exercise-update-many',
-      'workout-template-update-many',
-      'workout-session-update-many',
-      'refresh-token-update-many',
-    ]);
-
-    const userDeleteDate = (prismaMock.user.update as jest.Mock).mock
-      .calls[0][0].data.deletedAt as Date;
+    const userDeleteDate = (tx.user.updateMany as jest.Mock).mock.calls[0][0]
+      .data.deletedAt as Date;
     expect(userDeleteDate).toBeInstanceOf(Date);
+    expect(tx.user.updateMany).toHaveBeenCalledWith({
+      where: { id: 'u1', deletedAt: null },
+      data: { deletedAt: userDeleteDate },
+    });
     expect(
-      (prismaMock.exerciseTemplate.updateMany as jest.Mock).mock.calls[0][0]
-        .data.deletedAt,
-    ).toBe(userDeleteDate);
-    expect(
-      (prismaMock.workoutTemplate.updateMany as jest.Mock).mock.calls[0][0].data
+      (tx.exerciseTemplate.updateMany as jest.Mock).mock.calls[0][0].data
         .deletedAt,
     ).toBe(userDeleteDate);
     expect(
-      (prismaMock.workoutSession.updateMany as jest.Mock).mock.calls[0][0].data
+      (tx.workoutTemplate.updateMany as jest.Mock).mock.calls[0][0].data
         .deletedAt,
     ).toBe(userDeleteDate);
     expect(
-      (prismaMock.refreshToken.updateMany as jest.Mock).mock.calls[0][0].data
-        .revokedAt,
+      (tx.workoutSession.updateMany as jest.Mock).mock.calls[0][0].data
+        .deletedAt,
     ).toBe(userDeleteDate);
+    expect(
+      (tx.refreshToken.updateMany as jest.Mock).mock.calls[0][0].data.revokedAt,
+    ).toBe(userDeleteDate);
+  });
+
+  it('throws not found when deleting an already deleted user', async () => {
+    const { service, tx } = createService();
+    (tx.user.updateMany as jest.Mock).mockResolvedValue({ count: 0 });
+
+    await expect(service.deleteMe('u1')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    expect(tx.exerciseTemplate.updateMany).not.toHaveBeenCalled();
+    expect(tx.workoutTemplate.updateMany).not.toHaveBeenCalled();
+    expect(tx.workoutSession.updateMany).not.toHaveBeenCalled();
+    expect(tx.refreshToken.updateMany).not.toHaveBeenCalled();
   });
 });

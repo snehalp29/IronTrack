@@ -643,15 +643,36 @@ describe('SessionsService', () => {
     );
   });
 
-  it('returns active session', async () => {
-    const { service, prismaMock } = createService();
+  it('returns active session with superset ordering applied', async () => {
+    const { service, prismaMock, supersetMock } = createService();
     (prismaMock.workoutSession.findFirst as jest.Mock).mockResolvedValue({
       id: 'active-1',
+      sessionExercises: [
+        { id: 'se-1', orderIndex: 0, supersetGroupKey: null },
+        { id: 'se-2', orderIndex: 1, supersetGroupKey: 'A' },
+      ],
     });
+    (supersetMock.interleave as jest.Mock).mockReturnValue([
+      { id: 'se-2' },
+      { id: 'se-1' },
+    ]);
 
     await expect(service.getActiveSession('user-1')).resolves.toEqual({
       id: 'active-1',
+      sessionExercises: [{ id: 'se-2' }, { id: 'se-1' }],
     });
+    expect(supersetMock.interleave).toHaveBeenCalledWith([
+      {
+        supersetGroupKey: null,
+        orderIndex: 0,
+        item: { id: 'se-1', orderIndex: 0, supersetGroupKey: null },
+      },
+      {
+        supersetGroupKey: 'A',
+        orderIndex: 1,
+        item: { id: 'se-2', orderIndex: 1, supersetGroupKey: 'A' },
+      },
+    ]);
   });
 
   it('soft deletes session and returns success', async () => {

@@ -17,7 +17,7 @@ describe('ProgressService', () => {
     jest.useRealTimers();
   });
 
-  it('aggregates weekly per-muscle volume and coverage', async () => {
+  it('aggregates weekly per-muscle volume and coverage from active session rows only', async () => {
     (prismaMock.set.findMany as jest.Mock).mockResolvedValue([
       {
         weight: 100,
@@ -53,8 +53,10 @@ describe('ProgressService', () => {
       expect.objectContaining({
         where: expect.objectContaining({
           sessionExercise: {
+            deletedAt: null,
             session: {
               userId: 'user-1',
+              deletedAt: null,
               startedAt: {
                 gte: new Date('2024-01-01T00:00:00.000Z'),
                 lt: new Date('2024-01-08T00:00:00.000Z'),
@@ -163,8 +165,10 @@ describe('ProgressService', () => {
       expect.objectContaining({
         where: expect.objectContaining({
           sessionExercise: {
+            deletedAt: null,
             session: {
               userId: 'user-1',
+              deletedAt: null,
               startedAt: {
                 gte: new Date('2024-03-04T00:00:00.000Z'),
                 lt: new Date('2024-03-11T00:00:00.000Z'),
@@ -189,8 +193,10 @@ describe('ProgressService', () => {
       expect.objectContaining({
         where: expect.objectContaining({
           sessionExercise: {
+            deletedAt: null,
             session: {
               userId: 'user-1',
+              deletedAt: null,
               startedAt: {
                 gte: new Date('2024-03-11T00:00:00.000Z'),
                 lt: new Date('2024-03-18T00:00:00.000Z'),
@@ -212,8 +218,10 @@ describe('ProgressService', () => {
       expect.objectContaining({
         where: expect.objectContaining({
           sessionExercise: {
+            deletedAt: null,
             session: {
               userId: 'user-1',
+              deletedAt: null,
               startedAt: {
                 gte: new Date('2024-03-11T00:00:00.000Z'),
                 lt: new Date('2024-03-18T00:00:00.000Z'),

@@ -232,8 +232,10 @@ export class ExercisesService {
           deletedAt: null,
           sessionExercise: {
             exerciseTemplateId: exerciseId,
+            deletedAt: null,
             session: {
               userId,
+              deletedAt: null,
             },
           },
         },
@@ -259,8 +261,10 @@ export class ExercisesService {
           deletedAt: null,
           sessionExercise: {
             exerciseTemplateId: exerciseId,
+            deletedAt: null,
             session: {
               userId,
+              deletedAt: null,
             },
           },
         },

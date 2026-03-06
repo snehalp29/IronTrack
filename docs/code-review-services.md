@@ -12,14 +12,18 @@
 - `apps/api/src/common/utils/volume.ts`
 - `apps/api/src/modules/sessions/sessions.service.ts` + `.spec.ts`
 - `apps/api/src/modules/checklist/checklist.service.ts` + `.spec.ts`
+- `apps/api/src/modules/exercises/exercises.service.ts` + `.spec.ts`
+- `apps/api/src/modules/progress/progress.service.ts` + `.spec.ts`
+- `apps/api/src/modules/users/users.service.ts` + `.spec.ts`
+- `apps/api/src/modules/workout-templates/workout-templates.service.ts` + `.spec.ts`
 
 ---
 
 ## Current Status
 
-- Total findings tracked: **38**
+- Total findings tracked: **48**
 - Open findings: **0**
-- Fixed findings: **38**
+- Fixed findings: **48**
 - Historical implementation snippets were removed to keep this document compact.
 
 ---
@@ -37,6 +41,16 @@
 - `#36`: ✅ Fixed — set mutation lookups now require `session.deletedAt: null`.
 - `#37`: ✅ Fixed — `ChecklistService.upsert` now forwards timezone to streak updates.
 - `#38`: ✅ Fixed — `batchCreateSets` now creates sets in parallel.
+- `#39`: ✅ Fixed — `CompletionService.calculate()` now excludes sets from soft-deleted sessions.
+- `#40`: ✅ Fixed — `VolumeService.calculateSessionVolume()` now excludes sets from soft-deleted sessions.
+- `#41`: ✅ Fixed — `ProgressService.weekly()` now excludes soft-deleted sessions and session exercises.
+- `#42`: ✅ Fixed — `ExercisesService.history()` now excludes soft-deleted sessions and session exercises.
+- `#43`: ✅ Fixed — `SessionsService.getActiveSession()` now applies superset interleaving just like `getSession()`.
+- `#44`: ✅ Fixed — `WorkoutTemplatesService.reorder()` now pre-validates accessible template IDs before writing.
+- `#45`: ✅ Fixed — `UsersService.getMe()` now returns only active users.
+- `#46`: ✅ Fixed — `UsersService.updateMe()` now rejects deleted or missing users with `USER_NOT_FOUND`.
+- `#47`: ✅ Fixed — `UsersService.deleteMe()` now guards the root user write before fan-out deletes.
+- `#48`: ✅ Fixed — `StreakService.resolveTimezone()` now stops streak writes for soft-deleted users.
 
 ---
 
@@ -67,10 +81,29 @@
 - Updated checklist upsert select to include user timezone and pass it to `onChecklistCompleted`.
 - Reworked batch set creation to use `Promise.all` and preserve result ordering.
 
+## Final Resolutions (39–48)
+
+- Added `session.deletedAt: null` guards to both completion count queries.
+- Added `session.deletedAt: null` guard to session-volume aggregation.
+- Added active-row guards to weekly progress aggregation:
+  - `sessionExercise.deletedAt: null`
+  - `session.deletedAt: null`
+- Added the same active-row guards to exercise history pagination and total-count queries.
+- Reworked active-session reads to pass session exercises through `SupersetService.interleave()` before returning.
+- Added reorder preflight validation for workout templates so forbidden IDs fail before any `orderIndex` writes run.
+- Updated user profile reads to query only active users and return `USER_NOT_FOUND` for deleted rows.
+- Updated profile writes to check for an active user before issuing `update()`.
+- Reworked account deletion into an interactive transaction that:
+  - marks the active user deleted first,
+  - aborts with `USER_NOT_FOUND` when no active row is updated,
+  - and only then fans out template/session/token updates.
+- Updated streak timezone resolution to return `null` for soft-deleted users so streak creation/update logic exits early.
+
 ---
 
 ## Validation Snapshot
 
 - `pnpm --filter @irontrack/api test -- src/modules/sessions/sessions.service.spec.ts src/modules/checklist/checklist.service.spec.ts` ✅
+- `pnpm --filter @irontrack/api test -- src/services/completion.service.spec.ts src/services/volume.service.spec.ts src/services/streak.service.spec.ts src/modules/progress/progress.service.spec.ts src/modules/exercises/exercises.service.spec.ts src/modules/sessions/sessions.service.spec.ts src/modules/workout-templates/workout-templates.service.spec.ts src/modules/users/users.service.spec.ts` ✅
 - `pnpm --filter @irontrack/api typecheck` ✅
 - `pnpm --filter @irontrack/api test:cov` ✅ (`100/100/100/100`)

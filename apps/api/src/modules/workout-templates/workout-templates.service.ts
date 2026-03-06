@@ -163,6 +163,22 @@ export class WorkoutTemplatesService {
   }
 
   async reorder(userId: string, input: ReorderWorkoutTemplateDto) {
+    const templateIds = input.items.map((item) => item.id);
+    const accessibleCount = await this.prisma.workoutTemplate.count({
+      where: {
+        id: { in: templateIds },
+        userId,
+        deletedAt: null,
+      },
+    });
+
+    if (accessibleCount !== templateIds.length) {
+      throw new ForbiddenException({
+        code: 'TEMPLATE_FORBIDDEN',
+        message: 'Template not found or not accessible',
+      });
+    }
+
     const results = await this.prisma.$transaction(
       input.items.map((item) =>
         this.prisma.workoutTemplate.updateMany({

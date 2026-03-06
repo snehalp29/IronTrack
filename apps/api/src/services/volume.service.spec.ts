@@ -49,7 +49,7 @@ describe('VolumeService', () => {
     ).toBe(false);
   });
 
-  it('sums all completed set volumes for a session', async () => {
+  it('sums all completed set volumes for an active session only', async () => {
     (prismaMock.set.findMany as jest.Mock).mockResolvedValue([
       { weight: 100, reps: 5, durationSeconds: null },
       { weight: null, reps: null, durationSeconds: 60 },
@@ -65,6 +65,9 @@ describe('VolumeService', () => {
           sessionExercise: {
             sessionId: 'session-1',
             deletedAt: null,
+            session: {
+              deletedAt: null,
+            },
           },
         }),
       }),

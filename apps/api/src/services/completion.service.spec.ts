@@ -75,7 +75,7 @@ describe('CompletionService', () => {
     });
   });
 
-  it('excludes sets from soft-deleted session exercises in both count queries', async () => {
+  it('excludes sets from soft-deleted sessions and session exercises in both count queries', async () => {
     (prismaMock.set.count as jest.Mock)
       .mockReturnValueOnce('count-total')
       .mockReturnValueOnce('count-completed');
@@ -89,6 +89,9 @@ describe('CompletionService', () => {
         sessionExercise: {
           sessionId: 'session-5',
           deletedAt: null,
+          session: {
+            deletedAt: null,
+          },
         },
       },
     });
@@ -99,6 +102,9 @@ describe('CompletionService', () => {
         sessionExercise: {
           sessionId: 'session-5',
           deletedAt: null,
+          session: {
+            deletedAt: null,
+          },
         },
       },
     });

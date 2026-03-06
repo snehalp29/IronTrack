@@ -339,10 +339,16 @@ describe('ExercisesService', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it('returns paginated exercise history', async () => {
+  it('returns paginated exercise history from active session rows only', async () => {
     const { service, prismaMock } = createService();
-    (prismaMock.set.findMany as jest.Mock).mockResolvedValue([{ id: 'set-1' }]);
-    (prismaMock.set.count as jest.Mock).mockResolvedValue(5);
+    (prismaMock.set.findMany as jest.Mock).mockReturnValueOnce(
+      'history-find-many',
+    );
+    (prismaMock.set.count as jest.Mock).mockReturnValueOnce('history-count');
+    (prismaMock.$transaction as jest.Mock).mockResolvedValue([
+      [{ id: 'set-1' }],
+      5,
+    ]);
 
     await expect(
       service.history('user-1', 'exercise-1', 2, 3),
@@ -350,9 +356,40 @@ describe('ExercisesService', () => {
       items: [{ id: 'set-1' }],
       pagination: { page: 2, pageSize: 3, total: 5 },
     });
+    expect(prismaMock.$transaction).toHaveBeenCalledWith([
+      'history-find-many',
+      'history-count',
+    ]);
     expect(prismaMock.set.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ skip: 3, take: 3 }),
+      expect.objectContaining({
+        where: {
+          deletedAt: null,
+          sessionExercise: {
+            exerciseTemplateId: 'exercise-1',
+            deletedAt: null,
+            session: {
+              userId: 'user-1',
+              deletedAt: null,
+            },
+          },
+        },
+        skip: 3,
+        take: 3,
+      }),
     );
+    expect(prismaMock.set.count).toHaveBeenCalledWith({
+      where: {
+        deletedAt: null,
+        sessionExercise: {
+          exerciseTemplateId: 'exercise-1',
+          deletedAt: null,
+          session: {
+            userId: 'user-1',
+            deletedAt: null,
+          },
+        },
+      },
+    });
   });
 
   it('uses default history pagination arguments when page and pageSize are omitted', async () => {

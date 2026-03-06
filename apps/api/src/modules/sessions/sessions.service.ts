@@ -267,7 +267,7 @@ export class SessionsService {
   }
 
   async getActiveSession(userId: string) {
-    return this.prisma.workoutSession.findFirst({
+    const session = await this.prisma.workoutSession.findFirst({
       where: {
         userId,
         status: 'IN_PROGRESS',
@@ -288,6 +288,23 @@ export class SessionsService {
         },
       },
     });
+
+    if (!session) {
+      return null;
+    }
+
+    const interleavedExercises = this.supersetService.interleave(
+      session.sessionExercises.map((exercise) => ({
+        supersetGroupKey: exercise.supersetGroupKey,
+        orderIndex: exercise.orderIndex,
+        item: exercise,
+      })),
+    );
+
+    return {
+      ...session,
+      sessionExercises: interleavedExercises,
+    };
   }
 
   async softDeleteSession(userId: string, sessionId: string) {

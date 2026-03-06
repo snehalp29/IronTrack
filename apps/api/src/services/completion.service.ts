@@ -14,6 +14,9 @@ export class CompletionService {
           sessionExercise: {
             sessionId,
             deletedAt: null,
+            session: {
+              deletedAt: null,
+            },
           },
         },
       }),
@@ -24,6 +27,9 @@ export class CompletionService {
           sessionExercise: {
             sessionId,
             deletedAt: null,
+            session: {
+              deletedAt: null,
+            },
           },
         },
       }),

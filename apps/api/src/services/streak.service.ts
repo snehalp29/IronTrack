@@ -147,7 +147,7 @@ export class StreakService {
     }
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
+    if (!user || user.deletedAt != null) {
       return null;
     }
 

@@ -15,6 +15,9 @@ export class VolumeService {
         sessionExercise: {
           sessionId,
           deletedAt: null,
+          session: {
+            deletedAt: null,
+          },
         },
       },
       select: {

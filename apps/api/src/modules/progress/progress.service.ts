@@ -20,8 +20,10 @@ export class ProgressService {
         deletedAt: null,
         isCompleted: true,
         sessionExercise: {
+          deletedAt: null,
           session: {
             userId,
+            deletedAt: null,
             startedAt: {
               gte: start,
               lt: endExclusive,

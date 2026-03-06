@@ -500,6 +500,38 @@ describe('StreakService', () => {
     expect(prismaMock.userStreak.updateMany).not.toHaveBeenCalled();
   });
 
+  it('returns early when user is soft-deleted', async () => {
+    const prismaMock = {
+      user: {
+        findUnique: jest.fn(async () => ({
+          id: 'user-1',
+          timezone: 'UTC',
+          deletedAt: new Date('2024-02-01T00:00:00.000Z'),
+        })),
+      },
+      userStreak: {
+        findUnique: jest.fn(),
+        create: jest.fn(),
+        updateMany: jest.fn(),
+      },
+      checklistItem: { findMany: jest.fn(async () => []) },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        StreakService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(StreakService);
+    await service.onSessionFinished('user-1');
+
+    expect(prismaMock.userStreak.findUnique).not.toHaveBeenCalled();
+    expect(prismaMock.userStreak.create).not.toHaveBeenCalled();
+    expect(prismaMock.userStreak.updateMany).not.toHaveBeenCalled();
+  });
+
   it('increments checklist streak on consecutive day completion', async () => {
     const prismaMock = {
       user: {

@@ -8,8 +8,11 @@ export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getMe(userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
+    const user = await this.prisma.user.findFirst({
+      where: {
+        id: userId,
+        deletedAt: null,
+      },
       select: {
         id: true,
         email: true,
@@ -32,6 +35,20 @@ export class UsersService {
   }
 
   async updateMe(userId: string, input: UpdateMeDto) {
+    const existingUser = await this.prisma.user.findFirst({
+      where: {
+        id: userId,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!existingUser) {
+      this.throwUserNotFound();
+    }
+
     return this.prisma.user.update({
       where: { id: userId },
       data: input,
@@ -50,29 +67,46 @@ export class UsersService {
   async deleteMe(userId: string) {
     const now = new Date();
 
-    await this.prisma.$transaction([
-      this.prisma.user.update({
-        where: { id: userId },
+    await this.prisma.$transaction(async (tx) => {
+      const updatedUser = await tx.user.updateMany({
+        where: {
+          id: userId,
+          deletedAt: null,
+        },
         data: { deletedAt: now },
-      }),
-      this.prisma.exerciseTemplate.updateMany({
-        where: { ownerUserId: userId, deletedAt: null },
-        data: { deletedAt: now },
-      }),
-      this.prisma.workoutTemplate.updateMany({
-        where: { userId, deletedAt: null },
-        data: { deletedAt: now },
-      }),
-      this.prisma.workoutSession.updateMany({
-        where: { userId, deletedAt: null },
-        data: { deletedAt: now },
-      }),
-      this.prisma.refreshToken.updateMany({
-        where: { userId, revokedAt: null },
-        data: { revokedAt: now },
-      }),
-    ]);
+      });
+
+      if (!updatedUser.count) {
+        this.throwUserNotFound();
+      }
+
+      await Promise.all([
+        tx.exerciseTemplate.updateMany({
+          where: { ownerUserId: userId, deletedAt: null },
+          data: { deletedAt: now },
+        }),
+        tx.workoutTemplate.updateMany({
+          where: { userId, deletedAt: null },
+          data: { deletedAt: now },
+        }),
+        tx.workoutSession.updateMany({
+          where: { userId, deletedAt: null },
+          data: { deletedAt: now },
+        }),
+        tx.refreshToken.updateMany({
+          where: { userId, revokedAt: null },
+          data: { revokedAt: now },
+        }),
+      ]);
+    });
 
     return { success: true };
+  }
+
+  private throwUserNotFound(): never {
+    throw new NotFoundException({
+      code: 'USER_NOT_FOUND',
+      message: 'User not found',
+    });
   }
 }
