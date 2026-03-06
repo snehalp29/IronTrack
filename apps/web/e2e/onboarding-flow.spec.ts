@@ -3,6 +3,28 @@ import { expect, test } from '@playwright/test';
 import { mockApi, seedAuthenticatedSession } from './support/api';
 
 test.describe('Onboarding Flow', () => {
+  test('template builder preserves entered values across step navigation', async ({
+    page,
+  }) => {
+    await seedAuthenticatedSession(page);
+    await mockApi(page);
+    await page.goto('/workout/template/new');
+
+    const templateName = page.getByLabel('Template Name', { exact: true });
+    await templateName.fill('Push Day A');
+    await page.getByRole('button', { name: 'Next' }).click();
+    await page
+      .getByLabel('Select exercises and set defaults', { exact: true })
+      .fill('Bench Press 4x8');
+    await page.getByRole('button', { name: 'Back' }).click();
+
+    await expect(templateName).toHaveValue('Push Day A');
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(
+      page.getByLabel('Select exercises and set defaults', { exact: true }),
+    ).toHaveValue('Bench Press 4x8');
+  });
+
   test('first-time user can register and complete initial setup steps', async ({
     page,
   }) => {
@@ -40,7 +62,7 @@ test.describe('Onboarding Flow', () => {
     ).toBeVisible();
 
     await page.getByRole('button', { name: 'Create New Exercise' }).click();
-    await expect(page).toHaveURL(/\/exercise\/create$/);
+    await expect(page).toHaveURL(/\/exercise\/create(\?step=1)?$/);
     await expect(
       page.getByRole('heading', { name: 'Create / Edit Exercise' }),
     ).toBeVisible();

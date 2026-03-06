@@ -37,8 +37,15 @@ export const TOTAL_TEMPLATE_STEPS = TEMPLATE_STEPS.length;
 
 export function TemplateBuilderPage() {
   const [step, setStep] = useState(1);
+  const [stepValues, setStepValues] = useState<Record<string, string>>({
+    'template-name': '',
+    'template-step-exercises': '',
+    'template-step-superset': '',
+    'template-step-notes': '',
+  });
   const clampedStep = Math.min(TOTAL_TEMPLATE_STEPS, Math.max(1, step));
   const currentStep = TEMPLATE_STEPS[clampedStep - 1];
+  const currentValue = stepValues[currentStep.id] ?? '';
 
   return (
     <div className="card">
@@ -52,9 +59,26 @@ export function TemplateBuilderPage() {
           id={currentStep.id}
           placeholder={currentStep.placeholder}
           rows={currentStep.rows}
+          value={currentValue}
+          onChange={(event) =>
+            setStepValues((current) => ({
+              ...current,
+              [currentStep.id]: event.target.value,
+            }))
+          }
         />
       ) : (
-        <input id={currentStep.id} placeholder={currentStep.placeholder} />
+        <input
+          id={currentStep.id}
+          placeholder={currentStep.placeholder}
+          value={currentValue}
+          onChange={(event) =>
+            setStepValues((current) => ({
+              ...current,
+              [currentStep.id]: event.target.value,
+            }))
+          }
+        />
       )}
       <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
         <button

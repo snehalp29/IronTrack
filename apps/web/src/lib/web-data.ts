@@ -236,8 +236,12 @@ export function useSettingsPageData() {
       }
     },
     onLogout: async () => {
-      await logoutCurrentSession();
-      navigate('/login');
+      try {
+        await logoutCurrentSession();
+        navigate('/login');
+      } catch (error) {
+        setErrorMessage(asErrorMessage(error) ?? 'Failed to log out');
+      }
     },
     onDeleteAccount: async () => {
       await deleteCurrentUser();
@@ -299,7 +303,11 @@ export function useWorkoutPreviewPageData(templateId?: string) {
         }
       : undefined,
     onStartWorkout: async () => {
-      await startMutation.mutateAsync();
+      try {
+        await startMutation.mutateAsync();
+      } catch {
+        return;
+      }
     },
   };
 }
@@ -432,6 +440,19 @@ export function useExerciseWizardPageData() {
     },
   });
 
+  useEffect(() => {
+    const stepParam = searchParams.get('step');
+    const normalizedStep = String(step);
+
+    if (stepParam === normalizedStep) {
+      return;
+    }
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('step', normalizedStep);
+    setSearchParams(nextParams, { replace: true });
+  }, [searchParams, setSearchParams, step]);
+
   const updateStep = (nextStep: number) => {
     const nextParams = new URLSearchParams(searchParams);
     nextParams.set(
@@ -464,9 +485,13 @@ export function useExerciseWizardPageData() {
       updateStep(step + 1);
     },
     onSubmit: async () => {
-      const created = await createMutation.mutateAsync();
-      if (created?.id) {
-        navigate(`/exercise/${created.id}`);
+      try {
+        const created = await createMutation.mutateAsync();
+        if (created?.id) {
+          navigate(`/exercise/${created.id}`);
+        }
+      } catch {
+        return;
       }
     },
     onChangeField: <K extends keyof WizardFormValues>(

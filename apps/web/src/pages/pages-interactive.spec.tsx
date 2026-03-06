@@ -22,6 +22,7 @@ const submittedValuesState = vi.hoisted(() => ({
   value: {} as Record<string, unknown>,
 }));
 const useStateMock = vi.hoisted(() => vi.fn());
+const useEffectMock = vi.hoisted(() => vi.fn());
 const navigateMock = vi.hoisted(() => vi.fn());
 const setSearchParamsMock = vi.hoisted(() => vi.fn());
 const searchParamsState = vi.hoisted(() => ({
@@ -68,6 +69,7 @@ vi.mock('react', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react')>();
   return {
     ...actual,
+    useEffect: useEffectMock,
     useState: useStateMock,
   };
 });
@@ -98,6 +100,7 @@ vi.mock('../lib/web-data', () => ({
 describe('interactive pages', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useEffectMock.mockImplementation(() => undefined);
     formStateState.value = {
       errors: {},
       isSubmitting: false,
@@ -161,10 +164,20 @@ describe('interactive pages', () => {
 
   it('TemplateBuilderPage renders each step and button updaters enforce bounds', () => {
     const setStepMock = vi.fn();
-    useStateMock.mockReturnValue([1, setStepMock] as unknown as [
-      number,
-      Dispatch<SetStateAction<number>>,
-    ]);
+    useStateMock
+      .mockReturnValueOnce([1, setStepMock] as unknown as [
+        number,
+        Dispatch<SetStateAction<number>>,
+      ])
+      .mockReturnValueOnce([
+        {
+          'template-name': '',
+          'template-step-exercises': '',
+          'template-step-superset': '',
+          'template-step-notes': '',
+        },
+        vi.fn(),
+      ]);
 
     const stepOne = TemplateBuilderPage();
     expect(renderToStaticMarkup(stepOne)).toContain('Template Name');
@@ -249,6 +262,7 @@ describe('interactive pages', () => {
 
   it('ExerciseDetailPage normalizes invalid tab query params back to guide', () => {
     searchParamsState.value = new URLSearchParams('tab=invalid');
+    useEffectMock.mockImplementation((effect: () => void) => effect());
 
     const view = ExerciseDetailPage();
     expect(renderToStaticMarkup(view)).toContain(
@@ -264,6 +278,14 @@ describe('interactive pages', () => {
 
     expect(normalizedParams?.get('tab')).toBe('guide');
     expect(normalizedOptions).toEqual({ replace: true });
+  });
+
+  it('ExerciseDetailPage does not mutate search params during render', () => {
+    searchParamsState.value = new URLSearchParams('tab=invalid');
+
+    ExerciseDetailPage();
+
+    expect(setSearchParamsMock).not.toHaveBeenCalled();
   });
 
   it('LoginPage submits credentials to auth API and then navigates to dashboard', async () => {

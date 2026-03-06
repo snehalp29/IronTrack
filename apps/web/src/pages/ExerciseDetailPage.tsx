@@ -1,3 +1,5 @@
+import { useEffect } from 'react';
+
 import { useSearchParams } from 'react-router-dom';
 
 export function ExerciseDetailPage() {
@@ -10,11 +12,15 @@ export function ExerciseDetailPage() {
     setSearchParams(nextSearchParams, { replace: true });
   };
 
-  if (rawTab && rawTab !== 'guide' && rawTab !== 'history') {
+  useEffect(() => {
+    if (!rawTab || rawTab === 'guide' || rawTab === 'history') {
+      return;
+    }
+
     const nextSearchParams = new URLSearchParams(searchParams);
     nextSearchParams.set('tab', 'guide');
     setSearchParams(nextSearchParams, { replace: true });
-  }
+  }, [rawTab, searchParams, setSearchParams]);
 
   return (
     <div className="card">

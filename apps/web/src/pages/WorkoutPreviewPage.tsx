@@ -29,7 +29,11 @@ export function WorkoutPreviewPage() {
           </li>
         ))}
       </ul>
-      <button className="button-link" onClick={data.onStartWorkout}>
+      <button
+        className="button-link"
+        disabled={data.isLoading}
+        onClick={data.onStartWorkout}
+      >
         Start Workout
       </button>
     </div>

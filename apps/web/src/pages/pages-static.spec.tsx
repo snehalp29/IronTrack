@@ -195,6 +195,26 @@ describe('static/simple pages', () => {
     expect(html).toContain('4 x 8');
   });
 
+  it('disables workout preview start while the page is loading', () => {
+    useWorkoutPreviewPageDataMock.mockReturnValue({
+      errorMessage: undefined,
+      isLoading: true,
+      onStartWorkout: vi.fn(),
+      template: {
+        id: 'tpl-42',
+        name: 'Push Day A',
+        exercises: [
+          { id: 'tx-1', name: 'Barbell Bench Press', setsLabel: '4 x 8' },
+        ],
+      },
+    });
+
+    const view = WorkoutPreviewPage();
+    const startButton = findButtonByLabel(view, 'Start Workout');
+
+    expect(startButton?.props.disabled).toBe(true);
+  });
+
   it('renders a fallback message when templateId is missing', () => {
     routeParamsState.value = {};
     useWorkoutPreviewPageDataMock.mockReturnValue({

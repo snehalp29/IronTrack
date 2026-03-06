@@ -8,8 +8,10 @@ import {
   useActiveWorkoutPageData,
   useCompletionFlowData,
   useDashboardPageData,
+  useExerciseWizardPageData,
   useHistoryPageData,
   useSettingsPageData,
+  useWorkoutPreviewPageData,
 } from './web-data';
 
 const useStateMock = vi.hoisted(() => vi.fn());
@@ -37,6 +39,18 @@ const updateWorkoutExerciseMock = vi.hoisted(() => vi.fn());
 const applyWorkoutSupersetMock = vi.hoisted(() => vi.fn());
 const useRestTimerMock = vi.hoisted(() => vi.fn());
 const useActiveWorkoutStoreMock = vi.hoisted(() => vi.fn());
+const initialWizardFormValues = {
+  name: '',
+  description: '',
+  exerciseType: 'WEIGHT_REPS',
+  primaryMuscleGroupId: '',
+  secondaryMuscleGroupIds: [] as string[],
+  equipmentIds: [] as string[],
+  defaultSets: '',
+  repMin: '',
+  repMax: '',
+  defaultCues: '',
+};
 
 vi.mock('react', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react')>();
@@ -310,6 +324,107 @@ describe('web-data', () => {
     ).toBe(false);
   });
 
+  it('normalizes invalid wizard step query params through the search params API', () => {
+    const setSearchParams = vi.fn();
+    useEffectMock.mockImplementation((effect: () => void) => effect());
+    useSearchParamsMock.mockReturnValue([
+      new URLSearchParams('step=999'),
+      setSearchParams,
+    ]);
+    useQueryMock.mockReturnValue({
+      data: [],
+      error: undefined,
+      isLoading: false,
+    });
+    useMutationMock.mockReturnValue({
+      error: undefined,
+      isPending: false,
+      mutateAsync: vi.fn(),
+    });
+    useStateMock
+      .mockReturnValueOnce([initialWizardFormValues, vi.fn()])
+      .mockReturnValueOnce([undefined, vi.fn()]);
+
+    const data = useExerciseWizardPageData();
+
+    expect(data.step).toBe(7);
+    expect(setSearchParams).toHaveBeenCalledWith(
+      expect.objectContaining({
+        get: expect.any(Function),
+      }),
+      { replace: true },
+    );
+    const normalizedParams = setSearchParams.mock.calls[0]?.[0] as
+      | URLSearchParams
+      | undefined;
+    expect(normalizedParams?.get('step')).toBe('7');
+  });
+
+  it('swallows rejected wizard submissions after reporting the mutation error', async () => {
+    const setErrorMessage = vi.fn();
+    useSearchParamsMock.mockReturnValue([
+      new URLSearchParams('step=7'),
+      vi.fn(),
+    ]);
+    useQueryMock.mockReturnValue({
+      data: [],
+      error: undefined,
+      isLoading: false,
+    });
+    useStateMock
+      .mockReturnValueOnce([initialWizardFormValues, vi.fn()])
+      .mockReturnValueOnce([undefined, setErrorMessage]);
+    useMutationMock.mockImplementation(
+      ({ onError }: { onError?: (error: unknown) => void }) => ({
+        error: undefined,
+        isPending: false,
+        mutateAsync: vi.fn(async () => {
+          const error = new Error('Create failed');
+          onError?.(error);
+          throw error;
+        }),
+      }),
+    );
+
+    const data = useExerciseWizardPageData();
+
+    await expect(data.onSubmit()).resolves.toBeUndefined();
+    expect(setErrorMessage).toHaveBeenCalledWith('Create failed');
+    expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  it('swallows rejected workout starts after the preview mutation reports the error', async () => {
+    useQueryMock.mockReturnValue({
+      data: {
+        id: 'template-1',
+        name: 'Push Day A',
+        description: null,
+        exercises: [],
+      },
+      error: undefined,
+      isLoading: false,
+    });
+    useMutationMock.mockImplementation(() => ({
+      error: new Error('Start failed'),
+      isPending: false,
+      mutateAsync: vi.fn(async () => {
+        throw new Error('Start failed');
+      }),
+    }));
+    useActiveWorkoutStoreMock.mockImplementation(
+      (selector: (state: { start: () => void }) => unknown) =>
+        selector({
+          start: vi.fn(),
+        }),
+    );
+
+    const data = useWorkoutPreviewPageData('template-1');
+
+    await expect(data.onStartWorkout()).resolves.toBeUndefined();
+    expect(data.errorMessage).toBe('Start failed');
+    expect(navigateMock).not.toHaveBeenCalled();
+  });
+
   it('prefers templates that cover the least-worked muscle and uses the shared streak query on completion', () => {
     useQueryMock.mockImplementation(({ queryKey }: { queryKey: unknown[] }) => {
       if (queryKey[0] === 'user') {
@@ -401,6 +516,33 @@ describe('web-data', () => {
     expect(logoutCurrentSessionMock).toHaveBeenCalledTimes(1);
     expect(clearAuthSessionMock).toHaveBeenCalledTimes(1);
     expect(navigateMock).toHaveBeenCalledWith('/register');
+  });
+
+  it('swallows logout failures and reports the error instead of rejecting', async () => {
+    const setErrorMessage = vi.fn();
+    useStateMock
+      .mockReturnValueOnce(['Name', vi.fn()])
+      .mockReturnValueOnce(['UTC', vi.fn()])
+      .mockReturnValueOnce(['METRIC', vi.fn()])
+      .mockReturnValueOnce(['90', vi.fn()])
+      .mockReturnValueOnce([undefined, setErrorMessage]);
+    useQueryMock.mockReturnValue({
+      data: undefined,
+      error: undefined,
+      isLoading: false,
+    });
+    useMutationMock.mockReturnValue({
+      error: undefined,
+      isPending: false,
+      mutateAsync: vi.fn(),
+    });
+    logoutCurrentSessionMock.mockRejectedValue(new Error('Logout failed'));
+
+    const data = useSettingsPageData();
+
+    await expect(data.onLogout()).resolves.toBeUndefined();
+    expect(setErrorMessage).toHaveBeenCalledWith('Logout failed');
+    expect(navigateMock).not.toHaveBeenCalled();
   });
 
   it('handles incomplete-workout confirmation failures without rejecting', async () => {
