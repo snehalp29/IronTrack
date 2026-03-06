@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { ChecklistType } from '@prisma/client';
 
@@ -7,6 +8,7 @@ import { StreakService } from './streak.service';
 describe('StreakService', () => {
   afterEach(() => {
     jest.useRealTimers();
+    jest.restoreAllMocks();
   });
 
   it('creates workout streak on first completion', async () => {
@@ -790,6 +792,7 @@ describe('StreakService', () => {
   });
 
   it('falls back to UTC when timezone value is invalid', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
     const prismaMock = {
       user: {
         findUnique: jest.fn(async () => ({
@@ -827,6 +830,56 @@ describe('StreakService', () => {
         lastCompletedDate: new Date('2024-01-31T00:00:00.000Z'),
       }),
     });
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Invalid timezone 'Invalid/Timezone'"),
+    );
+  });
+
+  it('logs warning and falls back to UTC when provided timezone is invalid', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const prismaMock = {
+      user: {
+        findUnique: jest.fn(async () => ({
+          id: 'user-1',
+          timezone: 'America/Los_Angeles',
+        })),
+      },
+      userStreak: {
+        findUnique: jest.fn(async () => null),
+        create: jest.fn(async ({ data }) => data),
+      },
+      checklistItem: { findMany: jest.fn(async () => []) },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        StreakService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(StreakService) as {
+      onSessionFinished: (
+        userId: string,
+        completedAt?: Date,
+        timezone?: string,
+      ) => Promise<void>;
+    };
+    await service.onSessionFinished(
+      'user-1',
+      new Date('2024-01-01T01:00:00.000Z'),
+      'Invalid/Timezone',
+    );
+
+    expect(prismaMock.user.findUnique).not.toHaveBeenCalled();
+    expect(prismaMock.userStreak.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        lastCompletedDate: new Date('2024-01-01T00:00:00.000Z'),
+      }),
+    });
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Invalid timezone 'Invalid/Timezone'"),
+    );
   });
 
   it('uses UTC fallback timezone and resets streak when previous date is not consecutive', async () => {

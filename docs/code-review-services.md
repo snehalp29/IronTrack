@@ -16,8 +16,8 @@
 ## Current Status
 
 - Total findings tracked: **26**
-- Open findings: **3** (`#24`, `#25`, `#26`)
-- Fixed findings: **23**
+- Open findings: **0**
+- Fixed findings: **26**
 - Historical code snippets for fixed items were removed to keep this document compact.
 
 ---
@@ -49,57 +49,20 @@
 | 21  | P3       | Streak timezone resolution always queried user (avoidable DB round-trip)                | ✅ Fixed |
 | 22  | P3       | Streak update branch vulnerable to lost update under concurrency                        | ✅ Fixed |
 | 23  | P3       | PR detection duplicated Epley 1RM logic instead of central helper usage                 | ✅ Fixed |
-| 24  | P2       | Set queries include soft-deleted `SessionExercise` records (`deletedAt` filter missing) | ⏳ Open  |
-| 25  | P3       | `VolumeService.calculateSetVolume` wrapper shadows imported function                    | ⏳ Open  |
-| 26  | P3       | Invalid timezone input fallback is silent (no warning/telemetry)                        | ⏳ Open  |
+| 24  | P2       | Set queries include soft-deleted `SessionExercise` records (`deletedAt` filter missing) | ✅ Fixed |
+| 25  | P3       | `VolumeService.calculateSetVolume` wrapper shadows imported function                    | ✅ Fixed |
+| 26  | P3       | Invalid timezone input fallback is silent (no warning/telemetry)                        | ✅ Fixed |
 
 ---
 
-## Open Findings Detail
+## Pass 8 Resolutions (24–26)
 
-### #24 (P2) Missing `sessionExercise.deletedAt` filter in set queries
-
-Affected:
-
-- `apps/api/src/services/pr-detection.service.ts` (`detectForSession`, `recalculateForExercise`)
-- `apps/api/src/services/volume.service.ts` (`calculateSessionVolume`)
-
-Risk:
-
-- Sets tied to soft-deleted `SessionExercise` rows can still be counted for volume and PRs.
-
-Expected fix:
-
-- Add `sessionExercise.deletedAt: null` to all relevant set queries.
-- Add tests ensuring soft-deleted session-exercise sets are excluded.
-
-### #25 (P3) Confusing `VolumeService.calculateSetVolume` wrapper indirection
-
-Affected:
-
-- `apps/api/src/services/volume.service.ts`
-
-Risk:
-
-- Readability/maintainability issue due to method-name shadowing of imported helper.
-
-Expected fix:
-
-- Remove wrapper method and use imported `calculateSetVolume` directly in reducers/call sites.
-
-### #26 (P3) Silent invalid-timezone fallback
-
-Affected:
-
-- `apps/api/src/services/streak.service.ts` (`resolveTimezone`, `formatDateInTimezone`)
-
-Risk:
-
-- Bad timezone data is silently coerced to UTC without observability.
-
-Expected fix:
-
-- Validate timezone before use and log warning (with user context) on fallback.
+- `#24` fixed by adding `sessionExercise.deletedAt: null` filters in:
+  `PrDetectionService.detectForSession`, `PrDetectionService.recalculateForExercise`, and `VolumeService.calculateSessionVolume`.
+- `#25` fixed by removing the `VolumeService.calculateSetVolume` wrapper and calling the shared `calculateSetVolume` utility directly.
+- `#26` fixed by validating timezones in `StreakService.resolveTimezone` and emitting `Logger.warn` on invalid timezone fallback to UTC.
+- Added tests to lock all three behaviors:
+  query-filter assertions for soft-deleted `SessionExercise`, service-shape assertion for removed wrapper, and warning/fallback assertions for invalid timezone input.
 
 ---
 
@@ -114,9 +77,11 @@ Expected fix:
 | 5    | 2026-03-05 | 15–16                                       | ✅ Fixed                      |
 | 6    | 2026-03-05 | 20–23                                       | ✅ Fixed                      |
 | 7    | 2026-03-05 | Re-verify 20–23 and discover 24–26          | ✅ 20–23 verified; 24–26 open |
+| 8    | 2026-03-05 | 24–26                                       | ✅ Fixed                      |
 
 ---
 
 ## Latest Validation Snapshot
 
-- `pnpm --filter @irontrack/api test:cov` recorded passing at strict gate (`100/100/100/100`) in the latest verification cycle before findings `#24–#26` were documented.
+- `pnpm --filter @irontrack/api typecheck` ✅
+- `pnpm --filter @irontrack/api test:cov` ✅ (`100/100/100/100`) after fixing findings `#24–#26`.

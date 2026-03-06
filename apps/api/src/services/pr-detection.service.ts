@@ -24,6 +24,7 @@ export class PrDetectionService {
         deletedAt: null,
         sessionExercise: {
           sessionId,
+          deletedAt: null,
           session: {
             userId,
           },
@@ -160,6 +161,7 @@ export class PrDetectionService {
         isCompleted: true,
         sessionExercise: {
           exerciseTemplateId,
+          deletedAt: null,
           session: {
             userId,
           },

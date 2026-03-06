@@ -144,6 +144,39 @@ describe('PrDetectionService', () => {
     expect(prismaMock.pRRecord.upsert).not.toHaveBeenCalled();
   });
 
+  it('filters out sets from soft-deleted session exercises in detectForSession query', async () => {
+    const prismaMock = {
+      set: {
+        findMany: jest.fn(async () => []),
+      },
+      pRRecord: {
+        findMany: jest.fn(async () => []),
+        upsert: jest.fn(async () => undefined),
+      },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        PrDetectionService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(PrDetectionService);
+    await service.detectForSession('user-1', 'session-1');
+
+    expect(prismaMock.set.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          sessionExercise: expect.objectContaining({
+            sessionId: 'session-1',
+            deletedAt: null,
+          }),
+        }),
+      }),
+    );
+  });
+
   it('skips candidate types with non-positive values', async () => {
     const prismaMock = {
       set: {
@@ -535,6 +568,43 @@ describe('PrDetectionService', () => {
     expect(prismaMock.pRRecord.deleteMany).not.toHaveBeenCalled();
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(transaction.mock.calls[0]?.[0]).toHaveLength(4);
+  });
+
+  it('filters out sets from soft-deleted session exercises in recalculate query', async () => {
+    const transaction = jest.fn(async (ops: Array<Promise<unknown>>) =>
+      Promise.all(ops),
+    );
+    const prismaMock = {
+      set: {
+        findMany: jest.fn(async () => []),
+      },
+      $transaction: transaction,
+      pRRecord: {
+        upsert: jest.fn(async () => undefined),
+        deleteMany: jest.fn(async () => ({ count: 0 })),
+      },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        PrDetectionService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(PrDetectionService);
+    await service.recalculateForExercise('user-1', 'exercise-1');
+
+    expect(prismaMock.set.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          sessionExercise: expect.objectContaining({
+            exerciseTemplateId: 'exercise-1',
+            deletedAt: null,
+          }),
+        }),
+      }),
+    );
   });
 
   it('recalculate skips PR types that have no positive candidate', async () => {

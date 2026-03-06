@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ChecklistType, StreakType } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
@@ -12,6 +12,8 @@ const REQUIRED_CHECKLIST_TYPES = [
 
 @Injectable()
 export class StreakService {
+  private readonly logger = new Logger(StreakService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   async onSessionFinished(
@@ -133,7 +135,14 @@ export class StreakService {
     if (typeof timezone === 'string') {
       const trimmedTimezone = timezone.trim();
       if (trimmedTimezone.length > 0) {
-        return trimmedTimezone;
+        if (this.isValidTimezone(trimmedTimezone)) {
+          return trimmedTimezone;
+        }
+
+        this.logger.warn(
+          `Invalid timezone '${trimmedTimezone}' for user '${userId}', falling back to UTC`,
+        );
+        return 'UTC';
       }
     }
 
@@ -143,28 +152,37 @@ export class StreakService {
     }
 
     const trimmedUserTimezone = user.timezone?.trim();
-    return trimmedUserTimezone && trimmedUserTimezone.length > 0
-      ? trimmedUserTimezone
-      : 'UTC';
+    if (trimmedUserTimezone && trimmedUserTimezone.length > 0) {
+      if (this.isValidTimezone(trimmedUserTimezone)) {
+        return trimmedUserTimezone;
+      }
+
+      this.logger.warn(
+        `Invalid timezone '${trimmedUserTimezone}' for user '${userId}', falling back to UTC`,
+      );
+    }
+
+    return 'UTC';
   }
 
   private formatDateInTimezone(date: Date, timezone: string): string {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    return formatter.format(date);
+  }
+
+  private isValidTimezone(timezone: string): boolean {
     try {
-      const formatter = new Intl.DateTimeFormat('en-CA', {
+      new Intl.DateTimeFormat('en-CA', {
         timeZone: timezone,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
       });
-      return formatter.format(date);
+      return true;
     } catch {
-      const fallbackFormatter = new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'UTC',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-      });
-      return fallbackFormatter.format(date);
+      return false;
     }
   }
 

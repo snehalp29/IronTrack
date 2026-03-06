@@ -1,3 +1,4 @@
+import { calculateSetVolume } from '../common/utils/volume';
 import type { PrismaService } from '../prisma/prisma.service';
 import { VolumeService } from './volume.service';
 
@@ -15,17 +16,13 @@ describe('VolumeService', () => {
 
   it('calculates set volume by weight x reps', () => {
     expect(
-      service.calculateSetVolume({
-        weight: 80,
-        reps: 8,
-        durationSeconds: null,
-      }),
+      calculateSetVolume({ weight: 80, reps: 8, durationSeconds: null }),
     ).toBe(640);
   });
 
   it('calculates set volume by duration when weight/reps not present', () => {
     expect(
-      service.calculateSetVolume({
+      calculateSetVolume({
         weight: null,
         reps: null,
         durationSeconds: 45,
@@ -35,12 +32,21 @@ describe('VolumeService', () => {
 
   it('returns zero set volume when no measurable load exists', () => {
     expect(
-      service.calculateSetVolume({
+      calculateSetVolume({
         weight: null,
         reps: null,
         durationSeconds: null,
       }),
     ).toBe(0);
+  });
+
+  it('keeps set-volume math in shared utility, not as a service method', () => {
+    expect(
+      Object.prototype.hasOwnProperty.call(
+        Object.getPrototypeOf(service),
+        'calculateSetVolume',
+      ),
+    ).toBe(false);
   });
 
   it('sums all completed set volumes for a session', async () => {
@@ -52,6 +58,16 @@ describe('VolumeService', () => {
 
     await expect(service.calculateSessionVolume('session-1')).resolves.toBe(
       560,
+    );
+    expect(prismaMock.set.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          sessionExercise: {
+            sessionId: 'session-1',
+            deletedAt: null,
+          },
+        }),
+      }),
     );
   });
 

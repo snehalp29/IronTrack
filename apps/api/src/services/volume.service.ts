@@ -1,15 +1,11 @@
 import { Injectable } from '@nestjs/common';
 
-import { VolumeSetInput, calculateSetVolume } from '../common/utils/volume';
+import { calculateSetVolume } from '../common/utils/volume';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class VolumeService {
   constructor(private readonly prisma: PrismaService) {}
-
-  calculateSetVolume(set: VolumeSetInput): number {
-    return calculateSetVolume(set);
-  }
 
   async calculateSessionVolume(sessionId: string): Promise<number> {
     const sets = await this.prisma.set.findMany({
@@ -18,6 +14,7 @@ export class VolumeService {
         isCompleted: true,
         sessionExercise: {
           sessionId,
+          deletedAt: null,
         },
       },
       select: {
@@ -27,7 +24,7 @@ export class VolumeService {
       },
     });
 
-    return sets.reduce((sum, set) => sum + this.calculateSetVolume(set), 0);
+    return sets.reduce((sum, set) => sum + calculateSetVolume(set), 0);
   }
 
   async cacheSessionVolume(sessionId: string): Promise<number> {
