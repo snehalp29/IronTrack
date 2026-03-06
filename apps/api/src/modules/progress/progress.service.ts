@@ -7,7 +7,12 @@ import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
 export class ProgressService {
-  private totalMuscleCountPromise: Promise<number> | undefined;
+  private totalMuscleCountCache:
+    | {
+        expiresAtMs: number;
+        promise: Promise<number>;
+      }
+    | undefined;
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -21,22 +26,21 @@ export class ProgressService {
       where: {
         deletedAt: null,
         isCompleted: true,
+        completedAt: {
+          gte: start,
+          lt: endExclusive,
+        },
         sessionExercise: {
           deletedAt: null,
           session: {
             userId,
             deletedAt: null,
-            startedAt: {
-              gte: start,
-              lt: endExclusive,
-            },
           },
         },
       },
       select: {
         weight: true,
         reps: true,
-        durationSeconds: true,
         sessionExercise: {
           select: {
             exercise: {
@@ -59,7 +63,11 @@ export class ProgressService {
     const coveredMuscleIds = new Set<string>();
 
     for (const set of sets) {
-      const volume = calculateSetVolume(set);
+      const volume = calculateSetVolume({
+        weight: set.weight,
+        reps: set.reps,
+        durationSeconds: null,
+      });
       const primary = set.sessionExercise.exercise.primaryMuscle;
       const appliedSecondaryMuscleIds = new Set<string>();
 
@@ -122,15 +130,24 @@ export class ProgressService {
   }
 
   private getTotalMuscles() {
-    if (!this.totalMuscleCountPromise) {
-      this.totalMuscleCountPromise = this.prisma.muscleGroup
+    const now = Date.now();
+
+    if (
+      !this.totalMuscleCountCache ||
+      this.totalMuscleCountCache.expiresAtMs <= now
+    ) {
+      const promise = this.prisma.muscleGroup
         .count()
         .catch((error: unknown) => {
-          this.totalMuscleCountPromise = undefined;
+          this.totalMuscleCountCache = undefined;
           throw error;
         });
+      this.totalMuscleCountCache = {
+        expiresAtMs: now + 5 * 60 * 1000,
+        promise,
+      };
     }
 
-    return this.totalMuscleCountPromise;
+    return this.totalMuscleCountCache.promise;
   }
 }

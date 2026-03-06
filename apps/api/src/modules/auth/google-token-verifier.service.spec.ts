@@ -295,7 +295,6 @@ describe('GoogleTokenVerifierService', () => {
         { error: 'unavailable' },
         {
           ok: false,
-          status: 503,
         },
       ),
     );

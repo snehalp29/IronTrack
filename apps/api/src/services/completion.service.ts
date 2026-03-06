@@ -6,7 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 export class CompletionService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async calculate(sessionId: string) {
+  async calculate(sessionId: string, userId: string) {
     const [totalSets, completedSets] = await this.prisma.$transaction([
       this.prisma.set.count({
         where: {
@@ -15,6 +15,7 @@ export class CompletionService {
             sessionId,
             deletedAt: null,
             session: {
+              userId,
               deletedAt: null,
             },
           },
@@ -28,6 +29,7 @@ export class CompletionService {
             sessionId,
             deletedAt: null,
             session: {
+              userId,
               deletedAt: null,
             },
           },

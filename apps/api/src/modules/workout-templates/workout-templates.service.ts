@@ -254,6 +254,21 @@ export class WorkoutTemplatesService {
     });
 
     if (!updated.count) {
+      const deletedTemplate = await this.prisma.workoutTemplate.findFirst({
+        where: {
+          id: templateId,
+          userId,
+        },
+        select: {
+          id: true,
+          deletedAt: true,
+        },
+      });
+
+      if (deletedTemplate?.deletedAt) {
+        return { success: true };
+      }
+
       throw new ForbiddenException({
         code: 'TEMPLATE_FORBIDDEN',
         message: 'Template not found or not accessible',

@@ -51,6 +51,10 @@ type CryptoLike = {
   getRandomValues<T extends ArrayBufferView | null>(buffer: T): T;
 };
 
+type ConsoleLike = {
+  error: (...args: unknown[]) => void;
+};
+
 function resolvePositiveInteger(
   value: number | undefined,
   fallback: number,
@@ -154,7 +158,10 @@ export async function replaySyncQueueWithDb(
       if (nextAttempts >= maxAttempts) {
         db.runSync('DELETE FROM sync_queue WHERE id = ?', [item.id]);
         dropped += 1;
-        console.error('Dropping exhausted sync queue item', {
+        const logger = (
+          globalThis as typeof globalThis & { console?: ConsoleLike }
+        ).console;
+        logger?.error('Dropping exhausted sync queue item', {
           entityType: item.entity_type,
           localId: item.local_id,
           operation: item.operation,

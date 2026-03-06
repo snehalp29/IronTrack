@@ -144,7 +144,7 @@ model Equipment {
 
 model ExerciseTemplate {
   id                   String       @id @default(uuid()) @db.Uuid
-  name                 String
+  name                 String       @db.VarChar(120)
   description          String?      @db.Text
   exerciseType         ExerciseType
   isGlobal             Boolean      @default(false)
@@ -224,7 +224,7 @@ model ExerciseVideo {
 model WorkoutTemplate {
   id          String    @id @default(uuid()) @db.Uuid
   userId      String    @db.Uuid
-  name        String
+  name        String    @db.VarChar(120)
   description String?   @db.Text
   orderIndex  Int?
   deletedAt   DateTime?
@@ -270,7 +270,7 @@ model WorkoutSession {
   finishedAt        DateTime?
   status            SessionStatus @default(IN_PROGRESS)
   endedReason       EndedReason?
-  notes             String?       @db.Text
+  notes             String?       @db.VarChar(4000)
   totalVolume       Float?
   durationSeconds   Int?
   version           Int           @default(1)

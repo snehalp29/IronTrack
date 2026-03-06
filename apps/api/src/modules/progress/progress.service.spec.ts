@@ -245,15 +245,15 @@ describe('ProgressService', () => {
     expect(prismaMock.set.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
+          completedAt: {
+            gte: new Date('2024-03-11T00:00:00.000Z'),
+            lt: new Date('2024-03-18T00:00:00.000Z'),
+          },
           sessionExercise: {
             deletedAt: null,
             session: {
               userId: 'user-1',
               deletedAt: null,
-              startedAt: {
-                gte: new Date('2024-03-11T00:00:00.000Z'),
-                lt: new Date('2024-03-18T00:00:00.000Z'),
-              },
             },
           },
         }),

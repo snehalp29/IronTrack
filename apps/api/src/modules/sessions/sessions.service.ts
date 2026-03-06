@@ -51,75 +51,90 @@ export class SessionsService {
       });
     }
 
-    if (input.workoutTemplateId) {
-      await this.assertWorkoutTemplateOwnership(
-        userId,
-        input.workoutTemplateId,
-      );
-    } else if (input.exercises.length > 0) {
-      await this.assertExerciseTemplatesAccessible(
-        userId,
-        input.exercises.map((exercise) => exercise.exerciseTemplateId),
-      );
-    }
-
-    const templateExercises = input.workoutTemplateId
-      ? await this.prisma.workoutTemplateExercise.findMany({
-          where: {
-            workoutTemplateId: input.workoutTemplateId,
-            exercise: {
-              deletedAt: null,
-            },
-          },
-          orderBy: { orderIndex: 'asc' },
-        })
-      : [];
-    if (input.workoutTemplateId && templateExercises.length === 0) {
-      this.throwTemplateForbidden();
-    }
-
-    const sessionExerciseCreates = input.workoutTemplateId
-      ? templateExercises.map((exercise, index) => ({
-          exerciseTemplateId: exercise.exerciseTemplateId,
-          orderIndex: exercise.orderIndex ?? index,
-          notes: null,
-          supersetGroupKey: exercise.supersetGroupKey,
-        }))
-      : input.exercises.map((exercise, index) => ({
-          exerciseTemplateId: exercise.exerciseTemplateId,
-          orderIndex: exercise.orderIndex ?? index,
-          notes: exercise.notes,
-          supersetGroupKey: exercise.supersetGroupKey,
-        }));
-    assertUniqueSessionExerciseOrderIndexes(sessionExerciseCreates);
-
-    let session;
-    try {
-      session = await this.prisma.workoutSession.create({
-        data: {
+    const session = await this.prisma.$transaction(async (tx) => {
+      const activeSession = await tx.workoutSession.findFirst({
+        where: {
           userId,
-          workoutTemplateId: input.workoutTemplateId,
-          notes: input.notes,
-          sessionExercises: {
-            create: sessionExerciseCreates,
-          },
+          status: 'IN_PROGRESS',
+          deletedAt: null,
         },
-        include: {
-          sessionExercises: {
-            include: {
-              exercise: true,
-            },
-            orderBy: { orderIndex: 'asc' },
-          },
-        },
+        select: { id: true },
       });
-    } catch (error) {
-      if (isSessionExerciseOrderUniqueConstraintError(error)) {
-        this.throwSessionExerciseOrderConflict();
+      if (activeSession) {
+        this.throwActiveSessionConflict();
       }
 
-      throw error;
-    }
+      if (input.workoutTemplateId) {
+        await this.assertWorkoutTemplateOwnership(
+          userId,
+          input.workoutTemplateId,
+          tx,
+        );
+      } else if (input.exercises.length > 0) {
+        await this.assertExerciseTemplatesAccessible(
+          userId,
+          input.exercises.map((exercise) => exercise.exerciseTemplateId),
+          tx,
+        );
+      }
+
+      const templateExercises = input.workoutTemplateId
+        ? await tx.workoutTemplateExercise.findMany({
+            where: {
+              workoutTemplateId: input.workoutTemplateId,
+              exercise: {
+                deletedAt: null,
+              },
+            },
+            orderBy: { orderIndex: 'asc' },
+          })
+        : [];
+      if (input.workoutTemplateId && templateExercises.length === 0) {
+        this.throwTemplateForbidden();
+      }
+
+      const sessionExerciseCreates = input.workoutTemplateId
+        ? templateExercises.map((exercise, index) => ({
+            exerciseTemplateId: exercise.exerciseTemplateId,
+            orderIndex: exercise.orderIndex ?? index,
+            notes: null,
+            supersetGroupKey: exercise.supersetGroupKey,
+          }))
+        : input.exercises.map((exercise, index) => ({
+            exerciseTemplateId: exercise.exerciseTemplateId,
+            orderIndex: exercise.orderIndex ?? index,
+            notes: exercise.notes,
+            supersetGroupKey: exercise.supersetGroupKey,
+          }));
+      assertUniqueSessionExerciseOrderIndexes(sessionExerciseCreates);
+
+      try {
+        return await tx.workoutSession.create({
+          data: {
+            userId,
+            workoutTemplateId: input.workoutTemplateId,
+            notes: input.notes,
+            sessionExercises: {
+              create: sessionExerciseCreates,
+            },
+          },
+          include: {
+            sessionExercises: {
+              include: {
+                exercise: true,
+              },
+              orderBy: { orderIndex: 'asc' },
+            },
+          },
+        });
+      } catch (error) {
+        if (isSessionExerciseOrderUniqueConstraintError(error)) {
+          this.throwSessionExerciseOrderConflict();
+        }
+
+        throw error;
+      }
+    });
 
     if (!Array.isArray(session.sessionExercises)) {
       return session;
@@ -330,7 +345,7 @@ export class SessionsService {
         finishedAt,
         existing.user?.timezone ?? 'UTC',
       );
-      completion = await this.completionService.calculate(sessionId);
+      completion = await this.completionService.calculate(sessionId, userId);
     } catch (error) {
       await this.prisma.workoutSession.updateMany({
         where: {
@@ -1350,8 +1365,9 @@ export class SessionsService {
   private async assertWorkoutTemplateOwnership(
     userId: string,
     workoutTemplateId: string,
+    client: Pick<PrismaService, 'workoutTemplate'> = this.prisma,
   ) {
-    const template = await this.prisma.workoutTemplate.findFirst({
+    const template = await client.workoutTemplate.findFirst({
       where: {
         id: workoutTemplateId,
         userId,
@@ -1368,10 +1384,11 @@ export class SessionsService {
   private async assertExerciseTemplatesAccessible(
     userId: string,
     exerciseTemplateIds: string[],
+    client: Pick<PrismaService, 'exerciseTemplate'> = this.prisma,
   ) {
     const uniqueIds = Array.from(new Set(exerciseTemplateIds));
 
-    const accessibleExercises = await this.prisma.exerciseTemplate.findMany({
+    const accessibleExercises = await client.exerciseTemplate.findMany({
       where: {
         id: { in: uniqueIds },
         deletedAt: null,
@@ -1554,6 +1571,19 @@ export class SessionsService {
             sessionStatus: sessionExercise.session.status,
           };
         }
+
+        const deletedConflict = await client.set.findFirst({
+          where: {
+            sessionExerciseId,
+            idempotencyKey: input.idempotencyKey,
+          },
+        });
+        if (deletedConflict?.deletedAt) {
+          throw new ConflictException({
+            code: 'SET_IDEMPOTENCY_KEY_REUSED',
+            message: 'Idempotency key was previously used by a deleted set',
+          });
+        }
       }
 
       if (isSetOrderUniqueConstraintError(error)) {
@@ -1570,6 +1600,14 @@ export class SessionsService {
       sessionId: created.sessionExercise.session.id,
       sessionStatus: created.sessionExercise.session.status,
     };
+  }
+
+  private throwActiveSessionConflict(): never {
+    throw new ConflictException({
+      code: 'ACTIVE_SESSION_EXISTS',
+      message:
+        'Finish or delete the current active session before starting a new one',
+    });
   }
 
   private throwSessionNotFound(): never {
