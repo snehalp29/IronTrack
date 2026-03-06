@@ -1,6 +1,8 @@
 import { useForm } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
 
+import { loginWithPassword, signInWithGoogle } from '../auth/auth-service';
+
 interface LoginForm {
   email: string;
   password: string;
@@ -17,7 +19,8 @@ export function LoginPage() {
       <h1>Login</h1>
       <form
         className="grid"
-        onSubmit={handleSubmit(() => {
+        onSubmit={handleSubmit(async ({ email, password }) => {
+          await loginWithPassword({ email, password });
           navigate('/');
         })}
       >
@@ -38,7 +41,14 @@ export function LoginPage() {
           {...register('password')}
         />
         <button type="submit">Sign In</button>
-        <button type="button" className="secondary">
+        <button
+          type="button"
+          className="secondary"
+          onClick={async () => {
+            await signInWithGoogle();
+            navigate('/');
+          }}
+        >
           Continue with Google
         </button>
       </form>

@@ -1,5 +1,6 @@
 import { RouterProvider, createBrowserRouter } from 'react-router-dom';
 
+import { RequireAuth } from './auth/RequireAuth';
 import { AppLayout } from './components/layout/AppLayout';
 import { ActiveWorkoutPage } from './pages/ActiveWorkoutPage';
 import { CompletionMotivationPage } from './pages/CompletionMotivationPage';
@@ -24,7 +25,11 @@ const router = createBrowserRouter([
   { path: '/register', element: <RegisterPage /> },
   {
     path: '/',
-    element: <AppLayout />,
+    element: (
+      <RequireAuth>
+        <AppLayout />
+      </RequireAuth>
+    ),
     children: [
       { index: true, element: <DashboardPage /> },
       { path: 'settings', element: <SettingsPage /> },

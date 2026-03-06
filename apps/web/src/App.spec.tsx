@@ -4,11 +4,21 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
 import { App } from './App';
+import { RequireAuth } from './auth/RequireAuth';
+import { AppLayout } from './components/layout/AppLayout';
 
 type RouteNode = {
   path?: string;
   index?: boolean;
   children?: RouteNode[];
+  element?: {
+    props?: {
+      children?: {
+        type?: unknown;
+      };
+    };
+    type?: unknown;
+  };
 };
 
 const routerMock = vi.hoisted(() => ({ kind: 'router' }));
@@ -26,6 +36,8 @@ const routerProviderMock = vi.hoisted(() =>
 
 vi.mock('react-router-dom', () => ({
   createBrowserRouter: createBrowserRouterMock,
+  NavLink: ({ children }: { children: unknown }) => <>{children}</>,
+  Outlet: () => <div>Outlet</div>,
   RouterProvider: routerProviderMock,
 }));
 
@@ -50,6 +62,8 @@ describe('App', () => {
 
     const rootRoute = routes.find((route) => route.path === '/');
     expect(rootRoute).toBeDefined();
+    expect(rootRoute?.element?.type).toBe(RequireAuth);
+    expect(rootRoute?.element?.props?.children?.type).toBe(AppLayout);
     const childPaths = (rootRoute?.children ?? []).map((child) =>
       child.index ? '<index>' : child.path,
     );

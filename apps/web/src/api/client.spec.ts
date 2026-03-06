@@ -1,6 +1,25 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import {
+  clearAuthSession,
+  getAuthSession,
+  persistAuthSession,
+} from '../auth/auth-session';
 import { apiFetch, buildApiUrl, resolveApiBaseUrl } from './client';
+
+function createStorageMock() {
+  const store = new Map<string, string>();
+
+  return {
+    getItem: vi.fn((key: string) => store.get(key) ?? null),
+    setItem: vi.fn((key: string, value: string) => {
+      store.set(key, value);
+    }),
+    removeItem: vi.fn((key: string) => {
+      store.delete(key);
+    }),
+  };
+}
 
 describe('resolveApiBaseUrl', () => {
   it('uses configured API URL when it is non-empty', () => {
@@ -24,7 +43,9 @@ describe('resolveApiBaseUrl', () => {
 
 describe('apiFetch', () => {
   afterEach(() => {
+    clearAuthSession();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it('returns parsed payload for a successful response', async () => {
@@ -156,6 +177,65 @@ describe('apiFetch', () => {
         headers: {
           'Content-Type': 'application/json',
           Authorization: 'Bearer token',
+        },
+      },
+    );
+  });
+
+  it('attaches bearer token from persisted auth session when caller does not provide one', async () => {
+    vi.stubGlobal('localStorage', createStorageMock());
+    persistAuthSession({
+      accessToken: 'access-token-123',
+      refreshToken: 'refresh-token-123',
+    });
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: vi.fn().mockResolvedValue(JSON.stringify({ ok: true })),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await apiFetch('/sessions', {
+      method: 'GET',
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:3000/api/v1/sessions',
+      {
+        method: 'GET',
+        headers: {
+          Authorization: 'Bearer access-token-123',
+        },
+      },
+    );
+  });
+
+  it('preserves explicit authorization header instead of overwriting it from persisted auth state', async () => {
+    vi.stubGlobal('localStorage', createStorageMock());
+    persistAuthSession({
+      accessToken: 'access-token-123',
+      refreshToken: 'refresh-token-123',
+    });
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: vi.fn().mockResolvedValue(JSON.stringify({ ok: true })),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await apiFetch('/sessions', {
+      method: 'GET',
+      headers: {
+        Authorization: 'Bearer override-token',
+      },
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:3000/api/v1/sessions',
+      {
+        method: 'GET',
+        headers: {
+          Authorization: 'Bearer override-token',
         },
       },
     );
@@ -385,6 +465,19 @@ describe('apiFetch', () => {
   });
 
   it('falls back to status message when payload has no nested message', async () => {
+    const assignMock = vi.fn();
+    vi.stubGlobal('localStorage', createStorageMock());
+    vi.stubGlobal('window', {
+      location: {
+        assign: assignMock,
+        pathname: '/history',
+      },
+    });
+    persistAuthSession({
+      accessToken: 'access-token-123',
+      refreshToken: 'refresh-token-123',
+    });
+
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
       status: 401,
@@ -395,6 +488,8 @@ describe('apiFetch', () => {
     await expect(apiFetch('/sessions/s1')).rejects.toThrow(
       'Request failed (401)',
     );
+    expect(getAuthSession()).toBeNull();
+    expect(assignMock).toHaveBeenCalledWith('/login');
   });
 
   it('falls back to status message when nested message is not a string', async () => {

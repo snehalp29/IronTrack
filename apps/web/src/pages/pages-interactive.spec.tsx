@@ -18,6 +18,9 @@ import {
   TemplateBuilderPage,
 } from './TemplateBuilderPage';
 
+const submittedValuesState = vi.hoisted(() => ({
+  value: {} as Record<string, unknown>,
+}));
 const useStateMock = vi.hoisted(() => vi.fn());
 const navigateMock = vi.hoisted(() => vi.fn());
 const setSearchParamsMock = vi.hoisted(() => vi.fn());
@@ -25,18 +28,28 @@ const searchParamsState = vi.hoisted(() => ({
   value: new URLSearchParams(),
 }));
 const registerMock = vi.hoisted(() => vi.fn(() => ({})));
+const watchMock = vi.hoisted(() =>
+  vi.fn((field: string) => submittedValuesState.value[field]),
+);
 const handleSubmitMock = vi.hoisted(() =>
-  vi.fn((onValid: () => void) => (event?: { preventDefault?: () => void }) => {
-    event?.preventDefault?.();
-    onValid();
-  }),
+  vi.fn(
+    (onValid: (values: Record<string, unknown>) => unknown) =>
+      (event?: { preventDefault?: () => void }) => {
+        event?.preventDefault?.();
+        return onValid(submittedValuesState.value);
+      },
+  ),
 );
 const useFormMock = vi.hoisted(() =>
   vi.fn(() => ({
     register: registerMock,
     handleSubmit: handleSubmitMock,
+    watch: watchMock,
   })),
 );
+const loginWithPasswordMock = vi.hoisted(() => vi.fn());
+const registerWithPasswordMock = vi.hoisted(() => vi.fn());
+const signInWithGoogleMock = vi.hoisted(() => vi.fn());
 
 vi.mock('react', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react')>();
@@ -58,10 +71,20 @@ vi.mock('react-hook-form', () => ({
   useForm: useFormMock,
 }));
 
+vi.mock('../auth/auth-service', () => ({
+  loginWithPassword: loginWithPasswordMock,
+  registerWithPassword: registerWithPasswordMock,
+  signInWithGoogle: signInWithGoogleMock,
+}));
+
 describe('interactive pages', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     searchParamsState.value = new URLSearchParams();
+    submittedValuesState.value = {};
+    watchMock.mockImplementation(
+      (field: string) => submittedValuesState.value[field],
+    );
   });
 
   it('TemplateBuilderPage renders each step and button updaters enforce bounds', () => {
@@ -289,12 +312,25 @@ describe('interactive pages', () => {
     expect(secondParams.get('tab')).toBe('guide');
   });
 
-  it('LoginPage submits form and navigates to dashboard', () => {
+  it('LoginPage submits credentials to auth API and then navigates to dashboard', async () => {
+    submittedValuesState.value = {
+      email: 'demo@irontrack.local',
+      password: 'DemoPass123!',
+    };
+    loginWithPasswordMock.mockResolvedValue({
+      accessToken: 'access-token-123',
+      refreshToken: 'refresh-token-123',
+    });
+
     const view = LoginPage();
     const form = findForm(view);
     expect(form).toBeDefined();
 
-    form?.props.onSubmit?.({ preventDefault: vi.fn() });
+    await form?.props.onSubmit?.({ preventDefault: vi.fn() });
+    expect(loginWithPasswordMock).toHaveBeenCalledWith({
+      email: 'demo@irontrack.local',
+      password: 'DemoPass123!',
+    });
     expect(navigateMock).toHaveBeenCalledWith('/');
     expect(registerMock).toHaveBeenCalledWith('email');
     expect(registerMock).toHaveBeenCalledWith('password');
@@ -394,16 +430,82 @@ describe('interactive pages', () => {
     expect(confirmPasswordInput?.props.autoComplete).toBe('new-password');
   });
 
-  it('RegisterPage submits form and navigates to dashboard', () => {
+  it('RegisterPage validates confirm password against password input', () => {
+    submittedValuesState.value = {
+      password: 'DemoPass123!',
+    };
+
+    RegisterPage();
+
+    const registerCalls = registerMock.mock.calls as unknown as Array<
+      [string, unknown?]
+    >;
+    const confirmPasswordCall = registerCalls.find(
+      (call) => call[0] === 'confirmPassword',
+    );
+    const confirmPasswordOptions = confirmPasswordCall?.[1] as
+      | {
+          validate?: (value: string) => true | string;
+        }
+      | undefined;
+
+    expect(confirmPasswordOptions?.validate?.('WrongPass123!')).toBe(
+      'Passwords must match',
+    );
+    expect(confirmPasswordOptions?.validate?.('DemoPass123!')).toBe(true);
+  });
+
+  it('RegisterPage submits form to auth API and navigates to dashboard', async () => {
+    submittedValuesState.value = {
+      name: 'Demo User',
+      email: 'demo@irontrack.local',
+      password: 'DemoPass123!',
+      confirmPassword: 'DemoPass123!',
+    };
+    registerWithPasswordMock.mockResolvedValue({
+      accessToken: 'access-token-123',
+      refreshToken: 'refresh-token-123',
+    });
+
     const view = RegisterPage();
     const form = findForm(view);
     expect(form).toBeDefined();
 
-    form?.props.onSubmit?.({ preventDefault: vi.fn() });
+    await form?.props.onSubmit?.({ preventDefault: vi.fn() });
+    expect(registerWithPasswordMock).toHaveBeenCalledWith({
+      name: 'Demo User',
+      email: 'demo@irontrack.local',
+      password: 'DemoPass123!',
+    });
     expect(navigateMock).toHaveBeenCalledWith('/');
     expect(registerMock).toHaveBeenCalledWith('name');
     expect(registerMock).toHaveBeenCalledWith('email');
     expect(registerMock).toHaveBeenCalledWith('password');
-    expect(registerMock).toHaveBeenCalledWith('confirmPassword');
+    const registerCalls = registerMock.mock.calls as unknown as Array<
+      [string, unknown?]
+    >;
+    expect(registerCalls.map((call) => call[0])).toContain('confirmPassword');
+  });
+
+  it('auth pages wire Google buttons to the sign-in flow instead of leaving them inert', async () => {
+    signInWithGoogleMock.mockResolvedValue({
+      accessToken: 'access-token-123',
+      refreshToken: 'refresh-token-123',
+    });
+
+    const loginView = LoginPage();
+    await findButtonByLabel(
+      loginView,
+      'Continue with Google',
+    )?.props.onClick?.();
+
+    const registerView = RegisterPage();
+    await findButtonByLabel(
+      registerView,
+      'Sign Up with Google',
+    )?.props.onClick?.();
+
+    expect(signInWithGoogleMock).toHaveBeenCalledTimes(2);
+    expect(navigateMock).toHaveBeenCalledWith('/');
   });
 });

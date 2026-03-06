@@ -1,3 +1,5 @@
+import { clearAuthSession, getAuthSession } from '../auth/auth-session';
+
 const DEFAULT_API_BASE_URL = 'http://localhost:3000/api/v1';
 const API_BASE_URL = resolveApiBaseUrl(import.meta.env.VITE_API_URL);
 
@@ -23,6 +25,7 @@ export async function apiFetch<T>(
   init?: RequestInit,
 ): Promise<T | undefined> {
   const headers = normalizeHeaders(init?.headers);
+  attachAuthHeader(headers);
   const body = normalizeRequestBody(init?.body, headers);
 
   const response = await fetch(buildApiUrl(API_BASE_URL, path), {
@@ -33,6 +36,10 @@ export async function apiFetch<T>(
 
   if (!response.ok) {
     const payload: unknown = await response.json().catch(() => null);
+    if (response.status === 401) {
+      clearAuthSession();
+      redirectToLogin();
+    }
     throw new Error(
       getApiErrorMessage(payload) ?? `Request failed (${response.status})`,
     );
@@ -43,6 +50,15 @@ export async function apiFetch<T>(
   }
 
   return parseJsonIfNotEmpty<T>(response);
+}
+
+function attachAuthHeader(headers: Record<string, string>): void {
+  const session = getAuthSession();
+  if (!session || hasHeader(headers, 'Authorization')) {
+    return;
+  }
+
+  headers.Authorization = `Bearer ${session.accessToken}`;
 }
 
 async function parseJsonIfNotEmpty<T>(
@@ -111,6 +127,15 @@ function hasHeader(headers: Record<string, string>, name: string): boolean {
   return Object.keys(headers).some((key) => key.toLowerCase() === target);
 }
 
+function redirectToLogin(): void {
+  const location = readBrowserLocation();
+  if (!location || location.pathname === '/login') {
+    return;
+  }
+
+  location.assign('/login');
+}
+
 function normalizeRequestBody(
   body: RequestInit['body'],
   headers: Record<string, string>,
@@ -170,4 +195,35 @@ function isJsonString(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+function readBrowserLocation(): {
+  assign: (path: string) => void;
+  pathname?: string;
+} | null {
+  const maybeWindow = (
+    globalThis as typeof globalThis & {
+      window?: {
+        location?: {
+          assign: (path: string) => void;
+          pathname?: string;
+        };
+      };
+    }
+  ).window;
+
+  if (maybeWindow?.location) {
+    return maybeWindow.location;
+  }
+
+  return (
+    (
+      globalThis as typeof globalThis & {
+        location?: {
+          assign: (path: string) => void;
+          pathname?: string;
+        };
+      }
+    ).location ?? null
+  );
 }
