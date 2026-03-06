@@ -12,6 +12,7 @@ const VALID_GOOGLE_CLIENT_ID = 'google-client-id';
 const VALID_GOOGLE_CLIENT_SECRET = 'google-client-secret';
 const VALID_GOOGLE_CALLBACK_URL =
   'https://auth.example.com/oauth/google/callback';
+const VALID_PRODUCTION_CORS_ORIGIN = 'https://app.example.com';
 
 function createBaseConfig(
   overrides: Record<string, unknown> = {},
@@ -244,6 +245,39 @@ describe('validateEnv', () => {
     ]);
   });
 
+  it('rejects missing CORS_ORIGINS in production', () => {
+    expect(() =>
+      validateEnv(
+        createBaseConfig({
+          NODE_ENV: 'production',
+          GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
+          GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
+          GOOGLE_CALLBACK_URL: VALID_GOOGLE_CALLBACK_URL,
+          ML_SERVICE_URL: 'https://ml.example.com',
+        }),
+      ),
+    ).toThrow(
+      /Invalid environment configuration: CORS_ORIGINS: CORS_ORIGINS is required when NODE_ENV=production/,
+    );
+  });
+
+  it('rejects blank CORS_ORIGINS in production', () => {
+    expect(() =>
+      validateEnv(
+        createBaseConfig({
+          NODE_ENV: 'production',
+          GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
+          GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
+          GOOGLE_CALLBACK_URL: VALID_GOOGLE_CALLBACK_URL,
+          ML_SERVICE_URL: 'https://ml.example.com',
+          CORS_ORIGINS: '   ',
+        }),
+      ),
+    ).toThrow(
+      /Invalid environment configuration: CORS_ORIGINS: CORS_ORIGINS is required when NODE_ENV=production/,
+    );
+  });
+
   it('falls back to default API_PREFIX when only slashes are provided', () => {
     const parsed = validateEnv(
       createBaseConfig({
@@ -353,6 +387,19 @@ describe('validateEnv', () => {
       ),
     ).toThrow(
       /Invalid environment configuration: API_PREFIX: Invalid input: expected string, received number/,
+    );
+  });
+
+  it('rejects identical JWT access and refresh secrets', () => {
+    expect(() =>
+      validateEnv(
+        createBaseConfig({
+          JWT_ACCESS_SECRET: 'shared-secret-123456',
+          JWT_REFRESH_SECRET: 'shared-secret-123456',
+        }),
+      ),
+    ).toThrow(
+      /Invalid environment configuration: JWT_REFRESH_SECRET: JWT_REFRESH_SECRET must differ from JWT_ACCESS_SECRET/,
     );
   });
 
@@ -879,6 +926,7 @@ describe('validateEnv', () => {
         GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
         GOOGLE_CALLBACK_URL: VALID_GOOGLE_CALLBACK_URL,
         ML_SERVICE_URL: 'https://ml.example.com',
+        CORS_ORIGINS: VALID_PRODUCTION_CORS_ORIGIN,
       }),
     );
 
@@ -893,6 +941,7 @@ describe('validateEnv', () => {
         GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
         GOOGLE_CALLBACK_URL: VALID_GOOGLE_CALLBACK_URL,
         ML_SERVICE_URL: 'https://ml.example.com',
+        CORS_ORIGINS: VALID_PRODUCTION_CORS_ORIGIN,
       }),
     );
 
@@ -907,6 +956,7 @@ describe('validateEnv', () => {
         GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
         GOOGLE_CALLBACK_URL: VALID_GOOGLE_CALLBACK_URL,
         ML_SERVICE_URL: 'https://ml.example.com',
+        CORS_ORIGINS: VALID_PRODUCTION_CORS_ORIGIN,
       }),
     );
 

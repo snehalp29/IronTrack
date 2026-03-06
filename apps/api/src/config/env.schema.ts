@@ -186,6 +186,14 @@ export const envSchema = z
     const hasCompleteGoogleConfig =
       hasGoogleClientId && hasGoogleClientSecret && hasGoogleCallbackUrl;
 
+    if (env.JWT_ACCESS_SECRET === env.JWT_REFRESH_SECRET) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['JWT_REFRESH_SECRET'],
+        message: 'JWT_REFRESH_SECRET must differ from JWT_ACCESS_SECRET',
+      });
+    }
+
     if (env.NODE_ENV === 'production' && !hasCompleteGoogleConfig) {
       if (!hasGoogleClientId) {
         ctx.addIssue({
@@ -288,5 +296,13 @@ export function validateEnv(config: Record<string, unknown>): Env {
       .join(', ');
     throw new Error(`Invalid environment configuration: ${details}`);
   }
+
+  const rawCorsOrigins = trimStringOrUndefined(config.CORS_ORIGINS);
+  if (parsed.data.NODE_ENV === 'production' && rawCorsOrigins === undefined) {
+    throw new Error(
+      'Invalid environment configuration: CORS_ORIGINS: CORS_ORIGINS is required when NODE_ENV=production',
+    );
+  }
+
   return parsed.data;
 }

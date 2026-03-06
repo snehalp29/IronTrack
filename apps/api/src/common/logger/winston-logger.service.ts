@@ -58,4 +58,13 @@ export class WinstonLoggerService implements LoggerService {
     const payload = this.formatMessage(message);
     this.logger.verbose(payload.message, { context, details: payload.details });
   }
+
+  fatal(message: unknown, context?: string): void {
+    const payload = this.formatMessage(message);
+    this.logger.error(payload.message, {
+      context,
+      details: payload.details,
+      fatal: true,
+    });
+  }
 }

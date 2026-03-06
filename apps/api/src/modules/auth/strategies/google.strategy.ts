@@ -6,6 +6,10 @@ import { Profile, Strategy, VerifyCallback } from 'passport-google-oauth20';
 @Injectable()
 export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
   constructor(configService: ConfigService) {
+    const nodeEnv =
+      configService.get<string>('NODE_ENV')?.trim() ??
+      process.env.NODE_ENV ??
+      'development';
     const clientID = configService.get<string>('GOOGLE_CLIENT_ID')?.trim();
     const clientSecret = configService
       .get<string>('GOOGLE_CLIENT_SECRET')
@@ -17,17 +21,13 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
     const hasAnyConfig = Boolean(clientID || clientSecret || callbackURL);
     const hasCompleteConfig = Boolean(clientID && clientSecret && callbackURL);
 
-    if (process.env.NODE_ENV === 'production' && !hasCompleteConfig) {
+    if (nodeEnv === 'production' && !hasCompleteConfig) {
       throw new Error(
         'GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_CALLBACK_URL are required in production.',
       );
     }
 
-    if (
-      process.env.NODE_ENV !== 'production' &&
-      hasAnyConfig &&
-      !hasCompleteConfig
-    ) {
+    if (nodeEnv !== 'production' && hasAnyConfig && !hasCompleteConfig) {
       throw new Error(
         'Google OAuth config must provide GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_CALLBACK_URL together.',
       );

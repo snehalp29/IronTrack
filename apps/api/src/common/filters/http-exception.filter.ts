@@ -8,6 +8,8 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
+import { applyCorrelationId } from '../interceptors/correlation-id.interceptor';
+
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(HttpExceptionFilter.name);
@@ -16,6 +18,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
+    applyCorrelationId(request, response);
 
     const defaultPayload = {
       code: 'INTERNAL_SERVER_ERROR',
@@ -36,6 +39,14 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     const statusCode = exception.getStatus();
     const exceptionBody = exception.getResponse();
+    if (statusCode >= HttpStatus.INTERNAL_SERVER_ERROR) {
+      this.logger.error(
+        `Handled ${statusCode} error for ${request.method} ${request.url}`,
+        exception.stack,
+      );
+      response.status(statusCode).json({ error: defaultPayload });
+      return;
+    }
 
     if (typeof exceptionBody === 'object' && exceptionBody !== null) {
       const body = exceptionBody as {
@@ -47,7 +58,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
         error: {
           code: body.code ?? 'HTTP_ERROR',
           message: this.normalizeMessage(body.message, exception.message),
-          details: body.details,
+          details: this.normalizeDetails(body.details),
         },
       });
       return;
@@ -69,7 +80,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     if (Array.isArray(message)) {
       return message
         .map((value) =>
-          typeof value === 'string' ? value : JSON.stringify(value),
+          typeof value === 'string' ? value : this.safeStringify(value),
         )
         .join('; ');
     }
@@ -79,9 +90,38 @@ export class HttpExceptionFilter implements ExceptionFilter {
     }
 
     if (typeof message === 'object') {
-      return JSON.stringify(message);
+      return this.safeStringify(message);
     }
 
     return String(message);
+  }
+
+  private normalizeDetails(details: unknown): unknown {
+    if (details === undefined) {
+      return undefined;
+    }
+
+    if (
+      details === null ||
+      typeof details === 'string' ||
+      typeof details === 'number' ||
+      typeof details === 'boolean'
+    ) {
+      return details;
+    }
+
+    try {
+      return JSON.parse(JSON.stringify(details));
+    } catch {
+      return '[Unserializable]';
+    }
+  }
+
+  private safeStringify(value: unknown): string {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return '[Unserializable]';
+    }
   }
 }

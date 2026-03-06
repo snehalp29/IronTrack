@@ -15,6 +15,7 @@ describe('WinstonLoggerService', () => {
       warn: jest.fn(),
       debug: jest.fn(),
       verbose: jest.fn(),
+      fatal: jest.fn(),
     };
 
     (service as never as { logger: typeof logger }).logger = logger;
@@ -77,5 +78,20 @@ describe('WinstonLoggerService', () => {
     };
 
     expect(service.logger.level).toBe('info');
+  });
+
+  it('routes fatal logs through the error transport with a fatal marker', () => {
+    const { service, logger } = createService();
+    const fatal = service as unknown as {
+      fatal: (message: unknown, context?: string) => void;
+    };
+
+    fatal.fatal('catastrophic failure', 'Bootstrap');
+
+    expect(logger.error).toHaveBeenCalledWith('catastrophic failure', {
+      context: 'Bootstrap',
+      details: undefined,
+      fatal: true,
+    });
   });
 });

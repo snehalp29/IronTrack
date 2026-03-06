@@ -3,15 +3,24 @@ import { HttpException, HttpStatus } from '@nestjs/common';
 import { HttpExceptionFilter } from './http-exception.filter';
 
 describe('HttpExceptionFilter', () => {
-  const createHost = (request: { method: string; url: string }) => {
+  const createHost = (request: {
+    method: string;
+    url: string;
+    headers?: Record<string, unknown>;
+  }) => {
+    const normalizedRequest = {
+      ...request,
+      headers: request.headers ?? {},
+    };
     const response = {
       status: jest.fn().mockReturnThis(),
       json: jest.fn(),
+      setHeader: jest.fn(),
     };
 
     const host = {
       switchToHttp: () => ({
-        getRequest: () => request,
+        getRequest: () => normalizedRequest,
         getResponse: () => response,
       }),
     };
@@ -40,6 +49,10 @@ describe('HttpExceptionFilter', () => {
     );
     expect(response.status).toHaveBeenCalledWith(
       HttpStatus.INTERNAL_SERVER_ERROR,
+    );
+    expect(response.setHeader).toHaveBeenCalledWith(
+      'x-correlation-id',
+      expect.any(String),
     );
     expect(response.json).toHaveBeenCalledWith({
       error: {
@@ -95,6 +108,21 @@ describe('HttpExceptionFilter', () => {
         details: [{ field: 'name' }],
       },
     });
+  });
+
+  it('adds a correlation id header when handling HttpExceptions before interceptors run', () => {
+    const filter = new HttpExceptionFilter();
+    const { host, response } = createHost({ method: 'GET', url: '/items' });
+
+    filter.catch(
+      new HttpException('failed', HttpStatus.BAD_REQUEST),
+      host as never,
+    );
+
+    expect(response.setHeader).toHaveBeenCalledWith(
+      'x-correlation-id',
+      expect.any(String),
+    );
   });
 
   it('normalizes HttpException array message into a string', () => {
@@ -172,6 +200,73 @@ describe('HttpExceptionFilter', () => {
     });
   });
 
+  it('does not throw when message normalization hits a circular object', () => {
+    const filter = new HttpExceptionFilter();
+    const { host, response } = createHost({ method: 'POST', url: '/items' });
+    const circular: { self?: unknown } = {};
+    circular.self = circular;
+
+    expect(() =>
+      filter.catch(
+        new HttpException(
+          {
+            code: 'BAD_INPUT',
+            message: circular,
+          },
+          HttpStatus.BAD_REQUEST,
+        ),
+        host as never,
+      ),
+    ).not.toThrow();
+
+    expect(response.json).toHaveBeenCalledWith({
+      error: {
+        code: 'BAD_INPUT',
+        message: '[Unserializable]',
+        details: undefined,
+      },
+    });
+  });
+
+  it('does not throw when details normalization hits a circular object', () => {
+    const filter = new HttpExceptionFilter();
+    const circular: { self?: unknown } = {};
+    circular.self = circular;
+    const response = {
+      status: jest.fn().mockReturnThis(),
+      setHeader: jest.fn(),
+      json: jest.fn((payload: unknown) => JSON.stringify(payload)),
+    };
+    const host = {
+      switchToHttp: () => ({
+        getRequest: () => ({ method: 'POST', url: '/items', headers: {} }),
+        getResponse: () => response,
+      }),
+    };
+
+    expect(() =>
+      filter.catch(
+        new HttpException(
+          {
+            code: 'BAD_INPUT',
+            message: 'Invalid data',
+            details: circular,
+          },
+          HttpStatus.BAD_REQUEST,
+        ),
+        host as never,
+      ),
+    ).not.toThrow();
+
+    expect(response.json).toHaveBeenCalledWith({
+      error: {
+        code: 'BAD_INPUT',
+        message: 'Invalid data',
+        details: '[Unserializable]',
+      },
+    });
+  });
+
   it('normalizes non-string primitive messages', () => {
     const filter = new HttpExceptionFilter();
     const { host, response } = createHost({ method: 'POST', url: '/items' });
@@ -196,23 +291,65 @@ describe('HttpExceptionFilter', () => {
     });
   });
 
-  it('maps HttpException string response', () => {
+  it('maps non-5xx HttpException string responses', () => {
     const filter = new HttpExceptionFilter();
     const { host, response } = createHost({ method: 'GET', url: '/items' });
 
-    const exception = new HttpException(
-      'failed',
-      HttpStatus.INTERNAL_SERVER_ERROR,
-    );
+    const exception = new HttpException('failed', HttpStatus.BAD_REQUEST);
     filter.catch(exception, host as never);
+
+    expect(response.status).toHaveBeenCalledWith(HttpStatus.BAD_REQUEST);
+    expect(response.json).toHaveBeenCalledWith({
+      error: {
+        code: 'HTTP_ERROR',
+        message: 'failed',
+      },
+    });
+  });
+
+  it('masks object-based 500 HttpExceptions instead of echoing internal details', () => {
+    const filter = new HttpExceptionFilter();
+    const { host, response } = createHost({ method: 'GET', url: '/items' });
+
+    filter.catch(
+      new HttpException(
+        {
+          code: 'DB_DOWN',
+          message: 'database offline',
+          details: { stack: 'secret' },
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      ),
+      host as never,
+    );
 
     expect(response.status).toHaveBeenCalledWith(
       HttpStatus.INTERNAL_SERVER_ERROR,
     );
     expect(response.json).toHaveBeenCalledWith({
       error: {
-        code: 'HTTP_ERROR',
-        message: 'failed',
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'An unexpected error occurred',
+      },
+    });
+  });
+
+  it('masks string-based 500 HttpExceptions instead of echoing internal details', () => {
+    const filter = new HttpExceptionFilter();
+    const { host, response } = createHost({ method: 'GET', url: '/items' });
+
+    filter.catch(
+      new HttpException('database offline', HttpStatus.INTERNAL_SERVER_ERROR),
+      host as never,
+    );
+
+    expect(response.status).toHaveBeenCalledWith(
+      HttpStatus.INTERNAL_SERVER_ERROR,
+    );
+    expect(response.json).toHaveBeenCalledWith({
+      error: {
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'An unexpected error occurred',
       },
     });
   });

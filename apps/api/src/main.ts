@@ -11,7 +11,7 @@ import { CorrelationIdInterceptor } from './common/interceptors/correlation-id.i
 import { WinstonLoggerService } from './common/logger/winston-logger.service';
 import { PrismaService } from './prisma/prisma.service';
 
-async function bootstrap() {
+export async function bootstrap() {
   const logger = new WinstonLoggerService();
   const app = await NestFactory.create(AppModule, { logger });
   const configService = app.get(ConfigService);
@@ -38,15 +38,20 @@ async function bootstrap() {
     credentials: true,
   });
 
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('IronTrack API')
-    .setDescription('IronTrack REST API documentation')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build();
+  const nodeEnv = configService.getOrThrow<
+    'development' | 'test' | 'production'
+  >('NODE_ENV');
+  if (nodeEnv !== 'production') {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('IronTrack API')
+      .setDescription('IronTrack REST API documentation')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .build();
 
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup(`${prefix}/docs`, app, document);
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup(`${prefix}/docs`, app, document);
+  }
 
   const prismaService = app.get(PrismaService);
   await prismaService.enableShutdownHooks(app);
@@ -57,4 +62,6 @@ async function bootstrap() {
   logger.log(`API running on http://localhost:${port}/${prefix}`);
 }
 
-bootstrap();
+if (require.main === module) {
+  void bootstrap();
+}

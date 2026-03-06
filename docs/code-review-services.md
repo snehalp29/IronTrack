@@ -25,8 +25,8 @@
 
 ## Current Status
 
-- Total findings tracked: **120**
-- Open findings: **0**
+- Total findings tracked: **132**
+- Open findings: **12**
 - Fixed findings: **120**
 - Historical implementation snippets were removed to keep this document compact.
 
@@ -127,6 +127,18 @@
 - `#118`: ✅ Fixed (`P2`) — `SessionsService.startSession()` now rejects template starts when no active template exercises remain to clone.
 - `#119`: ✅ Fixed (`P1`) — `SessionsService.reorderSessionExercises()` now keeps both reorder phases behind an active-session ownership predicate.
 - `#120`: ✅ Fixed (`P2`) — `UsersService.deleteMe()` now deletes `SessionNote` rows alongside other user-owned data.
+- `#121`: 🔴 Open (`P1`) — `sessions.controller.ts` route ordering: `@Patch(':sessionId/exercises/:id')` shadows `@Patch(':sessionId/exercises/reorder')` — reorder endpoint unreachable.
+- `#122`: 🔴 Open (`P2`) — `finishSession` concurrent double side-effect fire: PRs, volume, streak mutated before FINISHED write; concurrent race fires them twice.
+- `#123`: 🔴 Open (`P2`) — `addSessionExercise` missing volume re-cache for FINISHED sessions.
+- `#124`: 🔴 Open (`P2`) — `batchCreateSets` partial commits: `Promise.all` without transaction; mid-batch failure leaves orphaned sets.
+- `#125`: 🔴 Open (`P2`) — `createSetInternal` idempotency lookup skips `deletedAt: null`; soft-deleted set returned as duplicate hit.
+- `#126`: 🔴 Open (`P2`) — `payload` field in set schema unconstrained: `z.record(z.string(), z.unknown())` allows arbitrary deep JSON.
+- `#127`: 🔴 Open (`P3`) — `startSessionSchema` exercises array has no `.max()` — unbounded inline payload.
+- `#128`: 🔴 Open (`P3`) — `batchCreateSetsSchema` sets array has no `.max()` — unbounded batch size.
+- `#129`: 🔴 Open (`P3`) — `createWorkoutTemplateSchema` exercises array has no `.max()`.
+- `#130`: 🔴 Open (`P3`) — `listSessionsQuerySchema` has no date-range cap; arbitrary `startDate`/`endDate` window loads unbounded rows.
+- `#131`: 🔴 Open (`P3`) — `swapSessionExercise` returns thin pre-write snapshot `{ id, exerciseTemplateId }` instead of full updated record.
+- `#132`: 🔴 Open (`P3`) — `ExercisesService.softDelete()` leaves orphan `PRRecord` rows for the deleted exercise template.
 
 ---
 
@@ -292,6 +304,207 @@
 
 - Added `session.deletedAt: null` ownership guards to both phases of `reorderSessionExercises()` so deleted sessions can no longer have child `orderIndex` writes applied after the preflight checks.
 - Expanded account deletion cleanup to remove `SessionNote` rows tied to the user’s sessions in the same transaction.
+
+---
+
+## Pass 13 — Verification (121–132 baseline) + New Findings
+
+**Scope:** `sessions.controller.ts`, `sessions.service.ts` (full), `session.schemas.ts`, `exercises.controller.ts`, `exercises.service.ts`, `workout-templates.controller.ts`, `workout-template.schemas.ts`, `exercise.schemas.ts`, `progress.controller.ts`, `users.controller.ts`
+
+### Verified Fixed (sample from #29–#120)
+
+| #    | Location                                                                                | Verified |
+| ---- | --------------------------------------------------------------------------------------- | -------- |
+| #29  | `softDeleteSession` recalculates PRs (L439–458)                                         | ✅       |
+| #30  | `deleteSessionExercise` recalculates PRs + recaches volume (L639–645)                   | ✅       |
+| #31  | `swapSessionExercise` recalculates both template PRs (L779–789)                         | ✅       |
+| #33  | `reorderSessionExercises` pre-validates count (L657–668)                                | ✅       |
+| #34  | Idempotency `P2002` race refetch in `createSetInternal` (L1285–1305)                    | ✅       |
+| #35  | Side-effects run before FINISHED write in `finishSession` (L270–295)                    | ✅       |
+| #36  | Set mutations include `session.deletedAt: null`                                         | ✅       |
+| #38  | `batchCreateSets` uses `Promise.all` (L1075–1079)                                       | ✅       |
+| #73  | Two-phase reorder with temporary negative indexes (L671–717)                            | ✅       |
+| #84  | `startSession` rejects duplicate `orderIndex` (assertUniqueSessionExerciseOrderIndexes) | ✅       |
+| #85  | Nested order conflict mapping in `startSession`                                         | ✅       |
+| #91  | `swapSessionExercise` guarded write (L759–773)                                          | ✅       |
+| #92  | `updateSet` guarded write (L879–900)                                                    | ✅       |
+| #93  | `deleteSet` guarded write (L949–963)                                                    | ✅       |
+| #94  | `toggleSetCompletion` guarded write (L1025–1042)                                        | ✅       |
+| #109 | `finishSession` guarded final write (L281–295)                                          | ✅       |
+| #119 | Both reorder phases behind active-session predicate (L671–717)                          | ✅       |
+
+### New Findings
+
+---
+
+#### #121 · P1 · `sessions.controller.ts` — `PATCH .../exercises/reorder` is unreachable
+
+**File:** `apps/api/src/modules/sessions/sessions.controller.ts:94,119`
+
+`@Patch(':sessionId/exercises/:id')` is registered at L94, before `@Patch(':sessionId/exercises/reorder')` at L119. NestJS/Express resolves routes in declaration order. Any `PATCH /sessions/X/exercises/reorder` request matches the `:id` handler with `id = "reorder"`, passing body validation against `updateSessionExerciseSchema` and routing to `updateSessionExercise`. The `reorderExercises` handler at L119 is permanently unreachable.
+
+**Fix:** Move `@Patch(':sessionId/exercises/reorder')` to a position before `@Patch(':sessionId/exercises/:id')` in the controller file.
+
+---
+
+#### #122 · P2 · `sessions.service.ts` — Concurrent `finishSession` double-fires side-effects
+
+**File:** `apps/api/src/modules/sessions/sessions.service.ts:260–316`
+
+`finishSession` reads session status at L260, then runs `cacheSessionVolume`, `detectForSession`, `onSessionFinished`, and `completionService.calculate` (L270–280) before the `workoutSession.updateMany` commit at L281. Under concurrent requests:
+
+1. Request A and B both read `IN_PROGRESS` and pass the status guard.
+2. Both run all four side-effects — streak is incremented twice, PRs detected twice.
+3. Request A's `updateMany` succeeds; request B finds `count = 0` and throws `SESSION_ALREADY_FINISHED`.
+
+The duplicate streak fire is the most dangerous: `onSessionFinished` may increment `currentStreak` twice for the same session date.
+
+**Fix:** Move the `cacheSessionVolume` and `detectForSession` calls to after the guarded `updateMany`; only run `onSessionFinished` and completion on success.
+
+---
+
+#### #123 · P2 · `sessions.service.ts` — `addSessionExercise` leaves volume cache stale on FINISHED sessions
+
+**File:** `apps/api/src/modules/sessions/sessions.service.ts:463–491`
+
+`addSessionExercise` calls `assertSessionOwnership` then creates the exercise row. It never checks `session.status` and never calls `volumeService.cacheSessionVolume()`. In contrast, `deleteSessionExercise` (L643–645) explicitly re-caches volume when `session.status === 'FINISHED'`. Adding an exercise to a finished session silently leaves the volume cache stale.
+
+**Fix:** After the create, fetch `session.status` and call `cacheSessionVolume` when `FINISHED`.
+
+---
+
+#### #124 · P2 · `sessions.service.ts` — `batchCreateSets` has no transaction; partial failure leaves orphaned sets
+
+**File:** `apps/api/src/modules/sessions/sessions.service.ts:1075–1079`
+
+```typescript
+const createdSets = await Promise.all(
+  input.sets.map((set) =>
+    this.createSetInternal(userId, sessionExerciseId, set, sessionExercise),
+  ),
+);
+```
+
+Each `createSetInternal` call issues its own `prisma.set.create`. If set N fails (e.g. duplicate `orderIndex`), sets 0..N-1 are already committed. No rollback occurs. The caller receives a `ConflictException` while the partial sets remain in the DB.
+
+**Fix:** Wrap all `createSetInternal` calls in a `prisma.$transaction(async (tx) => ...)` and pass `tx` through.
+
+---
+
+#### #125 · P2 · `sessions.service.ts` — Idempotency pre-check includes soft-deleted sets
+
+**File:** `apps/api/src/modules/sessions/sessions.service.ts:1232–1238`
+
+```typescript
+const existing = await this.prisma.set.findFirst({
+  where: {
+    sessionExerciseId,
+    idempotencyKey: input.idempotencyKey,
+  },
+});
+```
+
+No `deletedAt: null` filter. A previously soft-deleted set matching `(sessionExerciseId, idempotencyKey)` is returned as a hit. The function short-circuits with `wasCreated: false` and returns the deleted row as if the create succeeded. The client never learns the set was deleted, and no new set is created.
+
+The same pattern applies in the `catch` block recovery at L1290–1295.
+
+**Fix:** Add `deletedAt: null` to both idempotency `findFirst` queries.
+
+---
+
+#### #126 · P2 · `session.schemas.ts` — `payload` field is unconstrained
+
+**File:** `apps/api/src/modules/sessions/dto/session.schemas.ts:103`
+
+```typescript
+payload: z.record(z.string(), z.unknown()),
+```
+
+`z.unknown()` values can be deeply nested objects, arrays, or any JSON. There is no key-count limit, no depth limit, and no size limit. Clients can store multi-megabyte arbitrary JSON per set, causing unbounded DB row sizes and potential memory pressure during serialization.
+
+**Fix:** Either constrain `payload` to a union of known set-type discriminated shapes, or add a `.refine()` that rejects payloads beyond a max serialized size (e.g. 4 KB).
+
+---
+
+#### #127 · P3 · `session.schemas.ts` — `startSessionSchema` exercises array unbounded
+
+**File:** `apps/api/src/modules/sessions/dto/session.schemas.ts:14`
+
+```typescript
+exercises: z.array(...).default([])
+```
+
+No `.max()` constraint. A client can submit thousands of inline exercises in a single start-session call, triggering a massive nested `create` in `startSession` and a subsequent `assertUniqueSessionExerciseOrderIndexes` O(n) loop.
+
+**Fix:** Add `.max(200)` (or a sensible cap).
+
+---
+
+#### #128 · P3 · `session.schemas.ts` — `batchCreateSetsSchema` sets array unbounded
+
+**File:** `apps/api/src/modules/sessions/dto/session.schemas.ts:139`
+
+```typescript
+sets: z.array(createSetSchema).min(1);
+```
+
+No `.max()`. A batch of thousands of sets triggers an equivalent number of DB `create` calls via `Promise.all`.
+
+**Fix:** Add `.max(100)` or similar.
+
+---
+
+#### #129 · P3 · `workout-template.schemas.ts` — exercises arrays unbounded
+
+**File:** `apps/api/src/modules/workout-templates/dto/workout-template.schemas.ts:34,41`
+
+`createWorkoutTemplateSchema` has `exercises: z.array(templateExerciseSchema).min(1)` and `updateWorkoutTemplateSchema` has `exercises: z.array(templateExerciseSchema).optional()`, both without `.max()`. Large exercise payloads can cause expensive delete-then-createMany operations in `update()`.
+
+**Fix:** Add `.max(200)` to both arrays.
+
+---
+
+#### #130 · P3 · `session.schemas.ts` — No date-range cap on session list query
+
+**File:** `apps/api/src/modules/sessions/dto/session.schemas.ts:36–37`
+
+```typescript
+startDate: z.string().datetime().optional(),
+endDate: z.string().datetime().optional(),
+```
+
+No maximum range enforced. A client can request `startDate=2000-01-01` to `endDate=2030-12-31`, returning years of sessions in one paginated call. Combined with `pageSize` up to 100, this is low-cost on the caller side.
+
+**Fix:** In `listSessions` service, enforce a maximum range (e.g. 366 days) or require pagination to be used within a bounded window.
+
+---
+
+#### #131 · P3 · `sessions.service.ts` — `swapSessionExercise` returns incomplete record
+
+**File:** `apps/api/src/modules/sessions/sessions.service.ts:791–794`
+
+```typescript
+return {
+  ...exercise, // { id, exerciseTemplateId } only — pre-write snapshot
+  exerciseTemplateId: input.toExerciseTemplateId,
+};
+```
+
+The fetched `exercise` object has only `id` and `exerciseTemplateId` (the `select` at L744–747). The return is a two-field object. In contrast, `updateSessionExercise` re-fetches and returns the full record. Clients calling swap get no `version`, `orderIndex`, `notes`, `supersetGroupKey`, or `updatedAt` — forcing an extra GET to stay in sync.
+
+**Fix:** Add a post-write `findFirst` re-fetch (same pattern as `updateSessionExercise` L570–586) and return the full record.
+
+---
+
+#### #132 · P3 · `exercises.service.ts` — Soft-deleting an exercise leaves orphan `PRRecord` rows
+
+**File:** `apps/api/src/modules/exercises/exercises.service.ts:274–293`
+
+`softDelete` marks the `ExerciseTemplate` as deleted but does not delete or recalculate `PRRecord` rows that reference it. Those PRs remain live, reference an invisible exercise, and will surface in any progress or PR query that joins by `exerciseTemplateId`. Inconsistent with `deleteSessionExercise` which always calls `recalculateForExercise`.
+
+Whether to delete or retain PRs is a product decision; at minimum the behavior should be intentional and documented.
+
+**Fix:** Either call `prisma.pRRecord.deleteMany({ where: { userId, exerciseTemplateId } })` at deletion time, or call `recalculateForExercise` to ensure the PR state is consistent. If retention is intentional, add a comment.
 
 ---
 

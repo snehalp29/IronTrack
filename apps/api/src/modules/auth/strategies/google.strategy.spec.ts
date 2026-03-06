@@ -92,6 +92,24 @@ describe('GoogleStrategy', () => {
     ).not.toThrow();
   });
 
+  it('uses NODE_ENV from config service when it differs from process.env', () => {
+    process.env.NODE_ENV = 'development';
+
+    expect(
+      () =>
+        new GoogleStrategy({
+          get: jest.fn((key: string) => {
+            if (key === 'NODE_ENV') {
+              return 'production';
+            }
+            return undefined;
+          }),
+        } as never),
+    ).toThrow(
+      'GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_CALLBACK_URL are required in production.',
+    );
+  });
+
   it('passes tokens and profile to done callback', async () => {
     process.env.NODE_ENV = 'test';
 
