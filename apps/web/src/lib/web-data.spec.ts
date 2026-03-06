@@ -8,6 +8,8 @@ import {
   useActiveWorkoutPageData,
   useCompletionFlowData,
   useDashboardPageData,
+  useExerciseDetailPageData,
+  useExerciseSelectPageData,
   useExerciseWizardPageData,
   useHistoryPageData,
   useSettingsPageData,
@@ -21,6 +23,7 @@ const useMemoMock = vi.hoisted(() =>
 );
 const navigateMock = vi.hoisted(() => vi.fn());
 const useNavigateMock = vi.hoisted(() => vi.fn(() => navigateMock));
+const useParamsMock = vi.hoisted(() => vi.fn(() => ({ id: 'exercise-bench' })));
 const useSearchParamsMock = vi.hoisted(() =>
   vi.fn(() => [new URLSearchParams(), vi.fn()]),
 );
@@ -35,6 +38,7 @@ const fetchWorkoutStreakMock = vi.hoisted(() => vi.fn());
 const fetchActiveSessionMock = vi.hoisted(() => vi.fn());
 const finishWorkoutSessionMock = vi.hoisted(() => vi.fn());
 const toggleWorkoutSetCompletionMock = vi.hoisted(() => vi.fn());
+const swapWorkoutExerciseMock = vi.hoisted(() => vi.fn());
 const updateWorkoutExerciseMock = vi.hoisted(() => vi.fn());
 const applyWorkoutSupersetMock = vi.hoisted(() => vi.fn());
 const useRestTimerMock = vi.hoisted(() => vi.fn());
@@ -64,6 +68,7 @@ vi.mock('react', async (importOriginal) => {
 
 vi.mock('react-router-dom', () => ({
   useNavigate: useNavigateMock,
+  useParams: useParamsMock,
   useSearchParams: useSearchParamsMock,
 }));
 
@@ -102,6 +107,7 @@ vi.mock('./web-api', async (importOriginal) => {
     fetchWorkoutStreak: fetchWorkoutStreakMock,
     finishWorkoutSession: finishWorkoutSessionMock,
     listWorkoutSessions: listWorkoutSessionsMock,
+    swapWorkoutExercise: swapWorkoutExerciseMock,
     toggleWorkoutSetCompletion: toggleWorkoutSetCompletionMock,
     updateWorkoutExercise: updateWorkoutExerciseMock,
     applyWorkoutSuperset: applyWorkoutSupersetMock,
@@ -111,6 +117,7 @@ vi.mock('./web-api', async (importOriginal) => {
 describe('web-data', () => {
   const queryClient = {
     invalidateQueries: vi.fn(),
+    setQueryData: vi.fn(),
   };
 
   beforeEach(() => {
@@ -172,6 +179,12 @@ describe('web-data', () => {
     expect(
       getTodayDate('America/New_York', new Date('2026-03-07T04:30:00.000Z')),
     ).toBe('2026-03-06');
+  });
+
+  it('falls back to UTC when the provided timezone is invalid', () => {
+    expect(
+      getTodayDate('Mars/Olympus', new Date('2026-03-07T04:30:00.000Z')),
+    ).toBe('2026-03-07');
   });
 
   it('treats two UTC-separated sessions on the same local day as one streak day', () => {
@@ -372,7 +385,14 @@ describe('web-data', () => {
       isLoading: false,
     });
     useStateMock
-      .mockReturnValueOnce([initialWizardFormValues, vi.fn()])
+      .mockReturnValueOnce([
+        {
+          ...initialWizardFormValues,
+          name: 'Bench Press',
+          primaryMuscleGroupId: 'muscle-1',
+        },
+        vi.fn(),
+      ])
       .mockReturnValueOnce([undefined, setErrorMessage]);
     useMutationMock.mockImplementation(
       ({ onError }: { onError?: (error: unknown) => void }) => ({
@@ -391,6 +411,68 @@ describe('web-data', () => {
     await expect(data.onSubmit()).resolves.toBeUndefined();
     expect(setErrorMessage).toHaveBeenCalledWith('Create failed');
     expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  it('blocks wizard advancement when the current step is invalid', () => {
+    const setErrorMessage = vi.fn();
+    const setSearchParams = vi.fn();
+    useSearchParamsMock.mockReturnValue([
+      new URLSearchParams('step=1'),
+      setSearchParams,
+    ]);
+    useQueryMock.mockReturnValue({
+      data: [],
+      error: undefined,
+      isLoading: false,
+    });
+    useStateMock
+      .mockReturnValueOnce([initialWizardFormValues, vi.fn()])
+      .mockReturnValueOnce([undefined, setErrorMessage]);
+    useMutationMock.mockReturnValue({
+      error: undefined,
+      isPending: false,
+      mutateAsync: vi.fn(),
+    });
+
+    const data = useExerciseWizardPageData();
+
+    data.onNext();
+    expect(setErrorMessage).toHaveBeenCalledWith('Exercise name is required');
+    expect(setSearchParams).not.toHaveBeenCalled();
+  });
+
+  it('blocks wizard submission until required fields are present', async () => {
+    const setErrorMessage = vi.fn();
+    const mutateAsync = vi.fn();
+    useSearchParamsMock.mockReturnValue([
+      new URLSearchParams('step=7'),
+      vi.fn(),
+    ]);
+    useQueryMock.mockReturnValue({
+      data: [],
+      error: undefined,
+      isLoading: false,
+    });
+    useStateMock
+      .mockReturnValueOnce([
+        {
+          ...initialWizardFormValues,
+          name: 'Bench Press',
+        },
+        vi.fn(),
+      ])
+      .mockReturnValueOnce([undefined, setErrorMessage]);
+    useMutationMock.mockReturnValue({
+      error: undefined,
+      isPending: false,
+      mutateAsync,
+    });
+
+    const data = useExerciseWizardPageData();
+
+    await expect(data.onSubmit()).resolves.toBeUndefined();
+    expect(setErrorMessage).toHaveBeenCalledWith('Primary muscle is required');
+    expect(mutateAsync).not.toHaveBeenCalled();
   });
 
   it('swallows rejected workout starts after the preview mutation reports the error', async () => {
@@ -487,6 +569,128 @@ describe('web-data', () => {
 
     expect(data.recommendedTemplate?.id).toBe('template-chest');
     expect(data.streakDays).toBe(9);
+    expect(
+      useQueryMock.mock.calls.some(
+        ([options]) =>
+          JSON.stringify(options.queryKey) === JSON.stringify(['templates']),
+      ),
+    ).toBe(true);
+    expect(
+      useQueryMock.mock.calls.some(
+        ([options]) =>
+          JSON.stringify(options.queryKey) ===
+          JSON.stringify(['templates', 'completion']),
+      ),
+    ).toBe(false);
+  });
+
+  it('maps exercise detail and history data from the API-backed queries', () => {
+    useQueryMock.mockImplementation(({ queryKey }: { queryKey: unknown[] }) => {
+      if (queryKey[0] === 'exercise' && queryKey[2] === 'detail') {
+        return {
+          data: {
+            id: 'exercise-bench',
+            name: 'Bench Press',
+            description: 'Pause on the chest and drive through the bar.',
+            exerciseType: 'WEIGHT_REPS',
+            primaryMuscle: {
+              id: 'muscle-1',
+              name: 'Chest',
+            },
+            secondaryMuscles: [
+              { muscleGroup: { id: 'muscle-2', name: 'Shoulders' } },
+              { muscleGroup: { id: 'muscle-3', name: 'Triceps' } },
+            ],
+            equipment: [
+              { equipment: { id: 'equipment-1', name: 'Barbell' } },
+              { equipment: { id: 'equipment-2', name: 'Bench' } },
+            ],
+            defaultSets: 4,
+            repMin: 6,
+            repMax: 8,
+            defaultCues: 'Keep wrists stacked over elbows.',
+            notes: [{ note: 'Keep wrists stacked over elbows.' }],
+          },
+          error: undefined,
+          isLoading: false,
+        };
+      }
+
+      if (queryKey[0] === 'exercise' && queryKey[2] === 'history') {
+        return {
+          data: {
+            items: [
+              {
+                id: 'set-1',
+                reps: 8,
+                weight: 100,
+                durationSeconds: null,
+                sessionExercise: {
+                  session: {
+                    id: 'session-1',
+                    startedAt: '2026-03-05T12:00:00.000Z',
+                    finishedAt: '2026-03-05T12:32:00.000Z',
+                  },
+                },
+              },
+            ],
+            pagination: {
+              page: 1,
+              pageSize: 20,
+              total: 1,
+            },
+          },
+          error: undefined,
+          isLoading: false,
+        };
+      }
+
+      return {
+        data: {
+          timezone: 'UTC',
+        },
+        error: undefined,
+        isLoading: false,
+      };
+    });
+
+    const data = useExerciseDetailPageData();
+
+    expect(data.exercise).toEqual({
+      defaultSetsLabel: '4 sets',
+      description: 'Pause on the chest and drive through the bar.',
+      equipment: ['Barbell', 'Bench'],
+      exerciseTypeLabel: 'Weight + Reps',
+      name: 'Bench Press',
+      note: 'Keep wrists stacked over elbows.',
+      primaryMuscle: 'Chest',
+      repRangeLabel: '6-8 reps',
+      secondaryMuscles: ['Shoulders', 'Triceps'],
+    });
+    expect(data.historyItems).toEqual([
+      {
+        id: 'set-1',
+        performanceLabel: '100 x 8',
+        startedAt: '2026-03-05',
+      },
+    ]);
+  });
+
+  it('reports a detail-page error when the exercise id is missing', () => {
+    useParamsMock.mockReturnValue({ id: undefined } as unknown as {
+      id: string;
+    });
+    useQueryMock.mockReturnValue({
+      data: undefined,
+      error: undefined,
+      isLoading: false,
+    });
+
+    const data = useExerciseDetailPageData();
+
+    expect(data.errorMessage).toBe('Exercise not found.');
+    expect(data.exercise).toBeUndefined();
+    expect(data.historyItems).toEqual([]);
   });
 
   it('clears auth state and navigates away after delete even when logout fails', async () => {
@@ -708,6 +912,142 @@ describe('web-data', () => {
     expect(setNotesDraft).toHaveBeenCalledWith('Keep elbows tucked');
     expect(setShowNotes).toHaveBeenCalledWith(true);
     expect(setShowOverflow).toHaveBeenCalledWith(false);
+  });
+
+  it('syncs manual active-session refreshes back into the query cache', async () => {
+    const syncFromServer = vi.fn();
+    const session = {
+      id: 'session-1',
+      workoutTemplateId: 'template-1',
+      startedAt: '2026-03-06T12:00:00.000Z',
+      durationSeconds: 1200,
+      totalVolume: 3200,
+      status: 'IN_PROGRESS',
+      sessionExercises: [],
+    };
+    useStateMock
+      .mockReturnValueOnce([undefined, vi.fn()])
+      .mockReturnValueOnce(['se-1', vi.fn()])
+      .mockReturnValueOnce([true, vi.fn()])
+      .mockReturnValueOnce([false, vi.fn()])
+      .mockReturnValueOnce([false, vi.fn()])
+      .mockReturnValueOnce([false, vi.fn()])
+      .mockReturnValueOnce([[], vi.fn()])
+      .mockReturnValueOnce([[], vi.fn()])
+      .mockReturnValueOnce([true, vi.fn()])
+      .mockReturnValueOnce([undefined, vi.fn()])
+      .mockReturnValueOnce([false, vi.fn()])
+      .mockReturnValueOnce(['updated notes', vi.fn()]);
+    useQueryMock.mockReturnValue({
+      data: null,
+      error: undefined,
+      isLoading: false,
+      isSuccess: false,
+    });
+    useActiveWorkoutStoreMock.mockImplementation(
+      (
+        selector: (state: {
+          state: string;
+          sessionId?: string;
+          startedAt?: string;
+          exercises: Array<{
+            id: string;
+            name: string;
+            orderIndex: number;
+            notes?: string;
+            sets: Array<{
+              id: string;
+              orderIndex: number;
+              isCompleted: boolean;
+            }>;
+          }>;
+          updateSet: () => void;
+          removeExercise: () => void;
+          reorderExercises: () => void;
+          finish: () => void;
+          restTimerSeconds: number;
+          start: () => void;
+          clear: () => void;
+          syncFromServer: typeof syncFromServer;
+        }) => unknown,
+      ) =>
+        selector({
+          clear: vi.fn(),
+          exercises: [
+            {
+              id: 'se-1',
+              name: 'Bench Press',
+              notes: 'Keep elbows tucked',
+              orderIndex: 0,
+              sets: [],
+            },
+          ],
+          finish: vi.fn(),
+          removeExercise: vi.fn(),
+          reorderExercises: vi.fn(),
+          restTimerSeconds: 0,
+          sessionId: 'session-1',
+          start: vi.fn(),
+          startedAt: '2026-03-06T12:00:00.000Z',
+          state: 'IN_PROGRESS',
+          syncFromServer,
+          updateSet: vi.fn(),
+        }),
+    );
+    updateWorkoutExerciseMock.mockResolvedValue({
+      id: 'se-1',
+    });
+    fetchActiveSessionMock.mockResolvedValue(session);
+
+    const data = useActiveWorkoutPageData();
+
+    await expect(data.notes.onSave()).resolves.toBeUndefined();
+    expect(queryClient.setQueryData).toHaveBeenCalledWith(
+      ['active-session'],
+      session,
+    );
+    expect(syncFromServer).toHaveBeenCalledWith('session-1', [], {
+      startedAt: '2026-03-06T12:00:00.000Z',
+    });
+  });
+
+  it('handles exercise swap failures without rejecting or navigating away', async () => {
+    const setErrorMessage = vi.fn();
+    useStateMock.mockReturnValueOnce([undefined, setErrorMessage]);
+    useSearchParamsMock.mockReturnValue([
+      new URLSearchParams('sessionExerciseId=se-1'),
+      vi.fn(),
+    ]);
+    useQueryMock.mockReturnValue({
+      data: {
+        items: [{ id: 'exercise-bench', name: 'Bench Press' }],
+        pagination: {
+          page: 1,
+          pageSize: 1,
+          total: 1,
+        },
+      },
+      error: undefined,
+      isLoading: false,
+    });
+    useActiveWorkoutStoreMock.mockImplementation(
+      (
+        selector: (state: { sessionId?: string; start: () => void }) => unknown,
+      ) =>
+        selector({
+          sessionId: 'session-1',
+          start: vi.fn(),
+        }),
+    );
+    swapWorkoutExerciseMock.mockRejectedValue(new Error('Swap failed'));
+
+    const data = useExerciseSelectPageData();
+
+    await expect(
+      data.onSelectExercise('exercise-bench'),
+    ).resolves.toBeUndefined();
+    expect(setErrorMessage).toHaveBeenCalledWith('Swap failed');
+    expect(navigateMock).not.toHaveBeenCalled();
   });
 
   it('clears stale active workout state when the server no longer has an active session', () => {

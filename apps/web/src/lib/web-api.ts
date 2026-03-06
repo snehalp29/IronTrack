@@ -152,6 +152,64 @@ const catalogItemSchema = z.object({
   name: z.string().min(1),
 });
 
+const exerciseDetailSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  description: optionalStringSchema,
+  exerciseType: z.string().min(1),
+  primaryMuscle: catalogItemSchema.nullable().optional(),
+  secondaryMuscles: z
+    .array(
+      z.object({
+        muscleGroup: catalogItemSchema,
+      }),
+    )
+    .default([]),
+  equipment: z
+    .array(
+      z.object({
+        equipment: catalogItemSchema,
+      }),
+    )
+    .default([]),
+  defaultSets: optionalNumberSchema,
+  repMin: optionalNumberSchema,
+  repMax: optionalNumberSchema,
+  defaultCues: optionalStringSchema,
+  notes: z
+    .array(
+      z.object({
+        note: z.string().min(1),
+      }),
+    )
+    .default([]),
+});
+
+const exerciseHistorySchema = z.object({
+  items: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        reps: optionalNumberSchema,
+        weight: optionalNumberSchema,
+        durationSeconds: optionalNumberSchema,
+        sessionExercise: z.object({
+          session: z.object({
+            id: z.string().min(1),
+            startedAt: isoDateTimeSchema,
+            finishedAt: optionalStringSchema,
+          }),
+        }),
+      }),
+    )
+    .default([]),
+  pagination: z.object({
+    page: z.number().int().positive(),
+    pageSize: z.number().int().positive(),
+    total: z.number().int().nonnegative(),
+  }),
+});
+
 const catalogListSchema = z.array(catalogItemSchema);
 
 const finishSessionSchema = workoutSessionSchema.extend({
@@ -174,6 +232,8 @@ export type FinishSessionPayload = z.infer<typeof finishSessionSchema>;
 export type WorkoutTemplatePayload = z.infer<typeof workoutTemplateSchema>;
 export type ListSessionsPayload = z.infer<typeof listSessionsResponseSchema>;
 export type ExerciseListPayload = z.infer<typeof exerciseListSchema>;
+export type ExerciseDetailPayload = z.infer<typeof exerciseDetailSchema>;
+export type ExerciseHistoryPayload = z.infer<typeof exerciseHistorySchema>;
 export type CatalogItemPayload = z.infer<typeof catalogItemSchema>;
 export type WeeklyProgressPayload = z.infer<typeof weeklyProgressSchema>;
 export type WorkoutStreakPayload = z.infer<typeof workoutStreakSchema>;
@@ -394,11 +454,29 @@ export async function applyWorkoutSuperset(
 }
 
 export async function listExercises() {
-  return requirePayload(
-    apiFetch('/exercises?page=1&pageSize=100', {
-      schema: exerciseListSchema,
-    }),
+  const firstPage = await fetchExerciseListPage(1, 100);
+  const totalPages = Math.ceil(
+    firstPage.pagination.total / firstPage.pagination.pageSize,
   );
+
+  if (totalPages <= 1) {
+    return firstPage;
+  }
+
+  const items = [...firstPage.items];
+  for (let page = 2; page <= totalPages; page += 1) {
+    const nextPage = await fetchExerciseListPage(page, 100);
+    items.push(...nextPage.items);
+  }
+
+  return {
+    ...firstPage,
+    items,
+    pagination: {
+      ...firstPage.pagination,
+      total: firstPage.pagination.total,
+    },
+  };
 }
 
 export async function createExercise(input: {
@@ -421,6 +499,37 @@ export async function createExercise(input: {
         id: z.string().min(1),
         name: z.string().min(1),
       }),
+    }),
+  );
+}
+
+export async function fetchExerciseById(exerciseId: string) {
+  return requirePayload(
+    apiFetch(`/exercises/${exerciseId}`, {
+      schema: exerciseDetailSchema,
+    }),
+  );
+}
+
+export async function fetchExerciseHistory(
+  exerciseId: string,
+  input?: {
+    page?: number;
+    pageSize?: number;
+  },
+) {
+  const searchParams = new URLSearchParams();
+  if (input?.page) {
+    searchParams.set('page', String(input.page));
+  }
+  if (input?.pageSize) {
+    searchParams.set('pageSize', String(input.pageSize));
+  }
+
+  const query = searchParams.toString();
+  return requirePayload(
+    apiFetch(`/exercises/${exerciseId}/history${query ? `?${query}` : ''}`, {
+      schema: exerciseHistorySchema,
     }),
   );
 }
@@ -448,4 +557,12 @@ async function requirePayload<T>(promise: Promise<T | undefined>): Promise<T> {
   }
 
   return payload;
+}
+
+async function fetchExerciseListPage(page: number, pageSize: number) {
+  return requirePayload(
+    apiFetch(`/exercises?page=${page}&pageSize=${pageSize}`, {
+      schema: exerciseListSchema,
+    }),
+  );
 }

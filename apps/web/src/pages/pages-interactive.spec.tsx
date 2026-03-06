@@ -62,6 +62,7 @@ const useFormMock = vi.hoisted(() =>
 const loginWithPasswordMock = vi.hoisted(() => vi.fn());
 const registerWithPasswordMock = vi.hoisted(() => vi.fn());
 const signInWithGoogleMock = vi.hoisted(() => vi.fn());
+const useExerciseDetailPageDataMock = vi.hoisted(() => vi.fn());
 const useExerciseWizardPageDataMock = vi.hoisted(() => vi.fn());
 const useSettingsPageDataMock = vi.hoisted(() => vi.fn());
 
@@ -93,6 +94,7 @@ vi.mock('../auth/auth-service', () => ({
 }));
 
 vi.mock('../lib/web-data', () => ({
+  useExerciseDetailPageData: useExerciseDetailPageDataMock,
   useExerciseWizardPageData: useExerciseWizardPageDataMock,
   useSettingsPageData: useSettingsPageDataMock,
 }));
@@ -143,6 +145,22 @@ describe('interactive pages', () => {
       },
       step: 1,
       totalSteps: 7,
+    });
+    useExerciseDetailPageDataMock.mockReturnValue({
+      errorMessage: undefined,
+      exercise: {
+        defaultSetsLabel: '4 sets',
+        description: 'Pause on the chest and drive through the bar.',
+        equipment: ['Barbell', 'Bench'],
+        exerciseTypeLabel: 'Weight + Reps',
+        name: 'Bench Press',
+        note: 'Keep wrists stacked over elbows.',
+        primaryMuscle: 'Chest',
+        repRangeLabel: '6-8 reps',
+        secondaryMuscles: ['Shoulders', 'Triceps'],
+      },
+      historyItems: [],
+      isLoading: false,
     });
     useSettingsPageDataMock.mockReturnValue({
       errorMessage: undefined,
@@ -251,6 +269,7 @@ describe('interactive pages', () => {
     expect(html).toContain('Step 7 of 7');
     expect(html).toContain('Bench Press');
     expect(html).toContain('Brace the core');
+    expect(html).not.toContain('Primary Muscle');
     expect(html).toContain('Submit Exercise');
 
     findButtonByLabel(view, 'Back')?.props.onClick?.();
@@ -260,14 +279,50 @@ describe('interactive pages', () => {
     expect(onNext).not.toHaveBeenCalled();
   });
 
+  it('ExerciseWizardPage only renders the current step fields', () => {
+    useExerciseWizardPageDataMock.mockReturnValue({
+      currentStepLabel: 'Primary muscle',
+      formValues: {
+        defaultCues: '',
+        defaultSets: '',
+        description: 'Primary chest press',
+        equipmentIds: [] as string[],
+        exerciseType: 'WEIGHT_REPS',
+        name: 'Bench Press',
+        primaryMuscleGroupId: '',
+        repMax: '',
+        repMin: '',
+        secondaryMuscleGroupIds: [] as string[],
+      },
+      isLoading: false,
+      isSubmitting: false,
+      isSubmitStep: false,
+      onBack: vi.fn(),
+      onChangeField: vi.fn(),
+      onNext: vi.fn(),
+      onSubmit: vi.fn(),
+      options: {
+        equipment: [{ id: 'eq-1', name: 'Barbell' }],
+        muscleGroups: [{ id: 'mg-1', name: 'Chest' }],
+      },
+      step: 3,
+      totalSteps: 7,
+    });
+
+    const html = renderToStaticMarkup(ExerciseWizardPage());
+
+    expect(html).toContain('Primary Muscle');
+    expect(html).not.toContain('Secondary Muscles');
+    expect(html).not.toContain('Equipment');
+    expect(html).not.toContain('Default Cues');
+  });
+
   it('ExerciseDetailPage normalizes invalid tab query params back to guide', () => {
     searchParamsState.value = new URLSearchParams('tab=invalid');
     useEffectMock.mockImplementation((effect: () => void) => effect());
 
     const view = ExerciseDetailPage();
-    expect(renderToStaticMarkup(view)).toContain(
-      'Coaching cues and setup instructions.',
-    );
+    expect(renderToStaticMarkup(view)).toContain('Bench Press');
 
     const normalizedParams = setSearchParamsMock.mock.calls[0]?.[0] as
       | URLSearchParams
@@ -286,6 +341,47 @@ describe('interactive pages', () => {
     ExerciseDetailPage();
 
     expect(setSearchParamsMock).not.toHaveBeenCalled();
+  });
+
+  it('ExerciseDetailPage renders fetched guide data', () => {
+    const html = renderToStaticMarkup(ExerciseDetailPage());
+
+    expect(html).toContain('Bench Press');
+    expect(html).toContain('Pause on the chest and drive through the bar.');
+    expect(html).toContain('Weight + Reps');
+    expect(html).toContain('Keep wrists stacked over elbows.');
+  });
+
+  it('ExerciseDetailPage renders history items for the history tab', () => {
+    searchParamsState.value = new URLSearchParams('tab=history');
+    useExerciseDetailPageDataMock.mockReturnValue({
+      errorMessage: undefined,
+      exercise: {
+        defaultSetsLabel: '4 sets',
+        description: 'Pause on the chest and drive through the bar.',
+        equipment: ['Barbell', 'Bench'],
+        exerciseTypeLabel: 'Weight + Reps',
+        name: 'Bench Press',
+        note: undefined,
+        primaryMuscle: 'Chest',
+        repRangeLabel: '6-8 reps',
+        secondaryMuscles: ['Shoulders', 'Triceps'],
+      },
+      historyItems: [
+        {
+          id: 'set-1',
+          performanceLabel: '100 x 8',
+          startedAt: '2026-03-05',
+        },
+      ],
+      isLoading: false,
+    });
+
+    const html = renderToStaticMarkup(ExerciseDetailPage());
+
+    expect(html).toContain('2026-03-05');
+    expect(html).toContain('100 x 8');
+    expect(html).not.toContain('Pause on the chest and drive through the bar.');
   });
 
   it('LoginPage submits credentials to auth API and then navigates to dashboard', async () => {

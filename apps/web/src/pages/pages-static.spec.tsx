@@ -262,6 +262,31 @@ describe('static/simple pages', () => {
     expect(render(<CompletionStreakPage />)).toContain('9 days');
   });
 
+  it('renders a completion-summary empty state when there is no completed workout', () => {
+    useActiveWorkoutStoreMock.mockImplementation(
+      (
+        selector: (state: {
+          clear: () => void;
+          completeSummary:
+            | {
+                totalVolume: number;
+                durationSeconds: number;
+                prs: number;
+              }
+            | undefined;
+        }) => unknown,
+      ) =>
+        selector({
+          clear: vi.fn(),
+          completeSummary: undefined,
+        }),
+    );
+
+    const html = render(<CompletionSummaryPage />);
+    expect(html).toContain('No completed workout summary is available.');
+    expect(html).toContain('href="/"');
+  });
+
   it('clears the completed workout store from streak page', () => {
     const clearMock = vi.fn();
     useActiveWorkoutStoreMock.mockImplementation(

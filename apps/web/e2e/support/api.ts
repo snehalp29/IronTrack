@@ -22,6 +22,8 @@ type SessionHistoryItem = {
 };
 
 type ActiveSession = ReturnType<typeof createActiveSession>;
+type ExerciseDetailResponse = ReturnType<typeof createExerciseDetail>;
+type ExerciseHistoryResponse = ReturnType<typeof createExerciseHistory>;
 
 type MockAuthOptions = {
   refreshStatus?: number;
@@ -74,6 +76,7 @@ export async function mockApi(
 ): Promise<void> {
   const state = {
     activeSession: options.activeSession ?? createActiveSession(),
+    createdExercise: createExerciseDetail(),
     sessions: options.sessions ?? createSessionHistory(),
     workoutStreak: options.workoutStreak ?? createWorkoutStreak(),
     auth: options.auth ?? {},
@@ -89,6 +92,7 @@ async function handleApiRoute(
   route: Route,
   state: {
     activeSession: ActiveSession | null;
+    createdExercise: ExerciseDetailResponse;
     sessions: SessionHistoryItem[];
     workoutStreak: WorkoutStreakResponse;
     auth: MockAuthOptions;
@@ -461,6 +465,41 @@ async function handleApiRoute(
     return;
   }
 
+  if (
+    url.pathname === '/api/v1/exercises/exercise-created' &&
+    method === 'GET'
+  ) {
+    await fulfillJson(route, state.createdExercise);
+    return;
+  }
+
+  if (
+    url.pathname === '/api/v1/exercises/exercise-created/history' &&
+    method === 'GET'
+  ) {
+    await fulfillJson(route, createExerciseHistory());
+    return;
+  }
+
+  if (url.pathname === '/api/v1/exercises/exercise-bench' && method === 'GET') {
+    await fulfillJson(
+      route,
+      createExerciseDetail({
+        id: 'exercise-bench',
+        name: 'Bench Press',
+      }),
+    );
+    return;
+  }
+
+  if (
+    url.pathname === '/api/v1/exercises/exercise-bench/history' &&
+    method === 'GET'
+  ) {
+    await fulfillJson(route, createExerciseHistory());
+    return;
+  }
+
   if (path === '/api/v1/muscle-groups' && method === 'GET') {
     await fulfillJson(route, [
       { id: 'muscle-1', name: 'Chest' },
@@ -479,9 +518,13 @@ async function handleApiRoute(
 
   if (path === '/api/v1/exercises' && method === 'POST') {
     const payload = request.postDataJSON() as { name?: string };
-    await fulfillJson(route, {
+    state.createdExercise = createExerciseDetail({
       id: 'exercise-created',
       name: payload.name ?? 'New Exercise',
+    });
+    await fulfillJson(route, {
+      id: state.createdExercise.id,
+      name: state.createdExercise.name,
     });
     return;
   }
@@ -624,6 +667,109 @@ function createWorkoutStreak(): WorkoutStreakResponse {
     currentStreakDays: 3,
     longestStreakDays: 5,
     lastCompletedDate: todayDate(),
+  };
+}
+
+function createExerciseDetail(input?: { id?: string; name?: string }): {
+  id: string;
+  name: string;
+  description: string;
+  exerciseType: string;
+  primaryMuscle: {
+    id: string;
+    name: string;
+  };
+  secondaryMuscles: Array<{
+    muscleGroup: {
+      id: string;
+      name: string;
+    };
+  }>;
+  equipment: Array<{
+    equipment: {
+      id: string;
+      name: string;
+    };
+  }>;
+  defaultSets: number;
+  repMin: number;
+  repMax: number;
+  defaultCues: string;
+  notes: Array<{
+    note: string;
+  }>;
+} {
+  return {
+    id: input?.id ?? 'exercise-created',
+    name: input?.name ?? 'Bench Press',
+    description: 'Pause on the chest and drive through the bar.',
+    exerciseType: 'WEIGHT_REPS',
+    primaryMuscle: {
+      id: 'muscle-1',
+      name: 'Chest',
+    },
+    secondaryMuscles: [
+      {
+        muscleGroup: {
+          id: 'muscle-2',
+          name: 'Shoulders',
+        },
+      },
+      {
+        muscleGroup: {
+          id: 'muscle-3',
+          name: 'Triceps',
+        },
+      },
+    ],
+    equipment: [
+      {
+        equipment: {
+          id: 'equipment-1',
+          name: 'Barbell',
+        },
+      },
+      {
+        equipment: {
+          id: 'equipment-2',
+          name: 'Bench',
+        },
+      },
+    ],
+    defaultSets: 4,
+    repMin: 6,
+    repMax: 8,
+    defaultCues: 'Keep wrists stacked over elbows.',
+    notes: [
+      {
+        note: 'Keep wrists stacked over elbows.',
+      },
+    ],
+  };
+}
+
+function createExerciseHistory(): ExerciseHistoryResponse {
+  return {
+    items: [
+      {
+        id: 'set-1',
+        reps: 8,
+        weight: 100,
+        durationSeconds: null,
+        sessionExercise: {
+          session: {
+            id: 'session-previous',
+            startedAt: `${todayDate()}T07:00:00.000Z`,
+            finishedAt: `${todayDate()}T07:32:00.000Z`,
+          },
+        },
+      },
+    ],
+    pagination: {
+      page: 1,
+      pageSize: 20,
+      total: 1,
+    },
   };
 }
 

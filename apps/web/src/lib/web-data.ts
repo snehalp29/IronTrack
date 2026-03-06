@@ -7,7 +7,7 @@ import {
 } from 'react';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 import { logoutCurrentSession } from '../auth/auth-service';
 import { clearAuthSession } from '../auth/auth-session';
@@ -24,6 +24,8 @@ import {
   fetchChecklistForDate,
   fetchCurrentUser,
   fetchEquipment,
+  fetchExerciseById,
+  fetchExerciseHistory,
   fetchMuscleGroups,
   fetchWeeklyProgress,
   fetchWorkoutStreak,
@@ -318,6 +320,7 @@ export function useExerciseSelectPageData() {
   const queryClient = useQueryClient();
   const sessionId = useActiveWorkoutStore((state) => state.sessionId);
   const start = useActiveWorkoutStore((state) => state.start);
+  const [errorMessage, setErrorMessage] = useState<string>();
   const exercisesQuery = useQuery({
     queryKey: ['exercises'],
     queryFn: listExercises,
@@ -326,31 +329,43 @@ export function useExerciseSelectPageData() {
 
   return {
     isLoading: exercisesQuery.isLoading,
-    errorMessage: asErrorMessage(exercisesQuery.error),
+    errorMessage: errorMessage ?? asErrorMessage(exercisesQuery.error),
     items:
       exercisesQuery.data?.items.map((item) => ({
         id: item.id,
         name: item.name,
       })) ?? [],
     onSelectExercise: async (exerciseId: string) => {
-      if (sessionId && selectedSessionExerciseId) {
-        await swapWorkoutExercise(
-          sessionId,
-          selectedSessionExerciseId,
-          exerciseId,
-        );
-        const activeSession = await fetchActiveSession();
-        if (activeSession) {
-          start(activeSession.id, mapSessionExercises(activeSession), {
-            startedAt: activeSession.startedAt,
-          });
-          await queryClient.invalidateQueries({ queryKey: ['active-session'] });
-        }
-        navigate('/workout/active');
-        return;
-      }
+      setErrorMessage(undefined);
 
-      navigate(`/exercise/${exerciseId}`);
+      try {
+        if (sessionId && selectedSessionExerciseId) {
+          await swapWorkoutExercise(
+            sessionId,
+            selectedSessionExerciseId,
+            exerciseId,
+          );
+          const activeSession = await fetchActiveSession();
+          queryClient.setQueryData(['active-session'], activeSession ?? null);
+          if (activeSession) {
+            start(activeSession.id, mapSessionExercises(activeSession), {
+              startedAt: activeSession.startedAt,
+            });
+            await queryClient.invalidateQueries({
+              queryKey: ['active-session'],
+            });
+            navigate('/workout/active');
+            return;
+          }
+
+          setErrorMessage('Workout session is no longer available');
+          return;
+        }
+
+        navigate(`/exercise/${exerciseId}`);
+      } catch (error) {
+        setErrorMessage(asErrorMessage(error) ?? 'Failed to update exercise');
+      }
     },
     onCreateExercise: () => {
       navigate('/exercise/create');
@@ -364,7 +379,7 @@ export function useCompletionFlowData() {
     queryFn: () => fetchWeeklyProgress(),
   });
   const templatesQuery = useQuery({
-    queryKey: ['templates', 'completion'],
+    queryKey: ['templates'],
     queryFn: fetchWorkoutTemplates,
   });
   const streakQuery = useQuery({
@@ -401,6 +416,75 @@ export function useCompletionFlowData() {
         ) ?? [],
     recommendedTemplate,
     streakDays: streakQuery.data?.currentStreakDays ?? 0,
+  };
+}
+
+export function useExerciseDetailPageData() {
+  const { id: exerciseId } = useParams<{ id: string }>();
+  const userQuery = useQuery({
+    enabled: Boolean(exerciseId),
+    queryKey: ['user', 'me'],
+    queryFn: fetchCurrentUser,
+  });
+  const exerciseQuery = useQuery({
+    enabled: Boolean(exerciseId),
+    queryKey: ['exercise', exerciseId, 'detail'],
+    queryFn: () => fetchExerciseById(exerciseId ?? ''),
+  });
+  const historyQuery = useQuery({
+    enabled: Boolean(exerciseId),
+    queryKey: ['exercise', exerciseId, 'history'],
+    queryFn: () => fetchExerciseHistory(exerciseId ?? ''),
+  });
+
+  return {
+    isLoading:
+      Boolean(exerciseId) &&
+      (userQuery.isLoading ||
+        exerciseQuery.isLoading ||
+        historyQuery.isLoading),
+    errorMessage: !exerciseId
+      ? 'Exercise not found.'
+      : (asErrorMessage(exerciseQuery.error) ??
+        asErrorMessage(historyQuery.error) ??
+        asErrorMessage(userQuery.error)),
+    exercise: exerciseQuery.data
+      ? {
+          defaultSetsLabel: buildDefaultSetsLabel(
+            exerciseQuery.data.defaultSets,
+          ),
+          description:
+            exerciseQuery.data.description ?? 'No description available.',
+          equipment: exerciseQuery.data.equipment.map(
+            (item) => item.equipment.name,
+          ),
+          exerciseTypeLabel: formatExerciseTypeLabel(
+            exerciseQuery.data.exerciseType,
+          ),
+          name: exerciseQuery.data.name,
+          note:
+            exerciseQuery.data.notes[0]?.note ??
+            exerciseQuery.data.defaultCues ??
+            undefined,
+          primaryMuscle: exerciseQuery.data.primaryMuscle?.name ?? 'Unassigned',
+          repRangeLabel: buildRepRangeLabel(
+            exerciseQuery.data.repMin,
+            exerciseQuery.data.repMax,
+          ),
+          secondaryMuscles: exerciseQuery.data.secondaryMuscles.map(
+            (item) => item.muscleGroup.name,
+          ),
+        }
+      : undefined,
+    historyItems:
+      historyQuery.data?.items.map((item) => ({
+        id: item.id,
+        performanceLabel: buildPerformanceLabel(item),
+        startedAt: formatDateInTimezone(
+          item.sessionExercise.session.startedAt,
+          userQuery.data?.timezone ?? 'UTC',
+        ),
+      })) ?? [],
   };
 }
 
@@ -462,6 +546,39 @@ export function useExerciseWizardPageData() {
     setSearchParams(nextParams, { replace: true });
   };
 
+  const validateCurrentStep = (targetStep = step): string | undefined => {
+    if (targetStep === 1 && formValues.name.trim().length === 0) {
+      return 'Exercise name is required';
+    }
+    if (targetStep === 1 && formValues.name.trim().length < 2) {
+      return 'Exercise name must be at least 2 characters';
+    }
+    if (targetStep === 3 && !formValues.primaryMuscleGroupId) {
+      return 'Primary muscle is required';
+    }
+    if (
+      targetStep === WIZARD_STEPS.length &&
+      formValues.name.trim().length < 2
+    ) {
+      return 'Exercise name must be at least 2 characters';
+    }
+    if (
+      targetStep === WIZARD_STEPS.length &&
+      !formValues.primaryMuscleGroupId
+    ) {
+      return 'Primary muscle is required';
+    }
+    if (
+      formValues.repMin.trim() &&
+      formValues.repMax.trim() &&
+      Number(formValues.repMin) > Number(formValues.repMax)
+    ) {
+      return 'Rep max must be greater than or equal to rep min';
+    }
+
+    return undefined;
+  };
+
   return {
     step,
     totalSteps: WIZARD_STEPS.length,
@@ -479,12 +596,25 @@ export function useExerciseWizardPageData() {
       equipment: equipmentQuery.data ?? [],
     },
     onBack: () => {
+      setErrorMessage(undefined);
       updateStep(step - 1);
     },
     onNext: () => {
+      const validationMessage = validateCurrentStep();
+      if (validationMessage) {
+        setErrorMessage(validationMessage);
+        return;
+      }
+      setErrorMessage(undefined);
       updateStep(step + 1);
     },
     onSubmit: async () => {
+      const validationMessage = validateCurrentStep(WIZARD_STEPS.length);
+      if (validationMessage) {
+        setErrorMessage(validationMessage);
+        return;
+      }
+
       try {
         const created = await createMutation.mutateAsync();
         if (created?.id) {
@@ -498,6 +628,7 @@ export function useExerciseWizardPageData() {
       field: K,
       value: WizardFormValues[K],
     ) => {
+      setErrorMessage(undefined);
       setFormValues((current) => ({
         ...current,
         [field]: value,
@@ -600,6 +731,7 @@ export function useActiveWorkoutPageData() {
 
   const syncActiveSession = async () => {
     const session = await fetchActiveSession();
+    queryClient.setQueryData(['active-session'], session ?? null);
     if (!session) {
       clearWorkout();
       setErrorMessage('Workout session is no longer available');
@@ -924,19 +1056,17 @@ export function computeWorkoutStreakDays(
 
 function formatDateInTimezone(value: Date | string, timezone: string): string {
   const date = value instanceof Date ? value : new Date(value);
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
+  const formatter = createDateFormatter(timezone) ?? createDateFormatter('UTC');
+  if (!formatter) {
+    return date.toISOString().slice(0, 10);
+  }
   const parts = formatter.formatToParts(date);
   const year = parts.find((part) => part.type === 'year')?.value;
   const month = parts.find((part) => part.type === 'month')?.value;
   const day = parts.find((part) => part.type === 'day')?.value;
 
   if (!year || !month || !day) {
-    throw new Error('Could not format date in timezone');
+    return date.toISOString().slice(0, 10);
   }
 
   return `${year}-${month}-${day}`;
@@ -971,6 +1101,59 @@ function buildSetsLabel(
   }
 
   return `${defaultSets} sets`;
+}
+
+function buildDefaultSetsLabel(defaultSets?: number | null): string {
+  return `${defaultSets ?? 3} sets`;
+}
+
+function buildRepRangeLabel(
+  repMin?: number | null,
+  repMax?: number | null,
+): string {
+  if (typeof repMin === 'number' && typeof repMax === 'number') {
+    return `${repMin}-${repMax} reps`;
+  }
+  if (typeof repMin === 'number') {
+    return `${repMin}+ reps`;
+  }
+  if (typeof repMax === 'number') {
+    return `Up to ${repMax} reps`;
+  }
+
+  return 'Rep range not set';
+}
+
+function buildPerformanceLabel(item: {
+  reps?: number | null;
+  weight?: number | null;
+  durationSeconds?: number | null;
+}): string {
+  if (typeof item.weight === 'number' && typeof item.reps === 'number') {
+    return `${item.weight} x ${item.reps}`;
+  }
+  if (typeof item.reps === 'number') {
+    return `${item.reps} reps`;
+  }
+  if (typeof item.durationSeconds === 'number') {
+    return `${item.durationSeconds}s`;
+  }
+
+  return 'Logged set';
+}
+
+function formatExerciseTypeLabel(exerciseType: string): string {
+  return exerciseType
+    .split('_')
+    .map((segment) =>
+      segment.length
+        ? `${segment[0]}${segment.slice(1).toLowerCase()}`
+        : segment,
+    )
+    .join(' + ')
+    .replace('Weight + Reps', 'Weight + Reps')
+    .replace('Reps + Only', 'Reps Only')
+    .replace('Bodyweight + Plus + Weight', 'Bodyweight + Weight');
 }
 
 function buildRecommendationReason(
@@ -1046,7 +1229,19 @@ function parsePositiveInteger(value: string, fallback: number): number {
 }
 
 function getSupportedTimezones(currentTimezone: string): string[] {
-  return Array.from(new Set([currentTimezone, ...SUPPORTED_TIMEZONES]));
+  const normalizedTimezone = isValidTimezone(currentTimezone)
+    ? currentTimezone
+    : 'UTC';
+  const cached = SUPPORTED_TIMEZONE_CACHE.get(normalizedTimezone);
+  if (cached) {
+    return cached;
+  }
+
+  const value = Array.from(
+    new Set([normalizedTimezone, ...SUPPORTED_TIMEZONES]),
+  );
+  SUPPORTED_TIMEZONE_CACHE.set(normalizedTimezone, value);
+  return value;
 }
 
 function resolveSupportedTimezones(): string[] {
@@ -1058,6 +1253,25 @@ function resolveSupportedTimezones(): string[] {
   return supportedValuesOf
     ? supportedValuesOf('timeZone')
     : ['UTC', 'America/New_York', 'America/Los_Angeles'];
+}
+
+const SUPPORTED_TIMEZONE_CACHE = new Map<string, string[]>();
+
+function createDateFormatter(timezone: string) {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+function isValidTimezone(timezone: string): boolean {
+  return Boolean(createDateFormatter(timezone));
 }
 
 function mapSessionExercises(session: ActiveSessionPayload) {

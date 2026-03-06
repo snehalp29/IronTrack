@@ -2,7 +2,10 @@ import { useEffect } from 'react';
 
 import { useSearchParams } from 'react-router-dom';
 
+import { useExerciseDetailPageData } from '../lib/web-data';
+
 export function ExerciseDetailPage() {
+  const data = useExerciseDetailPageData();
   const [searchParams, setSearchParams] = useSearchParams();
   const rawTab = searchParams.get('tab');
   const tab = rawTab === 'history' ? 'history' : 'guide';
@@ -24,7 +27,7 @@ export function ExerciseDetailPage() {
 
   return (
     <div className="card">
-      <h1>Exercise Detail</h1>
+      <h1>{data.exercise?.name ?? 'Exercise Detail'}</h1>
       <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
         <button
           className={tab === 'guide' ? undefined : 'secondary'}
@@ -41,13 +44,40 @@ export function ExerciseDetailPage() {
           History
         </button>
       </div>
-      {tab === 'guide' ? (
-        <p className="meta">Coaching cues and setup instructions.</p>
-      ) : (
-        <p className="meta">
-          Set history timeline and trend graph placeholder.
-        </p>
-      )}
+      {data.errorMessage ? <p className="meta">{data.errorMessage}</p> : null}
+      {data.isLoading ? <p className="meta">Loading exercise…</p> : null}
+      {tab === 'guide' && data.exercise ? (
+        <div className="grid">
+          <p className="meta">{data.exercise.description}</p>
+          <p className="meta">Type: {data.exercise.exerciseTypeLabel}</p>
+          <p className="meta">Primary muscle: {data.exercise.primaryMuscle}</p>
+          <p className="meta">
+            Secondary muscles:{' '}
+            {data.exercise.secondaryMuscles.join(', ') || 'None'}
+          </p>
+          <p className="meta">
+            Equipment: {data.exercise.equipment.join(', ') || 'None'}
+          </p>
+          <p className="meta">Defaults: {data.exercise.defaultSetsLabel}</p>
+          <p className="meta">Rep range: {data.exercise.repRangeLabel}</p>
+          {data.exercise.note ? (
+            <p className="meta">{data.exercise.note}</p>
+          ) : null}
+        </div>
+      ) : null}
+      {tab === 'history' ? (
+        data.historyItems.length ? (
+          <div className="grid">
+            {data.historyItems.map((item) => (
+              <p key={item.id} className="meta">
+                {item.startedAt} · {item.performanceLabel}
+              </p>
+            ))}
+          </div>
+        ) : (
+          <p className="meta">No exercise history yet.</p>
+        )
+      ) : null}
     </div>
   );
 }
