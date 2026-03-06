@@ -21,6 +21,7 @@ const cases: MetadataBranchCase[] = [
     target: './auth/auth.controller',
     mocks: {
       './auth/auth.service': { AuthService: {} as unknown },
+      '@nestjs/config': { ConfigService: {} as unknown },
     },
   },
   {
