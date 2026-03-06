@@ -1,6 +1,7 @@
 import type { ZodType } from 'zod';
 
 import {
+  type AuthSession,
   clearAuthSession,
   getAuthSession,
   persistAuthSession,
@@ -9,7 +10,7 @@ import {
 const DEFAULT_API_BASE_URL = 'http://localhost:3000/api/v1';
 const API_BASE_URL = resolveApiBaseUrl(import.meta.env.VITE_API_URL);
 let loginRedirectHandler: ((path: string) => void) | null = null;
-let refreshInFlight: Promise<boolean> | null = null;
+let refreshInFlight: Promise<AuthSession> | null = null;
 
 interface ApiFetchOptions<T> extends RequestInit {
   schema?: ZodType<T>;
@@ -49,12 +50,11 @@ export async function apiFetch<T>(
     const payload: unknown = await response.json().catch(() => null);
     if (response.status === 401 && !init?.skipAuthRefresh) {
       try {
-        if (await refreshStoredSession()) {
-          return apiFetch(path, {
-            ...init,
-            skipAuthRefresh: true,
-          });
-        }
+        await refreshAuthSession();
+        return apiFetch(path, {
+          ...init,
+          skipAuthRefresh: true,
+        });
       } catch (error) {
         clearAuthSession();
         redirectToLogin('/login');
@@ -186,10 +186,10 @@ function hasHeader(headers: Record<string, string>, name: string): boolean {
   return Object.keys(headers).some((key) => key.toLowerCase() === target);
 }
 
-async function refreshStoredSession(): Promise<boolean> {
+export async function refreshAuthSession(): Promise<AuthSession> {
   const session = getAuthSession();
   if (!session?.accessToken) {
-    return false;
+    throw new Error('No persisted session to refresh');
   }
 
   if (!refreshInFlight) {
@@ -218,7 +218,9 @@ async function refreshStoredSession(): Promise<boolean> {
         persistAuthSession({
           accessToken: (payload as { accessToken: string }).accessToken,
         });
-        return true;
+        return {
+          accessToken: (payload as { accessToken: string }).accessToken,
+        };
       })
       .finally(() => {
         refreshInFlight = null;

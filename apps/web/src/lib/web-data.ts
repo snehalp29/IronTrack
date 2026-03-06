@@ -10,6 +10,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { logoutCurrentSession } from '../auth/auth-service';
+import { clearAuthSession } from '../auth/auth-session';
 import { useRestTimer } from '../hooks/useRestTimer';
 import { useActiveWorkoutStore } from '../stores/activeWorkoutStore';
 import {
@@ -74,7 +75,11 @@ const INITIAL_WIZARD_FORM_VALUES: WizardFormValues = {
 };
 
 export function useDashboardPageData() {
-  const today = getTodayDate();
+  const userQuery = useQuery({
+    queryKey: ['user', 'me'],
+    queryFn: fetchCurrentUser,
+  });
+  const today = getTodayDate(userQuery.data?.timezone);
   const checklistQuery = useQuery({
     queryKey: ['checklist', today],
     queryFn: () => fetchChecklistForDate(today),
@@ -90,10 +95,12 @@ export function useDashboardPageData() {
 
   return {
     isLoading:
+      userQuery.isLoading ||
       checklistQuery.isLoading ||
       templatesQuery.isLoading ||
       sessionsQuery.isLoading,
     errorMessage:
+      asErrorMessage(userQuery.error) ??
       asErrorMessage(checklistQuery.error) ??
       asErrorMessage(templatesQuery.error) ??
       asErrorMessage(sessionsQuery.error),
@@ -108,6 +115,7 @@ export function useDashboardPageData() {
       : undefined,
     workoutStreakDays: computeWorkoutStreakDays(
       sessionsQuery.data?.items ?? [],
+      userQuery.data?.timezone,
     ),
   };
 }
@@ -211,7 +219,11 @@ export function useSettingsPageData() {
     },
     onSave: async (event?: FormEvent) => {
       event?.preventDefault();
-      await saveMutation.mutateAsync();
+      try {
+        await saveMutation.mutateAsync();
+      } catch {
+        return;
+      }
     },
     onLogout: async () => {
       await logoutCurrentSession();
@@ -219,8 +231,14 @@ export function useSettingsPageData() {
     },
     onDeleteAccount: async () => {
       await deleteCurrentUser();
-      await logoutCurrentSession();
-      navigate('/register');
+      try {
+        await logoutCurrentSession();
+      } catch {
+        // Delete succeeded; clear any remaining local auth state anyway.
+      } finally {
+        clearAuthSession();
+        navigate('/register');
+      }
     },
   };
 }
@@ -323,6 +341,10 @@ export function useExerciseSelectPageData() {
 }
 
 export function useCompletionFlowData() {
+  const userQuery = useQuery({
+    queryKey: ['user', 'me'],
+    queryFn: fetchCurrentUser,
+  });
   const progressQuery = useQuery({
     queryKey: ['progress', 'weekly'],
     queryFn: () => fetchWeeklyProgress(),
@@ -361,7 +383,10 @@ export function useCompletionFlowData() {
             `${item.name} ${item.volume >= 0 ? '+' : ''}${Math.round(item.volume)}`,
         ) ?? [],
     recommendedTemplate,
-    streakDays: computeWorkoutStreakDays(sessionsQuery.data?.items ?? []),
+    streakDays: computeWorkoutStreakDays(
+      sessionsQuery.data?.items ?? [],
+      userQuery.data?.timezone,
+    ),
   };
 }
 
@@ -720,21 +745,27 @@ export function useActiveWorkoutPageData() {
         await queryClient.invalidateQueries({ queryKey: ['sessions'] });
         await queryClient.invalidateQueries({ queryKey: ['progress'] });
         if (sessionId) {
-          const summary = await finishWorkoutSession(sessionId);
-          finish({
-            totalVolume: summary.totalVolume,
-            durationSeconds: summary.durationSeconds ?? 0,
-            prs: summary.newPrs.length,
-          });
-          navigate('/workout/complete');
+          try {
+            const summary = await finishWorkoutSession(sessionId);
+            finish({
+              totalVolume: summary.totalVolume,
+              durationSeconds: summary.durationSeconds ?? 0,
+              prs: summary.newPrs.length,
+            });
+            navigate('/workout/complete');
+          } catch (error) {
+            setErrorMessage(
+              asErrorMessage(error) ?? 'Failed to finish workout',
+            );
+          }
         }
       },
     },
   };
 }
 
-function getTodayDate(): string {
-  return new Date().toISOString().slice(0, 10);
+export function getTodayDate(timezone = 'UTC', now = new Date()): string {
+  return formatDateInTimezone(now, timezone);
 }
 
 function asErrorMessage(error: unknown): string | undefined {
@@ -755,15 +786,16 @@ function formatDurationLabel(totalSeconds: number): string {
   return `${Math.max(1, Math.round(totalSeconds / 60))}m`;
 }
 
-function computeWorkoutStreakDays(
+export function computeWorkoutStreakDays(
   sessions: Array<{
     startedAt: string;
   }>,
+  timezone = 'UTC',
 ): number {
   const uniqueDays = Array.from(
     new Set(
       sessions
-        .map((session) => session.startedAt.slice(0, 10))
+        .map((session) => formatDateInTimezone(session.startedAt, timezone))
         .sort((left, right) => right.localeCompare(left)),
     ),
   );
@@ -774,10 +806,10 @@ function computeWorkoutStreakDays(
 
   let streak = 1;
   for (let index = 1; index < uniqueDays.length; index += 1) {
-    const current = new Date(`${uniqueDays[index - 1]}T00:00:00.000Z`);
-    const previous = new Date(`${uniqueDays[index]}T00:00:00.000Z`);
-    const difference =
-      (current.getTime() - previous.getTime()) / (24 * 60 * 60 * 1000);
+    const difference = differenceInWholeDays(
+      uniqueDays[index - 1],
+      uniqueDays[index],
+    );
     if (difference !== 1) {
       break;
     }
@@ -785,6 +817,40 @@ function computeWorkoutStreakDays(
   }
 
   return streak;
+}
+
+function formatDateInTimezone(value: Date | string, timezone: string): string {
+  const date = value instanceof Date ? value : new Date(value);
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = formatter.formatToParts(date);
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  const day = parts.find((part) => part.type === 'day')?.value;
+
+  if (!year || !month || !day) {
+    throw new Error('Could not format date in timezone');
+  }
+
+  return `${year}-${month}-${day}`;
+}
+
+function differenceInWholeDays(
+  leftDateKey: string,
+  rightDateKey: string,
+): number {
+  const left = parseDateKey(leftDateKey);
+  const right = parseDateKey(rightDateKey);
+  return (left.getTime() - right.getTime()) / (24 * 60 * 60 * 1000);
+}
+
+function parseDateKey(dateKey: string): Date {
+  const [year, month, day] = dateKey.split('-').map((value) => Number(value));
+  return new Date(Date.UTC(year, month - 1, day));
 }
 
 function buildSetsLabel(

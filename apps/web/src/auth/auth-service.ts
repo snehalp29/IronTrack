@@ -1,4 +1,4 @@
-import { apiFetch } from '../api/client';
+import { apiFetch, refreshAuthSession } from '../api/client';
 import {
   clearAuthSession,
   getAuthSession,
@@ -87,18 +87,7 @@ export async function signInWithGoogle() {
 }
 
 export async function refreshStoredSession() {
-  const session = getAuthSession();
-  if (!session?.accessToken) {
-    throw new Error('No persisted session to refresh');
-  }
-
-  const authSession = await apiFetch('/auth/refresh', {
-    method: 'POST',
-    credentials: 'include',
-    skipAuthRefresh: true,
-  });
-
-  return persistAuthSessionFromPayload(authSession);
+  return refreshAuthSession();
 }
 
 export async function logoutCurrentSession() {

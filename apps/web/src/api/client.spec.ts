@@ -9,6 +9,7 @@ import {
 import {
   apiFetch,
   buildApiUrl,
+  refreshAuthSession,
   resolveApiBaseUrl,
   setLoginRedirect,
 } from './client';
@@ -555,6 +556,48 @@ describe('apiFetch', () => {
     expect(getAuthSession()).toEqual({
       accessToken: 'fresh-access-token',
     });
+  });
+
+  it('deduplicates concurrent refresh requests across callers', async () => {
+    vi.stubGlobal('localStorage', createStorageMock());
+    persistAuthSession({
+      accessToken: 'expired-access-token',
+    });
+
+    let resolveRefreshResponse: ((value: Response) => void) | undefined;
+    const fetchMock = vi.fn().mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveRefreshResponse = resolve;
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const refreshOne = refreshAuthSession();
+    const refreshTwo = refreshAuthSession();
+
+    resolveRefreshResponse?.({
+      ok: true,
+      status: 200,
+      text: vi.fn().mockResolvedValue(
+        JSON.stringify({
+          accessToken: 'fresh-access-token',
+        }),
+      ),
+    } as unknown as Response);
+
+    await expect(Promise.all([refreshOne, refreshTwo])).resolves.toEqual([
+      { accessToken: 'fresh-access-token' },
+      { accessToken: 'fresh-access-token' },
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:3000/api/v1/auth/refresh',
+      {
+        credentials: 'include',
+        method: 'POST',
+      },
+    );
   });
 
   it('uses registered app navigation instead of a hard browser reload when auth recovery fails', async () => {

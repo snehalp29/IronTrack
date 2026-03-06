@@ -15,9 +15,11 @@ import {
 } from './auth-session';
 
 const apiFetchMock = vi.hoisted(() => vi.fn());
+const refreshAuthSessionMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../api/client', () => ({
   apiFetch: apiFetchMock,
+  refreshAuthSession: refreshAuthSessionMock,
 }));
 
 function createStorageMock() {
@@ -183,12 +185,8 @@ describe('auth-service', () => {
     expect(apiFetchMock).not.toHaveBeenCalled();
   });
 
-  it('refreshes the stored auth session through the refresh cookie', async () => {
-    vi.stubGlobal('localStorage', createStorageMock());
-    persistAuthSession({
-      accessToken: 'access-token-123',
-    });
-    apiFetchMock.mockResolvedValue({
+  it('refreshes the stored auth session through the shared client refresh flow', async () => {
+    refreshAuthSessionMock.mockResolvedValue({
       accessToken: 'fresh-access-token',
     });
 
@@ -196,14 +194,8 @@ describe('auth-service', () => {
       accessToken: 'fresh-access-token',
     });
 
-    expect(apiFetchMock).toHaveBeenCalledWith('/auth/refresh', {
-      method: 'POST',
-      credentials: 'include',
-      skipAuthRefresh: true,
-    });
-    expect(getAuthSession()).toEqual({
-      accessToken: 'fresh-access-token',
-    });
+    expect(refreshAuthSessionMock).toHaveBeenCalledTimes(1);
+    expect(apiFetchMock).not.toHaveBeenCalled();
   });
 
   it('logs out the current session and clears persisted auth state', async () => {
