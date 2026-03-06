@@ -13,6 +13,7 @@ import {
   useExerciseWizardPageData,
   useHistoryPageData,
   useSettingsPageData,
+  useTemplateBuilderPageData,
   useWorkoutPreviewPageData,
 } from './web-data';
 
@@ -33,6 +34,7 @@ const useQueryClientMock = vi.hoisted(() => vi.fn());
 const logoutCurrentSessionMock = vi.hoisted(() => vi.fn());
 const clearAuthSessionMock = vi.hoisted(() => vi.fn());
 const deleteCurrentUserMock = vi.hoisted(() => vi.fn());
+const createWorkoutTemplateMock = vi.hoisted(() => vi.fn());
 const listWorkoutSessionsMock = vi.hoisted(() => vi.fn());
 const fetchWorkoutStreakMock = vi.hoisted(() => vi.fn());
 const fetchActiveSessionMock = vi.hoisted(() => vi.fn());
@@ -102,6 +104,7 @@ vi.mock('./web-api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./web-api')>();
   return {
     ...actual,
+    createWorkoutTemplate: createWorkoutTemplateMock,
     deleteCurrentUser: deleteCurrentUserMock,
     fetchActiveSession: fetchActiveSessionMock,
     fetchWorkoutStreak: fetchWorkoutStreakMock,
@@ -236,6 +239,33 @@ describe('web-data', () => {
     expect(setErrorMessage).toHaveBeenCalledWith('Save failed');
   });
 
+  it('marks settings as dirty when the local form diverges from the saved profile', () => {
+    useStateMock
+      .mockReturnValueOnce(['Updated Name', vi.fn()])
+      .mockReturnValueOnce(['America/New_York', vi.fn()])
+      .mockReturnValueOnce(['IMPERIAL', vi.fn()])
+      .mockReturnValueOnce(['120', vi.fn()])
+      .mockReturnValueOnce([undefined, vi.fn()]);
+    useQueryMock.mockReturnValue({
+      data: {
+        name: 'Iron Lifter',
+        timezone: 'UTC',
+        unitPreference: 'METRIC',
+      },
+      error: undefined,
+      isLoading: false,
+    });
+    useMutationMock.mockReturnValue({
+      error: undefined,
+      isPending: false,
+      mutateAsync: vi.fn(),
+    });
+
+    const data = useSettingsPageData();
+
+    expect(data.isDirty).toBe(true);
+  });
+
   it('requests only finished sessions for history data and formats dates in the user timezone', async () => {
     useQueryMock.mockImplementation(({ queryKey }: { queryKey: unknown[] }) => {
       if (queryKey[0] === 'user') {
@@ -335,6 +365,133 @@ describe('web-data', () => {
         ([options]) => options.queryKey[0] === 'sessions',
       ),
     ).toBe(false);
+  });
+
+  it('blocks template builder advancement until the template name is present', () => {
+    const setErrorMessage = vi.fn();
+    useQueryMock.mockReturnValue({
+      data: {
+        items: [],
+        pagination: {
+          page: 1,
+          pageSize: 20,
+          total: 0,
+        },
+      },
+      error: undefined,
+      isLoading: false,
+    });
+    useMutationMock.mockReturnValue({
+      error: undefined,
+      isPending: false,
+      mutateAsync: vi.fn(),
+    });
+    useStateMock
+      .mockReturnValueOnce([
+        {
+          description: '',
+          exercises: [],
+          name: '',
+          step: 1,
+        },
+        vi.fn(),
+      ])
+      .mockReturnValueOnce([undefined, setErrorMessage]);
+
+    const data = useTemplateBuilderPageData();
+
+    data.onNext();
+    expect(setErrorMessage).toHaveBeenCalledWith('Template name is required');
+  });
+
+  it('creates a workout template from the selected exercises and navigates to preview', async () => {
+    const setFormState = vi.fn();
+    useQueryMock.mockReturnValue({
+      data: {
+        items: [
+          {
+            id: 'exercise-bench',
+            name: 'Bench Press',
+            exerciseType: 'WEIGHT_REPS',
+            description: null,
+            primaryMuscle: null,
+          },
+        ],
+        pagination: {
+          page: 1,
+          pageSize: 20,
+          total: 1,
+        },
+      },
+      error: undefined,
+      isLoading: false,
+    });
+    createWorkoutTemplateMock.mockResolvedValue({
+      id: 'template-created',
+      name: 'Push Day A',
+    });
+    useMutationMock.mockImplementation(
+      ({
+        mutationFn,
+        onSuccess,
+      }: {
+        mutationFn: () => Promise<unknown>;
+        onSuccess?: (result: unknown) => Promise<void> | void;
+      }) => ({
+        error: undefined,
+        isPending: false,
+        mutateAsync: async () => {
+          const result = await mutationFn();
+          await onSuccess?.(result);
+          return result;
+        },
+      }),
+    );
+    useStateMock
+      .mockReturnValueOnce([
+        {
+          description: 'Controlled tempo and full range.',
+          exercises: [
+            {
+              defaultSets: '4',
+              id: 'exercise-bench',
+              name: 'Bench Press',
+              repMax: '8',
+              repMin: '6',
+              selected: true,
+              supersetGroupKey: 'A',
+            },
+          ],
+          name: 'Push Day A',
+          step: 4,
+        },
+        setFormState,
+      ])
+      .mockReturnValueOnce([undefined, vi.fn()]);
+
+    const data = useTemplateBuilderPageData();
+
+    await expect(data.onSubmit()).resolves.toBeUndefined();
+    expect(createWorkoutTemplateMock).toHaveBeenCalledWith({
+      description: 'Controlled tempo and full range.',
+      exercises: [
+        {
+          defaultSets: 4,
+          exerciseTemplateId: 'exercise-bench',
+          orderIndex: 0,
+          repMax: 8,
+          repMin: 6,
+          supersetGroupKey: 'A',
+        },
+      ],
+      name: 'Push Day A',
+    });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ['templates'],
+    });
+    expect(navigateMock).toHaveBeenCalledWith(
+      '/workout/template-created/preview',
+    );
   });
 
   it('normalizes invalid wizard step query params through the search params API', () => {

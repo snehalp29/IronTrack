@@ -1,4 +1,4 @@
-import type { Dispatch, ReactNode, SetStateAction } from 'react';
+import type { ReactNode } from 'react';
 
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -63,6 +63,7 @@ const loginWithPasswordMock = vi.hoisted(() => vi.fn());
 const registerWithPasswordMock = vi.hoisted(() => vi.fn());
 const signInWithGoogleMock = vi.hoisted(() => vi.fn());
 const useExerciseDetailPageDataMock = vi.hoisted(() => vi.fn());
+const useTemplateBuilderPageDataMock = vi.hoisted(() => vi.fn());
 const useExerciseWizardPageDataMock = vi.hoisted(() => vi.fn());
 const useSettingsPageDataMock = vi.hoisted(() => vi.fn());
 
@@ -95,6 +96,7 @@ vi.mock('../auth/auth-service', () => ({
 
 vi.mock('../lib/web-data', () => ({
   useExerciseDetailPageData: useExerciseDetailPageDataMock,
+  useTemplateBuilderPageData: useTemplateBuilderPageDataMock,
   useExerciseWizardPageData: useExerciseWizardPageDataMock,
   useSettingsPageData: useSettingsPageDataMock,
 }));
@@ -162,8 +164,39 @@ describe('interactive pages', () => {
       historyItems: [],
       isLoading: false,
     });
+    useTemplateBuilderPageDataMock.mockReturnValue({
+      currentStepLabel: 'Template Name',
+      description: '',
+      errorMessage: undefined,
+      exercises: [
+        {
+          defaultSets: '',
+          id: 'exercise-bench',
+          name: 'Bench Press',
+          repMax: '',
+          repMin: '',
+          selected: false,
+          supersetGroupKey: '',
+        },
+      ],
+      isLoading: false,
+      isSubmitting: false,
+      isSubmitStep: false,
+      name: '',
+      onBack: vi.fn(),
+      onChangeDescription: vi.fn(),
+      onChangeExerciseField: vi.fn(),
+      onChangeName: vi.fn(),
+      onMoveExercise: vi.fn(),
+      onNext: vi.fn(),
+      onSubmit: vi.fn(),
+      onToggleExercise: vi.fn(),
+      step: 1,
+      totalSteps: 4,
+    });
     useSettingsPageDataMock.mockReturnValue({
       errorMessage: undefined,
+      isDirty: false,
       isSaving: false,
       name: 'Iron Lifter',
       timezone: 'America/New_York',
@@ -180,54 +213,91 @@ describe('interactive pages', () => {
     });
   });
 
-  it('TemplateBuilderPage renders each step and button updaters enforce bounds', () => {
-    const setStepMock = vi.fn();
-    useStateMock
-      .mockReturnValueOnce([1, setStepMock] as unknown as [
-        number,
-        Dispatch<SetStateAction<number>>,
-      ])
-      .mockReturnValueOnce([
+  it('TemplateBuilderPage renders step-specific content and submit controls', () => {
+    const onBack = vi.fn();
+    const onSubmit = vi.fn();
+    const onToggleExercise = vi.fn();
+    const onMoveExercise = vi.fn();
+    const onChangeDescription = vi.fn();
+    useTemplateBuilderPageDataMock.mockReturnValue({
+      currentStepLabel: 'Final review and notes',
+      description: 'Controlled tempo and full range.',
+      errorMessage: undefined,
+      exercises: [
         {
-          'template-name': '',
-          'template-step-exercises': '',
-          'template-step-superset': '',
-          'template-step-notes': '',
+          defaultSets: '4',
+          id: 'exercise-bench',
+          name: 'Bench Press',
+          repMax: '8',
+          repMin: '6',
+          selected: true,
+          supersetGroupKey: 'A',
         },
-        vi.fn(),
-      ]);
+      ],
+      isLoading: false,
+      isSubmitting: false,
+      isSubmitStep: true,
+      name: 'Push Day A',
+      onBack,
+      onChangeDescription,
+      onChangeExerciseField: vi.fn(),
+      onChangeName: vi.fn(),
+      onMoveExercise,
+      onNext: vi.fn(),
+      onSubmit,
+      onToggleExercise,
+      step: 4,
+      totalSteps: TOTAL_TEMPLATE_STEPS,
+    });
 
-    const stepOne = TemplateBuilderPage();
-    expect(renderToStaticMarkup(stepOne)).toContain('Template Name');
-    expect(renderToStaticMarkup(stepOne)).toContain(
-      `Step 1 of ${TOTAL_TEMPLATE_STEPS}`,
-    );
-    const stepOneLabel = findElement(
-      stepOne,
-      (element) =>
-        element.type === 'label' && element.props.htmlFor === 'template-name',
-    );
-    const stepOneInput = findElement(
-      stepOne,
-      (element) =>
-        element.type === 'input' && element.props.id === 'template-name',
-    );
-    expect(stepOneLabel).toBeDefined();
-    expect(stepOneInput).toBeDefined();
+    const view = TemplateBuilderPage();
+    const html = renderToStaticMarkup(view);
 
-    findButtonByLabel(stepOne, 'Back')?.props.onClick?.();
-    findButtonByLabel(stepOne, 'Next')?.props.onClick?.();
+    expect(html).toContain(`Step 4 of ${TOTAL_TEMPLATE_STEPS}`);
+    expect(html).toContain('Push Day A');
+    expect(html).toContain('Bench Press');
+    expect(html).toContain('Create Template');
+    expect(html).not.toContain('Template Name');
 
-    const backUpdater = setStepMock.mock.calls[0]?.[0] as
-      | ((current: number) => number)
-      | undefined;
-    const nextUpdater = setStepMock.mock.calls[1]?.[0] as
-      | ((current: number) => number)
-      | undefined;
-    expect(backUpdater?.(1)).toBe(1);
-    expect(backUpdater?.(3)).toBe(2);
-    expect(nextUpdater?.(TOTAL_TEMPLATE_STEPS)).toBe(TOTAL_TEMPLATE_STEPS);
-    expect(nextUpdater?.(2)).toBe(3);
+    findButtonByLabel(view, 'Back')?.props.onClick?.();
+    findButtonByLabel(view, 'Create Template')?.props.onClick?.();
+    expect(onBack).toHaveBeenCalledTimes(1);
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+
+    useTemplateBuilderPageDataMock.mockReturnValue({
+      currentStepLabel: 'Select exercises and set defaults',
+      description: '',
+      errorMessage: undefined,
+      exercises: [
+        {
+          defaultSets: '4',
+          id: 'exercise-bench',
+          name: 'Bench Press',
+          repMax: '8',
+          repMin: '6',
+          selected: true,
+          supersetGroupKey: '',
+        },
+      ],
+      isLoading: false,
+      isSubmitting: false,
+      isSubmitStep: false,
+      name: 'Push Day A',
+      onBack,
+      onChangeDescription,
+      onChangeExerciseField: vi.fn(),
+      onChangeName: vi.fn(),
+      onMoveExercise,
+      onNext: vi.fn(),
+      onSubmit,
+      onToggleExercise,
+      step: 2,
+      totalSteps: TOTAL_TEMPLATE_STEPS,
+    });
+
+    const selectionHtml = renderToStaticMarkup(TemplateBuilderPage());
+    expect(selectionHtml).toContain('Bench Press');
+    expect(selectionHtml).toContain('Default Sets for Bench Press');
   });
 
   it('ExerciseWizardPage renders controlled form inputs and submits on the final step', () => {

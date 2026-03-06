@@ -1,12 +1,31 @@
+import { unstable_usePrompt, useBeforeUnload } from 'react-router-dom';
+
 import { useSettingsPageData } from '../lib/web-data';
 
 export function SettingsPage() {
   const data = useSettingsPageData();
 
+  unstable_usePrompt({
+    message: 'You have unsaved changes. Leave this page?',
+    when: ({ currentLocation, nextLocation }) =>
+      data.isDirty &&
+      currentLocation.pathname !== nextLocation.pathname &&
+      !['/login', '/register'].includes(nextLocation.pathname),
+  });
+  useBeforeUnload((event) => {
+    if (!data.isDirty) {
+      return;
+    }
+
+    event.preventDefault();
+    event.returnValue = '';
+  });
+
   return (
     <div className="card">
       <h1>Settings</h1>
       {data.errorMessage ? <p className="meta">{data.errorMessage}</p> : null}
+      {data.isDirty ? <p className="meta">You have unsaved changes.</p> : null}
       <form className="grid" onSubmit={data.onSave}>
         <label>
           Name

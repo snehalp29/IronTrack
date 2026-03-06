@@ -24,6 +24,7 @@ type SessionHistoryItem = {
 type ActiveSession = ReturnType<typeof createActiveSession>;
 type ExerciseDetailResponse = ReturnType<typeof createExerciseDetail>;
 type ExerciseHistoryResponse = ReturnType<typeof createExerciseHistory>;
+type WorkoutTemplateResponse = ReturnType<typeof createWorkoutTemplate>;
 
 type MockAuthOptions = {
   refreshStatus?: number;
@@ -77,6 +78,7 @@ export async function mockApi(
   const state = {
     activeSession: options.activeSession ?? createActiveSession(),
     createdExercise: createExerciseDetail(),
+    createdTemplate: createWorkoutTemplate(),
     sessions: options.sessions ?? createSessionHistory(),
     workoutStreak: options.workoutStreak ?? createWorkoutStreak(),
     auth: options.auth ?? {},
@@ -93,6 +95,7 @@ async function handleApiRoute(
   state: {
     activeSession: ActiveSession | null;
     createdExercise: ExerciseDetailResponse;
+    createdTemplate: WorkoutTemplateResponse;
     sessions: SessionHistoryItem[];
     workoutStreak: WorkoutStreakResponse;
     auth: MockAuthOptions;
@@ -214,60 +217,46 @@ async function handleApiRoute(
 
   if (path === '/api/v1/workout-templates' && method === 'GET') {
     await fulfillJson(route, [
-      {
-        id: 'template-1',
-        name: 'Push Day A',
-        description: 'Chest and shoulders',
-        exercises: [
-          {
-            id: 'template-exercise-1',
-            orderIndex: 0,
-            defaultSets: 4,
-            repMin: 8,
-            repMax: 10,
-            exercise: {
-              id: 'exercise-bench',
-              name: 'Bench Press',
-            },
-          },
-        ],
-        muscleCoverage: ['Chest', 'Shoulders'],
-      },
+      createWorkoutTemplate({ id: 'template-1' }),
+      state.createdTemplate,
     ]);
     return;
   }
 
   if (path === '/api/v1/workout-templates/template-1' && method === 'GET') {
-    await fulfillJson(route, {
-      id: 'template-1',
-      name: 'Push Day A',
-      description: 'Chest and shoulders',
-      exercises: [
-        {
-          id: 'template-exercise-1',
-          orderIndex: 0,
-          defaultSets: 4,
-          repMin: 8,
-          repMax: 10,
-          exercise: {
-            id: 'exercise-bench',
-            name: 'Bench Press',
-          },
-        },
-        {
-          id: 'template-exercise-2',
-          orderIndex: 1,
-          defaultSets: 3,
-          repMin: 10,
-          repMax: 12,
-          exercise: {
-            id: 'exercise-incline',
-            name: 'Incline Press',
-          },
-        },
-      ],
-      muscleCoverage: ['Chest', 'Shoulders'],
+    await fulfillJson(route, createWorkoutTemplate({ id: 'template-1' }));
+    return;
+  }
+
+  if (
+    path === `/api/v1/workout-templates/${state.createdTemplate.id}` &&
+    method === 'GET'
+  ) {
+    await fulfillJson(route, state.createdTemplate);
+    return;
+  }
+
+  if (path === '/api/v1/workout-templates' && method === 'POST') {
+    const payload = request.postDataJSON() as {
+      description?: string;
+      exercises?: Array<{
+        exerciseTemplateId: string;
+        orderIndex: number;
+        defaultSets?: number;
+        repMin?: number;
+        repMax?: number;
+        supersetGroupKey?: string;
+      }>;
+      name?: string;
+    };
+
+    state.createdTemplate = createWorkoutTemplate({
+      description: payload.description,
+      exercises: payload.exercises,
+      id: 'template-created',
+      name: payload.name ?? 'New Template',
     });
+    await fulfillJson(route, state.createdTemplate, undefined, 201);
     return;
   }
 
@@ -770,6 +759,89 @@ function createExerciseHistory(): ExerciseHistoryResponse {
       pageSize: 20,
       total: 1,
     },
+  };
+}
+
+function createWorkoutTemplate(input?: {
+  description?: string;
+  exercises?: Array<{
+    exerciseTemplateId: string;
+    orderIndex: number;
+    defaultSets?: number;
+    repMin?: number;
+    repMax?: number;
+    supersetGroupKey?: string;
+  }>;
+  id?: string;
+  name?: string;
+}): {
+  id: string;
+  name: string;
+  description: string | null;
+  exercises: Array<{
+    id: string;
+    orderIndex: number;
+    defaultSets: number | null;
+    repMin: number | null;
+    repMax: number | null;
+    exercise: {
+      id: string;
+      name: string;
+    };
+  }>;
+  muscleCoverage: string[];
+} {
+  const exercises = input?.exercises?.length
+    ? input.exercises
+        .slice()
+        .sort((left, right) => left.orderIndex - right.orderIndex)
+        .map((exercise, index) => ({
+          id: `template-exercise-${index + 1}`,
+          orderIndex: exercise.orderIndex,
+          defaultSets: exercise.defaultSets ?? null,
+          repMax: exercise.repMax ?? null,
+          repMin: exercise.repMin ?? null,
+          exercise: {
+            id: exercise.exerciseTemplateId,
+            name:
+              exercise.exerciseTemplateId === 'exercise-bench'
+                ? 'Bench Press'
+                : exercise.exerciseTemplateId === 'exercise-row'
+                  ? 'Cable Row'
+                  : 'Exercise',
+          },
+        }))
+    : [
+        {
+          id: 'template-exercise-1',
+          orderIndex: 0,
+          defaultSets: 4,
+          repMin: 8,
+          repMax: 10,
+          exercise: {
+            id: 'exercise-bench',
+            name: 'Bench Press',
+          },
+        },
+        {
+          id: 'template-exercise-2',
+          orderIndex: 1,
+          defaultSets: 3,
+          repMin: 10,
+          repMax: 12,
+          exercise: {
+            id: 'exercise-row',
+            name: 'Cable Row',
+          },
+        },
+      ];
+
+  return {
+    id: input?.id ?? 'template-created',
+    name: input?.name ?? 'Push Day A',
+    description: input?.description ?? 'Chest and shoulders',
+    exercises,
+    muscleCoverage: ['Chest', 'Shoulders'],
   };
 }
 

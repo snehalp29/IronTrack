@@ -18,6 +18,7 @@ import {
   type WorkoutTemplatePayload,
   applyWorkoutSuperset,
   createExercise,
+  createWorkoutTemplate,
   deleteCurrentUser,
   deleteWorkoutExercise,
   fetchActiveSession,
@@ -55,6 +56,23 @@ type WizardFormValues = {
   defaultCues: string;
 };
 
+type TemplateBuilderExerciseForm = {
+  id: string;
+  name: string;
+  selected: boolean;
+  defaultSets: string;
+  repMin: string;
+  repMax: string;
+  supersetGroupKey: string;
+};
+
+type TemplateBuilderFormValues = {
+  step: number;
+  name: string;
+  description: string;
+  exercises: TemplateBuilderExerciseForm[];
+};
+
 const WIZARD_STEPS = [
   'Name and description',
   'Exercise type',
@@ -77,6 +95,13 @@ const INITIAL_WIZARD_FORM_VALUES: WizardFormValues = {
   repMax: '',
   defaultCues: '',
 };
+
+const TEMPLATE_BUILDER_STEPS = [
+  'Template Name',
+  'Select exercises and set defaults',
+  'Superset and order review',
+  'Final review and notes',
+] as const;
 
 const SUPPORTED_TIMEZONES = resolveSupportedTimezones();
 
@@ -209,8 +234,17 @@ export function useSettingsPageData() {
     },
   });
 
+  const trimmedName = name.trim();
+  const savedName = userQuery.data?.name?.trim() ?? '';
+  const isDirty =
+    trimmedName !== savedName ||
+    timezone !== (userQuery.data?.timezone ?? 'UTC') ||
+    unitPreference !== (userQuery.data?.unitPreference ?? 'METRIC') ||
+    restTimerDefault !== String(restTimerDefaultSeconds);
+
   return {
     errorMessage: errorMessage ?? asErrorMessage(userQuery.error),
+    isDirty,
     isSaving: saveMutation.isPending,
     name,
     timezone,
@@ -255,6 +289,213 @@ export function useSettingsPageData() {
         clearAuthSession();
         navigate('/register');
       }
+    },
+  };
+}
+
+export function useTemplateBuilderPageData() {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const exercisesQuery = useQuery({
+    queryKey: ['exercises'],
+    queryFn: listExercises,
+  });
+  const [formValues, setFormValues] = useState<TemplateBuilderFormValues>({
+    description: '',
+    exercises: [],
+    name: '',
+    step: 1,
+  });
+  const [errorMessage, setErrorMessage] = useState<string>();
+  const createMutation = useMutation({
+    mutationFn: async () =>
+      createWorkoutTemplate({
+        description: optionalTrimmed(formValues.description),
+        exercises: formValues.exercises
+          .filter((exercise) => exercise.selected)
+          .map((exercise, index) => ({
+            defaultSets: optionalNumber(exercise.defaultSets),
+            exerciseTemplateId: exercise.id,
+            orderIndex: index,
+            repMax: optionalNumber(exercise.repMax),
+            repMin: optionalNumber(exercise.repMin),
+            supersetGroupKey: optionalTrimmed(exercise.supersetGroupKey),
+          })),
+        name: formValues.name.trim(),
+      }),
+    onError: (error) => {
+      setErrorMessage(asErrorMessage(error) ?? 'Failed to create template');
+    },
+    onSuccess: async (template) => {
+      await queryClient.invalidateQueries({ queryKey: ['templates'] });
+      navigate(`/workout/${template.id}/preview`);
+    },
+  });
+
+  useEffect(() => {
+    if (!exercisesQuery.data?.items.length) {
+      return;
+    }
+
+    setFormValues((current) => {
+      const knownIds = new Set(
+        current.exercises.map((exercise) => exercise.id),
+      );
+      const additions = exercisesQuery.data.items
+        .filter((exercise) => !knownIds.has(exercise.id))
+        .map((exercise) => ({
+          defaultSets: '',
+          id: exercise.id,
+          name: exercise.name,
+          repMax: '',
+          repMin: '',
+          selected: false,
+          supersetGroupKey: '',
+        }));
+
+      return additions.length
+        ? {
+            ...current,
+            exercises: [...current.exercises, ...additions],
+          }
+        : current;
+    });
+  }, [exercisesQuery.data]);
+
+  const validateTemplateBuilderStep = (
+    targetStep = formValues.step,
+  ): string | undefined => {
+    if (targetStep === 1 && formValues.name.trim().length === 0) {
+      return 'Template name is required';
+    }
+    if (targetStep === 1 && formValues.name.trim().length < 2) {
+      return 'Template name must be at least 2 characters';
+    }
+
+    const selectedExercises = formValues.exercises.filter(
+      (exercise) => exercise.selected,
+    );
+    if (targetStep >= 2 && selectedExercises.length === 0) {
+      return 'Select at least one exercise';
+    }
+
+    for (const exercise of selectedExercises) {
+      if (
+        exercise.repMin.trim() &&
+        exercise.repMax.trim() &&
+        Number(exercise.repMin) > Number(exercise.repMax)
+      ) {
+        return `Rep max for ${exercise.name} must be greater than or equal to rep min`;
+      }
+    }
+
+    return undefined;
+  };
+
+  return {
+    currentStepLabel: TEMPLATE_BUILDER_STEPS[formValues.step - 1],
+    description: formValues.description,
+    errorMessage: errorMessage ?? asErrorMessage(exercisesQuery.error),
+    exercises: formValues.exercises,
+    isLoading: exercisesQuery.isLoading,
+    isSubmitting: createMutation.isPending,
+    isSubmitStep: formValues.step === TEMPLATE_BUILDER_STEPS.length,
+    name: formValues.name,
+    step: formValues.step,
+    totalSteps: TEMPLATE_BUILDER_STEPS.length,
+    onBack: () => {
+      setErrorMessage(undefined);
+      setFormValues((current) => ({
+        ...current,
+        step: Math.max(1, current.step - 1),
+      }));
+    },
+    onChangeDescription: (value: string) => {
+      setErrorMessage(undefined);
+      setFormValues((current) => ({
+        ...current,
+        description: value,
+      }));
+    },
+    onChangeExerciseField: (
+      exerciseId: string,
+      field: 'defaultSets' | 'repMin' | 'repMax' | 'supersetGroupKey',
+      value: string,
+    ) => {
+      setErrorMessage(undefined);
+      setFormValues((current) => ({
+        ...current,
+        exercises: current.exercises.map((exercise) =>
+          exercise.id === exerciseId
+            ? {
+                ...exercise,
+                [field]: value,
+              }
+            : exercise,
+        ),
+      }));
+    },
+    onChangeName: (value: string) => {
+      setErrorMessage(undefined);
+      setFormValues((current) => ({
+        ...current,
+        name: value,
+      }));
+    },
+    onMoveExercise: (exerciseId: string, direction: -1 | 1) => {
+      setFormValues((current) => {
+        const selectedExercises = current.exercises.filter(
+          (exercise) => exercise.selected,
+        );
+        const moved = moveItem(selectedExercises, exerciseId, direction);
+        const movedIds = new Set(moved.map((exercise) => exercise.id));
+        const remaining = current.exercises.filter(
+          (exercise) => !movedIds.has(exercise.id),
+        );
+
+        return {
+          ...current,
+          exercises: [...moved, ...remaining],
+        };
+      });
+    },
+    onNext: () => {
+      const validationMessage = validateTemplateBuilderStep();
+      if (validationMessage) {
+        setErrorMessage(validationMessage);
+        return;
+      }
+      setErrorMessage(undefined);
+      setFormValues((current) => ({
+        ...current,
+        step: Math.min(TEMPLATE_BUILDER_STEPS.length, current.step + 1),
+      }));
+    },
+    onSubmit: async () => {
+      const validationMessage = validateTemplateBuilderStep(
+        TEMPLATE_BUILDER_STEPS.length,
+      );
+      if (validationMessage) {
+        setErrorMessage(validationMessage);
+        return;
+      }
+
+      try {
+        await createMutation.mutateAsync();
+      } catch {
+        return;
+      }
+    },
+    onToggleExercise: (exerciseId: string) => {
+      setErrorMessage(undefined);
+      setFormValues((current) => ({
+        ...current,
+        exercises: current.exercises.map((exercise) =>
+          exercise.id === exerciseId
+            ? { ...exercise, selected: !exercise.selected }
+            : exercise,
+        ),
+      }));
     },
   };
 }

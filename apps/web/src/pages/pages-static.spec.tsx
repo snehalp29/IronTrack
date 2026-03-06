@@ -24,6 +24,8 @@ const useExerciseSelectPageDataMock = vi.hoisted(() => vi.fn());
 const useCompletionFlowDataMock = vi.hoisted(() => vi.fn());
 const useActiveWorkoutStoreMock = vi.hoisted(() => vi.fn());
 const navigateMock = vi.hoisted(() => vi.fn());
+const useBeforeUnloadMock = vi.hoisted(() => vi.fn());
+const usePromptMock = vi.hoisted(() => vi.fn());
 const routeParamsState = vi.hoisted(() => ({
   value: { templateId: 'tpl-42' } as { templateId?: string },
 }));
@@ -45,6 +47,8 @@ vi.mock('react-router-dom', () => ({
     </a>
   ),
   useNavigate: () => navigateMock,
+  unstable_usePrompt: usePromptMock,
+  useBeforeUnload: useBeforeUnloadMock,
   useParams: () => routeParamsState.value,
 }));
 
@@ -93,6 +97,7 @@ describe('static/simple pages', () => {
     });
     useSettingsPageDataMock.mockReturnValue({
       errorMessage: undefined,
+      isDirty: false,
       isSaving: false,
       name: 'Iron Lifter',
       timezone: 'America/New_York',
@@ -244,6 +249,31 @@ describe('static/simple pages', () => {
     expect(html).toContain('Asia/Kolkata');
     expect(html).toContain('Metric (kg)');
     expect(html).toContain('Default Rest (seconds)');
+  });
+
+  it('renders an unsaved changes notice on settings when the form is dirty', () => {
+    useSettingsPageDataMock.mockReturnValue({
+      errorMessage: undefined,
+      isDirty: true,
+      isSaving: false,
+      name: 'Iron Lifter',
+      timezone: 'America/New_York',
+      unitPreference: 'METRIC',
+      restTimerDefaultSeconds: '120',
+      timezones: ['UTC', 'America/New_York'],
+      onDeleteAccount: vi.fn(),
+      onLogout: vi.fn(),
+      onNameChange: vi.fn(),
+      onRestTimerDefaultSecondsChange: vi.fn(),
+      onSave: vi.fn(),
+      onTimezoneChange: vi.fn(),
+      onUnitPreferenceChange: vi.fn(),
+    });
+
+    const html = render(<SettingsPage />);
+    expect(html).toContain('You have unsaved changes.');
+    expect(usePromptMock).toHaveBeenCalled();
+    expect(useBeforeUnloadMock).toHaveBeenCalled();
   });
 
   it('renders completion step navigation and dynamic completion content', () => {

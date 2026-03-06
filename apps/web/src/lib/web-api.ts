@@ -310,6 +310,30 @@ export async function fetchWorkoutTemplateById(templateId: string) {
   );
 }
 
+export async function createWorkoutTemplate(input: {
+  name: string;
+  description?: string;
+  exercises: Array<{
+    exerciseTemplateId: string;
+    orderIndex: number;
+    defaultSets?: number;
+    repMin?: number;
+    repMax?: number;
+    supersetGroupKey?: string;
+  }>;
+}) {
+  return requirePayload(
+    apiFetch('/workout-templates', {
+      method: 'POST',
+      body: input as unknown as BodyInit,
+      schema: z.object({
+        id: z.string().min(1),
+        name: z.string().min(1),
+      }),
+    }),
+  );
+}
+
 export async function fetchActiveSession() {
   return apiFetch('/sessions/active', {
     schema: workoutSessionSchema.nullable(),

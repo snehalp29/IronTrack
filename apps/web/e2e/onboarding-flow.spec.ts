@@ -71,16 +71,17 @@ test.describe('Onboarding Flow', () => {
     const templateName = page.getByLabel('Template Name', { exact: true });
     await templateName.fill('Push Day A');
     await page.getByRole('button', { name: 'Next' }).click();
-    await page
-      .getByLabel('Select exercises and set defaults', { exact: true })
-      .fill('Bench Press 4x8');
+    const benchPressToggle = page.getByLabel('Bench Press', { exact: true });
+    await benchPressToggle.check();
+    await page.getByLabel('Default Sets for Bench Press').fill('4');
     await page.getByRole('button', { name: 'Back' }).click();
 
     await expect(templateName).toHaveValue('Push Day A');
     await page.getByRole('button', { name: 'Next' }).click();
-    await expect(
-      page.getByLabel('Select exercises and set defaults', { exact: true }),
-    ).toHaveValue('Bench Press 4x8');
+    await expect(benchPressToggle).toBeChecked();
+    await expect(page.getByLabel('Default Sets for Bench Press')).toHaveValue(
+      '4',
+    );
   });
 
   test('first-time user can register and complete initial setup steps', async ({
@@ -135,22 +136,23 @@ test.describe('Onboarding Flow', () => {
     ).toBeVisible();
     await page.getByLabel('Template Name', { exact: true }).fill('Push Day A');
     await page.getByRole('button', { name: 'Next' }).click();
-    await page
-      .getByLabel('Select exercises and set defaults', { exact: true })
-      .fill('Bench Press 4x8\nIncline Press 3x10');
+    await page.getByLabel('Bench Press', { exact: true }).check();
+    await page.getByLabel('Default Sets for Bench Press').fill('4');
+    await page.getByLabel('Rep Min for Bench Press').fill('8');
+    await page.getByLabel('Rep Max for Bench Press').fill('10');
     await page.getByRole('button', { name: 'Next' }).click();
-    await page
-      .getByLabel('Superset and order review', { exact: true })
-      .fill('No supersets for first template');
+    await page.getByLabel('Superset group for Bench Press').fill('A');
     await page.getByRole('button', { name: 'Next' }).click();
     await page
       .getByLabel('Final review and notes', { exact: true })
       .fill('Focus on controlled tempo and full range');
+    await page.getByRole('button', { name: 'Create Template' }).click();
 
-    await page.getByRole('link', { name: 'Dashboard' }).click();
-    await expect(page).toHaveURL(/\/$/);
-    await page.getByRole('link', { name: 'Start' }).click();
-    await expect(page).toHaveURL(/\/workout\/template-1\/preview$/);
+    await expect(page).toHaveURL(/\/workout\/template-created\/preview$/);
+    await expect(
+      page.getByRole('heading', { name: 'Workout Preview' }),
+    ).toBeVisible();
+
     await page.getByRole('button', { name: 'Start Workout' }).click();
     await expect(page).toHaveURL(/\/workout\/active$/);
 

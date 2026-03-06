@@ -16,8 +16,8 @@
 ## Status
 
 - Total findings: **89**
-- Open: **2**
-- Fixed: **87**
+- Open: **0**
+- Fixed: **89**
 
 ## Fixed History
 
@@ -28,18 +28,18 @@
 - `2026-03-06`: Closed `W70`, `W72`, `W74`, `W75`, `W79`, `W83`, and `W84` by moving route-query normalization out of render, making wizard/preview/logout actions non-throwing UI handlers, separating notes modal saving/error state, and disabling preview start during loading.
 - `2026-03-06`: Found and closed `W88` and `W89` during the same pass by preserving template-builder values across step navigation and normalizing invalid exercise-wizard step query params back into the URL.
 - `2026-03-06`: Closed `W68`, `W69`, `W73`, `W76`, `W77`, `W78`, `W81`, `W82`, `W85`, `W86`, and `W87` by wiring real exercise detail/history endpoints into the UI, making the exercise wizard genuinely step-based with client-side validation, syncing active-session refreshes back into the query cache, catching exercise-swap failures, paginating exercise listing across all pages, adding safe timezone fallback/cached timezone options, aligning template cache keys, guarding completion summary empty states, and extending Playwright to cover the wizard-to-detail browser flow.
+- `2026-03-06`: Closed `W71` and `W80` by replacing the scaffold-only template builder with a real API-backed multi-step creation flow, adding client-side builder validation/order/superset handling, and protecting dirty settings with in-app navigation prompts plus beforeunload warnings that still allow logout/account transitions.
 
 ## Open Findings
 
-- `W71` `P1` [TemplateBuilderPage.tsx](/Users/sp_admin/Dev/Code/NestJS/IronTrack/apps/web/src/pages/TemplateBuilderPage.tsx): template builder is still scaffold-only and does not create templates through the API.
-- `W80` `P2` [web-data.ts](/Users/sp_admin/Dev/Code/NestJS/IronTrack/apps/web/src/lib/web-data.ts): settings still lose unsaved changes silently on navigation.
+- None.
 
 ## Key Outcomes
 
 - Auth/session and active-workout flows remain heavily covered in both unit tests and Playwright, including protected-route restore/failure, notes saving, superset application, and mutation error handling.
 - Exercise creation now uses a real step-based wizard with client validation, and post-create navigation lands on an API-backed detail page with guide/history rendering.
 - Date/time handling is now safer and more consistent across history, settings, and exercise detail flows, and exercise selection no longer truncates after the first page.
-- Remaining web risk is concentrated in the still-scaffolded template-builder create flow and unsaved-settings navigation protection.
+- The remaining tracked web backlog is closed; the previously scaffold-only template builder and the unsaved-settings navigation gap are both covered by unit tests and Playwright.
 
 ## Validation
 
