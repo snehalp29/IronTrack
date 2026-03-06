@@ -29,7 +29,7 @@ describe('ExercisesService', () => {
 
     const prismaMock = {
       exerciseTemplate: {
-        findFirst: jest.fn(),
+        findFirst: jest.fn(async () => ({ id: 'exercise-1' })),
         findMany: jest.fn(),
         count: jest.fn(),
         create: jest.fn(),
@@ -798,6 +798,9 @@ describe('ExercisesService', () => {
           sessionExercise: {
             exerciseTemplateId: 'exercise-1',
             deletedAt: null,
+            exercise: {
+              deletedAt: null,
+            },
             session: {
               userId: 'user-1',
               deletedAt: null,
@@ -823,6 +826,9 @@ describe('ExercisesService', () => {
         sessionExercise: {
           exerciseTemplateId: 'exercise-1',
           deletedAt: null,
+          exercise: {
+            deletedAt: null,
+          },
           session: {
             userId: 'user-1',
             deletedAt: null,
@@ -830,6 +836,19 @@ describe('ExercisesService', () => {
         },
       },
     });
+  });
+
+  it('rejects exercise history lookups for inaccessible exercises before querying sets', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.exerciseTemplate.findFirst as jest.Mock).mockResolvedValue(
+      null,
+    );
+
+    await expect(
+      service.history('user-1', 'exercise-1'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(prismaMock.set.findMany).not.toHaveBeenCalled();
+    expect(prismaMock.set.count).not.toHaveBeenCalled();
   });
 
   it('uses default history pagination arguments when page and pageSize are omitted', async () => {

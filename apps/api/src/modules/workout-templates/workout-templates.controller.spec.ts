@@ -24,10 +24,27 @@ describe('WorkoutTemplatesController', () => {
       { id: 'w1' },
     ]);
 
-    await expect(controller.list({ sub: 'u1' })).resolves.toEqual([
+    await expect(
+      controller.list({ sub: 'u1' }, { page: 1, pageSize: 100 }),
+    ).resolves.toEqual([{ id: 'w1' }]);
+    expect(workoutTemplatesServiceMock.list).toHaveBeenCalledWith('u1', {
+      page: 1,
+      pageSize: 100,
+    });
+  });
+
+  it('delegates list with explicit pagination', async () => {
+    (workoutTemplatesServiceMock.list as jest.Mock).mockResolvedValue([
       { id: 'w1' },
     ]);
-    expect(workoutTemplatesServiceMock.list).toHaveBeenCalledWith('u1');
+
+    await expect(
+      controller.list({ sub: 'u1' }, { page: 2, pageSize: 25 }),
+    ).resolves.toEqual([{ id: 'w1' }]);
+    expect(workoutTemplatesServiceMock.list).toHaveBeenCalledWith('u1', {
+      page: 2,
+      pageSize: 25,
+    });
   });
 
   it('delegates getById', async () => {

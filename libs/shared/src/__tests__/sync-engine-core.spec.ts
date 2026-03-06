@@ -8,6 +8,24 @@ import {
 } from '../utils/sync-queue';
 
 describe('sync engine core', () => {
+  function mockCryptoRandom(value: number) {
+    const originalCrypto = globalThis.crypto;
+    vi.stubGlobal('crypto', {
+      getRandomValues: (buffer: Uint32Array) => {
+        buffer[0] = value;
+        return buffer;
+      },
+    });
+
+    return () => {
+      if (originalCrypto) {
+        vi.stubGlobal('crypto', originalCrypto);
+      } else {
+        vi.unstubAllGlobals();
+      }
+    };
+  }
+
   it('replays create/update/delete in order and reports all as synced', async () => {
     const db: SyncQueueDb = {
       getAllSync: vi.fn().mockReturnValue([
@@ -338,7 +356,7 @@ describe('sync engine core', () => {
   });
 
   it('uses custom claim lease and retry delay options', async () => {
-    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0);
+    const restoreCrypto = mockCryptoRandom(0);
     const db: SyncQueueDb = {
       getAllSync: vi.fn((query: string) => {
         if (query === DUE_SYNC_QUEUE_QUERY) {
@@ -376,12 +394,12 @@ describe('sync engine core', () => {
         ['2026-03-02T10:00:45.000Z', 5],
       );
     } finally {
-      randomSpy.mockRestore();
+      restoreCrypto();
     }
   });
 
   it('falls back to defaults when integer options are non-positive', async () => {
-    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0);
+    const restoreCrypto = mockCryptoRandom(0);
     const db: SyncQueueDb = {
       getAllSync: vi.fn((query: string) => {
         if (query === DUE_SYNC_QUEUE_QUERY) {
@@ -422,7 +440,50 @@ describe('sync engine core', () => {
         ['2026-03-02T10:00:30.000Z', 6],
       );
     } finally {
-      randomSpy.mockRestore();
+      restoreCrypto();
+    }
+  });
+
+  it('drops poison-pill items once they exceed the max attempt threshold', async () => {
+    const restoreCrypto = mockCryptoRandom(0);
+    const db: SyncQueueDb = {
+      getAllSync: vi.fn((query: string) => {
+        if (query === DUE_SYNC_QUEUE_QUERY) {
+          return [
+            {
+              id: 88,
+              entity_type: 'session',
+              local_id: 'local-88',
+              operation: 'UPDATE',
+              payload: '{"name":"retry-me"}',
+              attempts: 9,
+            },
+          ];
+        }
+        return [{ id: 88 }];
+      }),
+      runSync: vi.fn(),
+    };
+    const applyRemote = vi.fn().mockRejectedValueOnce({ status: 500 });
+
+    try {
+      const result = await replaySyncQueueWithDb(
+        db,
+        applyRemote,
+        new Date('2026-03-02T10:00:00.000Z'),
+      );
+
+      expect(result).toEqual({ synced: 0, conflicts: 0 });
+      expect(db.runSync).toHaveBeenCalledWith(
+        'DELETE FROM sync_queue WHERE id = ?',
+        [88],
+      );
+      expect(db.runSync).not.toHaveBeenCalledWith(
+        'UPDATE sync_queue SET attempts = attempts + 1, next_attempt_at = ? WHERE id = ?',
+        [expect.any(String), 88],
+      );
+    } finally {
+      restoreCrypto();
     }
   });
 });

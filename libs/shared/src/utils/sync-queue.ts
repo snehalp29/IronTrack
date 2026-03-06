@@ -11,6 +11,7 @@ export interface SyncQueueItem {
   local_id: string;
   operation: SyncOperation;
   payload: string;
+  attempts?: number;
 }
 
 export interface SyncQueueMutation {
@@ -28,6 +29,7 @@ export interface SyncQueueDb {
 export const DEFAULT_SYNC_BATCH_SIZE = 100;
 export const DEFAULT_SYNC_RETRY_DELAY_MS = 30_000;
 export const DEFAULT_SYNC_CLAIM_LEASE_MS = 60_000;
+export const DEFAULT_SYNC_MAX_ATTEMPTS = 10;
 
 export const DUE_SYNC_QUEUE_QUERY =
   'SELECT * FROM sync_queue WHERE next_attempt_at IS NULL OR next_attempt_at <= ? ORDER BY id ASC LIMIT ?';
@@ -40,7 +42,12 @@ const VERIFY_SYNC_QUEUE_ITEM_CLAIM_QUERY =
 type ReplaySyncQueueOptions = {
   batchSize?: number;
   claimLeaseMs?: number;
+  maxAttempts?: number;
   retryDelayMs?: number;
+};
+
+type CryptoLike = {
+  getRandomValues<T extends ArrayBufferView | null>(buffer: T): T;
 };
 
 function resolvePositiveInteger(
@@ -97,7 +104,11 @@ export async function replaySyncQueueWithDb(
     options?.retryDelayMs,
     DEFAULT_SYNC_RETRY_DELAY_MS,
   );
-  const claimOffsetMs = Math.floor(Math.random() * 1000) + 1;
+  const maxAttempts = resolvePositiveInteger(
+    options?.maxAttempts,
+    DEFAULT_SYNC_MAX_ATTEMPTS,
+  );
+  const claimOffsetMs = getRetryJitterMs();
 
   const items = db.getAllSync<SyncQueueItem>(DUE_SYNC_QUEUE_QUERY, [
     nowIso,
@@ -137,6 +148,12 @@ export async function replaySyncQueueWithDb(
         conflicts += 1;
       }
 
+      const nextAttempts = (item.attempts ?? 0) + 1;
+      if (nextAttempts >= maxAttempts) {
+        db.runSync('DELETE FROM sync_queue WHERE id = ?', [item.id]);
+        continue;
+      }
+
       db.runSync(
         'UPDATE sync_queue SET attempts = attempts + 1, next_attempt_at = ? WHERE id = ?',
         [new Date(now.getTime() + retryDelayMs).toISOString(), item.id],
@@ -145,4 +162,12 @@ export async function replaySyncQueueWithDb(
   }
 
   return { synced, conflicts };
+}
+
+function getRetryJitterMs(): number {
+  const buffer = new Uint32Array(1);
+  (
+    globalThis as typeof globalThis & { crypto: CryptoLike }
+  ).crypto.getRandomValues(buffer);
+  return (buffer[0] % 1000) + 1;
 }

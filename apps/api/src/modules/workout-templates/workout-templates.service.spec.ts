@@ -10,6 +10,20 @@ import { WorkoutTemplatesService } from './workout-templates.service';
 describe('WorkoutTemplatesService', () => {
   const createService = () => {
     const tx = {
+      exerciseTemplate: {
+        findMany: jest.fn(
+          async (args?: {
+            where?: {
+              id?: {
+                in?: string[];
+              };
+            };
+          }) =>
+            (args?.where?.id?.in ?? []).map((id) => ({
+              id,
+            })),
+        ),
+      },
       workoutTemplateExercise: {
         deleteMany: jest.fn(async () => ({ count: 1 })),
         createMany: jest.fn(async () => ({ count: 1 })),
@@ -91,6 +105,22 @@ describe('WorkoutTemplatesService', () => {
             },
           },
         },
+      }),
+    );
+  });
+
+  it('applies pagination when listing templates', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.workoutTemplate.findMany as jest.Mock).mockResolvedValue([
+      { id: 't1' },
+    ]);
+
+    await service.list('user-1', { page: 2, pageSize: 25 });
+
+    expect(prismaMock.workoutTemplate.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        skip: 25,
+        take: 25,
       }),
     );
   });
@@ -187,6 +217,36 @@ describe('WorkoutTemplatesService', () => {
     );
   });
 
+  it('checks exercise accessibility inside the create transaction', async () => {
+    const { service, prismaMock, tx } = createService();
+    (tx.workoutTemplate.findFirst as jest.Mock).mockResolvedValue({
+      orderIndex: 2,
+    });
+    (tx.workoutTemplate.create as jest.Mock).mockResolvedValue({
+      id: 't1',
+    });
+
+    await service.create('user-1', {
+      name: 'Pull Day',
+      exercises: [
+        {
+          exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+          orderIndex: 0,
+        },
+      ],
+    });
+
+    expect(prismaMock.exerciseTemplate.findMany).not.toHaveBeenCalled();
+    expect(tx.exerciseTemplate.findMany).toHaveBeenCalledWith({
+      where: {
+        id: { in: ['11111111-1111-4111-8111-111111111111'] },
+        deletedAt: null,
+        OR: [{ isGlobal: true }, { ownerUserId: 'user-1' }],
+      },
+      select: { id: true },
+    });
+  });
+
   it('derives default orderIndex from the highest active template order inside the transaction', async () => {
     const { service, prismaMock, tx } = createService();
     (tx.workoutTemplate.findFirst as jest.Mock).mockResolvedValue({
@@ -249,6 +309,18 @@ describe('WorkoutTemplatesService', () => {
     );
   });
 
+  it('rejects update payloads that provide an empty exercises array', async () => {
+    const { service, prismaMock, tx } = createService();
+    (prismaMock.workoutTemplate.findFirst as jest.Mock).mockResolvedValue({
+      id: 'template-1',
+    });
+
+    await expect(
+      service.update('user-1', 'template-1', { exercises: [] }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(tx.workoutTemplateExercise.deleteMany).not.toHaveBeenCalled();
+  });
+
   it('trims template names before create persistence', async () => {
     const { service, tx } = createService();
     (tx.workoutTemplate.create as jest.Mock).mockResolvedValue({
@@ -297,8 +369,8 @@ describe('WorkoutTemplatesService', () => {
   });
 
   it('throws forbidden when creating template with inaccessible exercises', async () => {
-    const { service, prismaMock } = createService();
-    (prismaMock.exerciseTemplate.findMany as jest.Mock).mockResolvedValue([
+    const { service, prismaMock, tx } = createService();
+    (tx.exerciseTemplate.findMany as jest.Mock).mockResolvedValue([
       { id: '11111111-1111-4111-8111-111111111111' },
     ]);
 
@@ -503,7 +575,7 @@ describe('WorkoutTemplatesService', () => {
     (prismaMock.workoutTemplate.findFirst as jest.Mock).mockResolvedValue({
       id: 'template-1',
     });
-    (prismaMock.exerciseTemplate.findMany as jest.Mock).mockResolvedValue([
+    (tx.exerciseTemplate.findMany as jest.Mock).mockResolvedValue([
       { id: '11111111-1111-4111-8111-111111111111' },
     ]);
 

@@ -1,4 +1,8 @@
-import { of } from 'rxjs';
+import {
+  GatewayTimeoutException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
+import { of, throwError } from 'rxjs';
 
 import { MlClientService } from './ml-client.service';
 
@@ -27,7 +31,7 @@ describe('MlClientService', () => {
     httpService.get.mockReturnValue(of({ data: { ok: true } }));
 
     await expect(service.health()).resolves.toEqual({ ok: true });
-    expect(httpService.get).toHaveBeenCalledWith(
+    expect(httpService.get.mock.calls[0]?.[0]).toBe(
       'http://localhost:5000/health',
     );
   });
@@ -37,7 +41,7 @@ describe('MlClientService', () => {
     httpService.get.mockReturnValue(of({ data: { ok: true } }));
 
     await expect(service.health()).resolves.toEqual({ ok: true });
-    expect(httpService.get).toHaveBeenCalledWith(
+    expect(httpService.get.mock.calls[0]?.[0]).toBe(
       'http://localhost:5000/health',
     );
   });
@@ -61,29 +65,25 @@ describe('MlClientService', () => {
       session: 'A',
     });
 
-    expect(httpService.get).toHaveBeenCalledWith(
+    expect(httpService.get.mock.calls[0]?.[0]).toBe(
       'https://ml.example.com/health',
     );
-    expect(httpService.post).toHaveBeenNthCalledWith(
-      1,
+    expect(httpService.post.mock.calls[0]?.slice(0, 2)).toEqual([
       'https://ml.example.com/api/v1/next-load',
       { x: 1 },
-    );
-    expect(httpService.post).toHaveBeenNthCalledWith(
-      2,
+    ]);
+    expect(httpService.post.mock.calls[1]?.slice(0, 2)).toEqual([
       'https://ml.example.com/api/v1/rest-time',
       { x: 2 },
-    );
-    expect(httpService.post).toHaveBeenNthCalledWith(
-      3,
+    ]);
+    expect(httpService.post.mock.calls[2]?.slice(0, 2)).toEqual([
       'https://ml.example.com/api/v1/pain-pattern',
       { x: 3 },
-    );
-    expect(httpService.post).toHaveBeenNthCalledWith(
-      4,
+    ]);
+    expect(httpService.post.mock.calls[3]?.slice(0, 2)).toEqual([
       'https://ml.example.com/api/v1/session-recommender',
       { x: 4 },
-    );
+    ]);
   });
 
   it('normalizes trailing slash in ML_SERVICE_URL', async () => {
@@ -91,7 +91,7 @@ describe('MlClientService', () => {
     httpService.get.mockReturnValue(of({ data: { status: 'ok' } }));
 
     await expect(service.health()).resolves.toEqual({ status: 'ok' });
-    expect(httpService.get).toHaveBeenCalledWith(
+    expect(httpService.get.mock.calls[0]?.[0]).toBe(
       'https://ml.example.com/health',
     );
   });
@@ -101,8 +101,53 @@ describe('MlClientService', () => {
     httpService.get.mockReturnValue(of({ data: { status: 'ok' } }));
 
     await expect(service.health()).resolves.toEqual({ status: 'ok' });
-    expect(httpService.get).toHaveBeenCalledWith(
+    expect(httpService.get.mock.calls[0]?.[0]).toBe(
       'https://ml.example.com/health',
+    );
+  });
+
+  it('applies a timeout to ML requests', async () => {
+    const { service, httpService } = createService('https://ml.example.com');
+    httpService.get.mockReturnValue(of({ data: { status: 'ok' } }));
+    httpService.post.mockReturnValue(of({ data: { load: 100 } }));
+
+    await service.health();
+    await service.nextLoad({ x: 1 });
+
+    expect(httpService.get.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({ timeout: 5000 }),
+    );
+    expect(httpService.post.mock.calls[0]?.[2]).toEqual(
+      expect.objectContaining({ timeout: 5000 }),
+    );
+  });
+
+  it('maps upstream 4xx validation errors to 422 responses', async () => {
+    const { service, httpService } = createService('https://ml.example.com');
+    httpService.post.mockReturnValue(
+      throwError(() => ({
+        response: {
+          status: 422,
+          data: { detail: 'bad payload' },
+        },
+      })),
+    );
+
+    await expect(service.nextLoad({ x: 1 })).rejects.toBeInstanceOf(
+      UnprocessableEntityException,
+    );
+  });
+
+  it('maps ML timeouts to gateway timeout responses', async () => {
+    const { service, httpService } = createService('https://ml.example.com');
+    httpService.post.mockReturnValue(
+      throwError(() => ({
+        code: 'ECONNABORTED',
+      })),
+    );
+
+    await expect(service.restTime({ x: 1 })).rejects.toBeInstanceOf(
+      GatewayTimeoutException,
     );
   });
 });

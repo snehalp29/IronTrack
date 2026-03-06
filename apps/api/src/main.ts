@@ -1,4 +1,3 @@
-import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -9,6 +8,7 @@ import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { CorrelationIdInterceptor } from './common/interceptors/correlation-id.interceptor';
 import { WinstonLoggerService } from './common/logger/winston-logger.service';
+import { createAppValidationPipe } from './common/pipes/app-validation.pipe';
 import { PrismaService } from './prisma/prisma.service';
 
 export async function bootstrap() {
@@ -18,13 +18,7 @@ export async function bootstrap() {
 
   app.use(helmet());
   app.use(cookieParser());
-  app.useGlobalPipes(
-    new ValidationPipe({
-      transform: true,
-      whitelist: true,
-      forbidUnknownValues: false,
-    }),
-  );
+  app.useGlobalPipes(createAppValidationPipe());
   app.useGlobalInterceptors(new CorrelationIdInterceptor());
   app.useGlobalFilters(new HttpExceptionFilter());
 

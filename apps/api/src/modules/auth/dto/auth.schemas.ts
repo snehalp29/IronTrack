@@ -19,9 +19,8 @@ export const loginSchema = z.object({
 });
 
 export const refreshSchema = z
-  .object({
-    refreshToken: z.string().min(10).optional(),
-  })
+  .object({})
+  .strict()
   .optional()
   .transform((value) => value ?? {});
 

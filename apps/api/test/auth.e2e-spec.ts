@@ -274,12 +274,11 @@ describe('AuthController (e2e)', () => {
     }
   });
 
-  it('logout succeeds without bearer token when refresh token is provided', async () => {
+  it('logout succeeds without bearer token when refresh token cookie is provided', async () => {
     const response = await request(app.getHttpServer())
       .post('/api/v1/auth/logout')
-      .send({
-        refreshToken: 'missing-token-12345',
-      });
+      .set('Cookie', ['irontrack_refresh_token=missing-token-12345'])
+      .send({});
 
     expect(response.status).toBe(200);
     expect(response.body.success).toBe(true);

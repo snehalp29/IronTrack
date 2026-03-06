@@ -172,7 +172,11 @@ describe('UsersService', () => {
     expect(userDeleteDate).toBeInstanceOf(Date);
     expect(tx.user.updateMany).toHaveBeenCalledWith({
       where: { id: 'u1', deletedAt: null },
-      data: { deletedAt: userDeleteDate },
+      data: expect.objectContaining({
+        deletedAt: userDeleteDate,
+        email: expect.stringContaining('u1'),
+        googleId: null,
+      }),
     });
     expect(
       (tx.exerciseTemplate.updateMany as jest.Mock).mock.calls[0][0].data

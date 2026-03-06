@@ -16,10 +16,10 @@ describe('shared utils', () => {
     ).toBe(500);
     expect(
       calculateSetVolume({ weight: null, reps: null, durationSeconds: 90 }),
-    ).toBe(90);
+    ).toBe(0);
     expect(
       calculateSetVolume({ weight: 100, reps: 0, durationSeconds: 45 }),
-    ).toBe(45);
+    ).toBe(0);
     expect(
       calculateSetVolume({ weight: 0, reps: 10, durationSeconds: null }),
     ).toBe(0);
@@ -29,7 +29,7 @@ describe('shared utils', () => {
         { weight: 80, reps: 8, durationSeconds: null },
         { weight: null, reps: null, durationSeconds: 60 },
       ]),
-    ).toBe(1200);
+    ).toBe(1140);
   });
 
   it('estimates one rep max', () => {
@@ -39,6 +39,7 @@ describe('shared utils', () => {
   it('returns zero one rep max for invalid input values', () => {
     expect(estimateOneRm(0, 5)).toBe(0);
     expect(estimateOneRm(100, 0)).toBe(0);
+    expect(estimateOneRm(10, 16)).toBe(0);
   });
 
   it('formats dates and units for weekly charts', () => {

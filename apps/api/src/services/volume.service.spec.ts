@@ -20,14 +20,14 @@ describe('VolumeService', () => {
     ).toBe(640);
   });
 
-  it('calculates set volume by duration when weight/reps not present', () => {
+  it('returns zero set volume for duration-only sets', () => {
     expect(
       calculateSetVolume({
         weight: null,
         reps: null,
         durationSeconds: 45,
       }),
-    ).toBe(45);
+    ).toBe(0);
   });
 
   it('returns zero set volume when no measurable load exists', () => {
@@ -57,7 +57,7 @@ describe('VolumeService', () => {
     ]);
 
     await expect(service.calculateSessionVolume('session-1')).resolves.toBe(
-      560,
+      500,
     );
     expect(prismaMock.set.findMany).toHaveBeenCalledWith(
       expect.objectContaining({

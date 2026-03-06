@@ -12,5 +12,5 @@ export function calculateSetVolume(set: VolumeSetInput): number {
     return weight * reps;
   }
 
-  return set.durationSeconds ?? 0;
+  return 0;
 }

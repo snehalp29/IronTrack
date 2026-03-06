@@ -828,6 +828,56 @@ describe('AuthService', () => {
     });
   });
 
+  it('reclaims a soft-deleted email slot and retries registration once', async () => {
+    const deletedUserId = randomUUID();
+    users.push({
+      id: deletedUserId,
+      email: 'deleted@example.com',
+      passwordHash: 'hash',
+      authProvider: 'LOCAL',
+      deletedAt: new Date('2026-03-01T00:00:00.000Z'),
+    });
+    (prismaMock.user.create as jest.Mock)
+      .mockRejectedValueOnce(
+        Object.assign(new Error('Unique constraint failed'), {
+          code: 'P2002',
+          meta: { target: ['email'] },
+        }),
+      )
+      .mockImplementationOnce(async ({ data }: UserCreateArgs) => {
+        const user = {
+          id: randomUUID(),
+          email: data.email,
+          passwordHash: data.passwordHash,
+          authProvider: (data.authProvider ?? 'LOCAL') as 'LOCAL' | 'GOOGLE',
+          deletedAt: null,
+          timezone: data.timezone,
+          unitPreference: data.unitPreference,
+          name: data.name,
+          avatarUrl: data.avatarUrl,
+          googleId: data.googleId,
+        };
+        users.push(user);
+        return user;
+      });
+
+    const tokens = await authService.register({
+      email: 'deleted@example.com',
+      password: 'Str0ngPassword!',
+      name: 'Recovered',
+    });
+
+    expect(tokens.accessToken).toBeTruthy();
+    expect(prismaMock.user.update).toHaveBeenCalledWith({
+      where: { id: deletedUserId },
+      data: expect.objectContaining({
+        email: expect.stringContaining(deletedUserId),
+        googleId: null,
+      }),
+    });
+    expect(prismaMock.user.create).toHaveBeenCalledTimes(2);
+  });
+
   it('rethrows unexpected registration create errors', async () => {
     const unexpected = new Error('database unavailable');
     (prismaMock.user.create as jest.Mock).mockRejectedValueOnce(unexpected);

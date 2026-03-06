@@ -32,10 +32,27 @@ const REFRESH_TOKEN_COOKIE_NAME = 'irontrack_refresh_token';
 
 @Controller('auth')
 export class AuthController {
+  private readonly refreshCookieOptions: CookieOptions;
+
   constructor(
     private readonly authService: AuthService,
-    private readonly configService: ConfigService,
-  ) {}
+    configService: ConfigService,
+  ) {
+    const apiPrefix = configService.getOrThrow<string>('API_PREFIX');
+    const refreshExpiry =
+      configService.getOrThrow<string>('JWT_REFRESH_EXPIRY');
+    const nodeEnv = configService.getOrThrow<
+      'development' | 'test' | 'production'
+    >('NODE_ENV');
+
+    this.refreshCookieOptions = {
+      httpOnly: true,
+      maxAge: durationToSeconds(refreshExpiry) * 1000,
+      path: buildAuthCookiePath(apiPrefix),
+      sameSite: 'lax',
+      secure: nodeEnv === 'production',
+    };
+  }
 
   @Public()
   @Post('register')
@@ -70,7 +87,7 @@ export class AuthController {
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const refreshToken = this.resolveRefreshToken(body, request);
+    const refreshToken = this.resolveRefreshToken(request);
     if (!refreshToken) {
       throw this.createInvalidRefreshTokenException();
     }
@@ -104,15 +121,12 @@ export class AuthController {
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const refreshToken = this.resolveRefreshToken(body, request);
+    const refreshToken = this.resolveRefreshToken(request);
     if (refreshToken) {
       await this.authService.logout(refreshToken);
     }
 
-    response.clearCookie(
-      REFRESH_TOKEN_COOKIE_NAME,
-      this.getRefreshCookieOptions(),
-    );
+    response.clearCookie(REFRESH_TOKEN_COOKIE_NAME, this.refreshCookieOptions);
     return { success: true };
   }
 
@@ -123,7 +137,7 @@ export class AuthController {
     response.cookie(
       REFRESH_TOKEN_COOKIE_NAME,
       tokens.refreshToken,
-      this.getRefreshCookieOptions(),
+      this.refreshCookieOptions,
     );
 
     return {
@@ -131,28 +145,8 @@ export class AuthController {
     };
   }
 
-  private resolveRefreshToken(
-    body: RefreshRequestDto,
-    request: Request,
-  ): string | undefined {
-    return body.refreshToken ?? request.cookies?.[REFRESH_TOKEN_COOKIE_NAME];
-  }
-
-  private getRefreshCookieOptions(): CookieOptions {
-    const apiPrefix = this.configService.getOrThrow<string>('API_PREFIX');
-    const refreshExpiry =
-      this.configService.getOrThrow<string>('JWT_REFRESH_EXPIRY');
-    const nodeEnv = this.configService.getOrThrow<
-      'development' | 'test' | 'production'
-    >('NODE_ENV');
-
-    return {
-      httpOnly: true,
-      maxAge: durationToSeconds(refreshExpiry) * 1000,
-      path: buildAuthCookiePath(apiPrefix),
-      sameSite: 'lax',
-      secure: nodeEnv === 'production',
-    };
+  private resolveRefreshToken(request: Request): string | undefined {
+    return request.cookies?.[REFRESH_TOKEN_COOKIE_NAME];
   }
 
   private createInvalidRefreshTokenException() {

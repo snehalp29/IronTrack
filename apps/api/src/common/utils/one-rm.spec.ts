@@ -12,4 +12,8 @@ describe('estimateOneRm', () => {
   it('calculates Epley one-rep max estimate for positive inputs', () => {
     expect(estimateOneRm(100, 5)).toBeCloseTo(116.6666, 3);
   });
+
+  it('returns 0 when reps exceed the supported Epley range', () => {
+    expect(estimateOneRm(10, 16)).toBe(0);
+  });
 });

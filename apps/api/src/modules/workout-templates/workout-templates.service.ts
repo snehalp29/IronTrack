@@ -9,6 +9,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   CreateWorkoutTemplateDto,
+  ListWorkoutTemplatesQuery,
   ReorderWorkoutTemplateDto,
   UpdateWorkoutTemplateDto,
 } from './dto/workout-template.schemas';
@@ -17,9 +18,16 @@ import {
 export class WorkoutTemplatesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(userId: string) {
+  async list(
+    userId: string,
+    query: ListWorkoutTemplatesQuery = { page: 1, pageSize: 100 },
+  ) {
+    const skip = (query.page - 1) * query.pageSize;
+
     return this.prisma.workoutTemplate.findMany({
       where: { userId, deletedAt: null },
+      skip,
+      take: query.pageSize,
       orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
       include: {
         exercises: {
@@ -89,15 +97,16 @@ export class WorkoutTemplatesService {
   async create(userId: string, input: CreateWorkoutTemplateDto) {
     const name = normalizeTemplateNameOrThrow(input.name);
     assertUniqueTemplateExerciseOrderIndexes(input.exercises);
-    await this.assertExerciseTemplatesAccessible(
-      userId,
-      input.exercises.map((exercise) => exercise.exerciseTemplateId),
-    );
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
         return await this.prisma.$transaction(
           async (tx) => {
+            await this.assertExerciseTemplatesAccessible(
+              tx,
+              userId,
+              input.exercises.map((exercise) => exercise.exerciseTemplateId),
+            );
             const orderIndex =
               input.orderIndex ?? (await this.getNextOrderIndex(tx, userId));
 
@@ -151,15 +160,25 @@ export class WorkoutTemplatesService {
       input.name === undefined
         ? undefined
         : normalizeTemplateNameOrThrow(input.name);
-    if (input.exercises) {
+    if (input.exercises !== undefined) {
+      if (input.exercises.length === 0) {
+        throw new BadRequestException({
+          code: 'TEMPLATE_EXERCISES_REQUIRED',
+          message: 'Template exercises cannot be empty',
+        });
+      }
       assertUniqueTemplateExerciseOrderIndexes(input.exercises);
-      await this.assertExerciseTemplatesAccessible(
-        userId,
-        input.exercises.map((exercise) => exercise.exerciseTemplateId),
-      );
     }
 
     return this.prisma.$transaction(async (tx) => {
+      if (input.exercises) {
+        await this.assertExerciseTemplatesAccessible(
+          tx,
+          userId,
+          input.exercises.map((exercise) => exercise.exerciseTemplateId),
+        );
+      }
+
       const updated = await tx.workoutTemplate.updateMany({
         where: {
           id: templateId,
@@ -312,12 +331,13 @@ export class WorkoutTemplatesService {
   }
 
   private async assertExerciseTemplatesAccessible(
+    client: PrismaService | Prisma.TransactionClient,
     userId: string,
     exerciseTemplateIds: string[],
   ) {
     const uniqueIds = Array.from(new Set(exerciseTemplateIds));
 
-    const accessibleExercises = await this.prisma.exerciseTemplate.findMany({
+    const accessibleExercises = await client.exerciseTemplate.findMany({
       where: {
         id: { in: uniqueIds },
         deletedAt: null,

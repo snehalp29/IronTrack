@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 
+import { buildDeletedUserEmail } from '../../common/utils/deleted-user-email';
 import { normalizeTimezoneOrThrow } from '../../common/validation/timezone';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UpdateMeDto } from './user.schemas';
@@ -87,7 +88,11 @@ export class UsersService {
           id: userId,
           deletedAt: null,
         },
-        data: { deletedAt: now },
+        data: {
+          deletedAt: now,
+          email: buildDeletedUserEmail(userId, now),
+          googleId: null,
+        },
       });
 
       if (!updatedUser.count) {

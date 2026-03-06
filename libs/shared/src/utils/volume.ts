@@ -10,7 +10,7 @@ export function calculateSetVolume(
     return weight * reps;
   }
 
-  return set.durationSeconds ?? 0;
+  return 0;
 }
 
 export function calculateTotalVolume(

@@ -9,6 +9,7 @@ import { AuthProvider, User } from '@prisma/client';
 import { compare, hash } from 'bcryptjs';
 import { createHash, randomUUID } from 'node:crypto';
 
+import { buildDeletedUserEmail } from '../../common/utils/deleted-user-email';
 import { normalizeTimezoneOrThrow } from '../../common/validation/timezone';
 import { durationToSeconds } from '../../config/env.schema';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -39,7 +40,7 @@ export class AuthService {
 
   async register(input: RegisterDto): Promise<AuthTokens> {
     const normalizedEmail = normalizeEmail(input.email);
-    const timezone = normalizeTimezoneOrThrow(input.timezone, 'UTC');
+    const timezone = normalizeTimezoneOrThrow(input.timezone, 'UTC') ?? 'UTC';
     const existingUser = await this.prisma.user.findFirst({
       where: {
         email: normalizedEmail,
@@ -52,26 +53,13 @@ export class AuthService {
     }
 
     const passwordHash = await hash(input.password, 12);
-    let user: {
-      id: string;
-      email: string;
-    };
-    try {
-      user = await this.prisma.user.create({
-        data: {
-          email: normalizedEmail,
-          passwordHash,
-          name: input.name,
-          timezone,
-          unitPreference: input.unitPreference ?? 'METRIC',
-        },
-      });
-    } catch (error) {
-      if (isEmailUniqueConstraintError(error)) {
-        this.throwEmailTaken();
-      }
-      throw error;
-    }
+    const user = await this.createLocalUserWithRecoveredEmailSlot({
+      email: normalizedEmail,
+      passwordHash,
+      name: input.name,
+      timezone,
+      unitPreference: input.unitPreference ?? 'METRIC',
+    });
 
     return this.issueTokens(user.id, user.email);
   }
@@ -392,6 +380,60 @@ export class AuthService {
       });
     }
     return user;
+  }
+
+  private async createLocalUserWithRecoveredEmailSlot(data: {
+    email: string;
+    passwordHash: string;
+    name?: string;
+    timezone: string;
+    unitPreference: 'METRIC' | 'IMPERIAL';
+  }) {
+    try {
+      return await this.prisma.user.create({
+        data,
+      });
+    } catch (error) {
+      if (!isEmailUniqueConstraintError(error)) {
+        throw error;
+      }
+
+      const recovered = await this.reclaimDeletedEmailSlot(data.email);
+      if (!recovered) {
+        this.throwEmailTaken();
+      }
+
+      try {
+        return await this.prisma.user.create({
+          data,
+        });
+      } catch (retryError) {
+        if (isEmailUniqueConstraintError(retryError)) {
+          this.throwEmailTaken();
+        }
+        throw retryError;
+      }
+    }
+  }
+
+  private async reclaimDeletedEmailSlot(email: string): Promise<boolean> {
+    const conflictingUser = await this.prisma.user.findUnique({
+      where: { email },
+    });
+
+    if (!conflictingUser || conflictingUser.deletedAt === null) {
+      return false;
+    }
+
+    await this.prisma.user.update({
+      where: { id: conflictingUser.id },
+      data: {
+        email: buildDeletedUserEmail(conflictingUser.id),
+        googleId: null,
+      },
+    });
+
+    return true;
   }
 }
 

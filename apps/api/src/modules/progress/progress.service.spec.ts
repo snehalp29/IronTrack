@@ -74,8 +74,32 @@ describe('ProgressService', () => {
     expect(result.coveragePercent).toBe(50);
     expect(result.perMuscleVolume).toEqual([
       { id: 'm1', name: 'Chest', volume: 500 },
-      { id: 'm2', name: 'Triceps', volume: 310 },
+      { id: 'm2', name: 'Triceps', volume: 250 },
       { id: 'm3', name: 'Shoulders', volume: 250 },
+    ]);
+  });
+
+  it('counts duration-only sets toward coverage without adding volume', async () => {
+    (prismaMock.set.findMany as jest.Mock).mockResolvedValue([
+      {
+        weight: null,
+        reps: null,
+        durationSeconds: 60,
+        sessionExercise: {
+          exercise: {
+            primaryMuscle: { id: 'm2', name: 'Triceps' },
+            secondaryMuscles: [],
+          },
+        },
+      },
+    ]);
+    (prismaMock.muscleGroup.count as jest.Mock).mockResolvedValue(6);
+
+    const result = await service.weekly('user-1', '2024-01-01');
+
+    expect(result.coveredMuscles).toBe(1);
+    expect(result.perMuscleVolume).toEqual([
+      { id: 'm2', name: 'Triceps', volume: 0 },
     ]);
   });
 

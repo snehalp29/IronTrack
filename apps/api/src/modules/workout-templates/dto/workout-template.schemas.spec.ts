@@ -1,5 +1,6 @@
 import {
   createWorkoutTemplateSchema,
+  listWorkoutTemplatesQuerySchema,
   reorderWorkoutTemplateSchema,
   updateWorkoutTemplateSchema,
 } from './workout-template.schemas';
@@ -31,6 +32,18 @@ describe('workout-template schemas', () => {
         name: 'Updated Name',
       },
     );
+  });
+
+  it('validates template list query payloads', () => {
+    expect(
+      listWorkoutTemplatesQuerySchema.parse({
+        page: '2',
+        pageSize: '25',
+      }),
+    ).toEqual({
+      page: 2,
+      pageSize: 25,
+    });
   });
 
   it('rejects invalid rep ranges where repMin is greater than repMax', () => {
@@ -176,6 +189,14 @@ describe('workout-template schemas', () => {
             .slice(-12)}`,
           orderIndex: index,
         })),
+      }),
+    ).toThrow();
+  });
+
+  it('rejects empty exercises arrays on update', () => {
+    expect(() =>
+      updateWorkoutTemplateSchema.parse({
+        exercises: [],
       }),
     ).toThrow();
   });

@@ -302,6 +302,7 @@ export class ExercisesService {
   }
 
   async history(userId: string, exerciseId: string, page = 1, pageSize = 20) {
+    await this.getById(userId, exerciseId);
     const skip = (page - 1) * pageSize;
 
     const [items, total] = await this.prisma.$transaction([
@@ -311,6 +312,9 @@ export class ExercisesService {
           sessionExercise: {
             exerciseTemplateId: exerciseId,
             deletedAt: null,
+            exercise: {
+              deletedAt: null,
+            },
             session: {
               userId,
               deletedAt: null,
@@ -348,6 +352,9 @@ export class ExercisesService {
           sessionExercise: {
             exerciseTemplateId: exerciseId,
             deletedAt: null,
+            exercise: {
+              deletedAt: null,
+            },
             session: {
               userId,
               deletedAt: null,

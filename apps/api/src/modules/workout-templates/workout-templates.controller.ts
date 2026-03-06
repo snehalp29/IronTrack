@@ -6,17 +6,20 @@ import {
   Param,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   createWorkoutTemplateSchema,
+  listWorkoutTemplatesQuerySchema,
   reorderWorkoutTemplateSchema,
   updateWorkoutTemplateSchema,
 } from './dto/workout-template.schemas';
 import type {
   CreateWorkoutTemplateDto,
+  ListWorkoutTemplatesQuery,
   ReorderWorkoutTemplateDto,
   UpdateWorkoutTemplateDto,
 } from './dto/workout-template.schemas';
@@ -29,8 +32,12 @@ export class WorkoutTemplatesController {
   ) {}
 
   @Get()
-  async list(@CurrentUser() user: { sub: string }) {
-    return this.workoutTemplatesService.list(user.sub);
+  async list(
+    @CurrentUser() user: { sub: string },
+    @Query(new ZodValidationPipe(listWorkoutTemplatesQuerySchema))
+    query: ListWorkoutTemplatesQuery,
+  ) {
+    return this.workoutTemplatesService.list(user.sub, query);
   }
 
   @Get(':id')

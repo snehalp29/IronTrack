@@ -1,7 +1,11 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Res } from '@nestjs/common';
+import type { Response } from 'express';
 
 import { Public } from '../../common/decorators/public.decorator';
 import { CatalogService } from './catalog.service';
+
+const CATALOG_CACHE_CONTROL =
+  'public, max-age=86400, stale-while-revalidate=3600';
 
 @Controller()
 export class CatalogController {
@@ -9,13 +13,15 @@ export class CatalogController {
 
   @Public()
   @Get('muscle-groups')
-  async muscleGroups() {
+  async muscleGroups(@Res({ passthrough: true }) response: Response) {
+    response.setHeader('Cache-Control', CATALOG_CACHE_CONTROL);
     return this.catalogService.muscleGroups();
   }
 
   @Public()
   @Get('equipment')
-  async equipment() {
+  async equipment(@Res({ passthrough: true }) response: Response) {
+    response.setHeader('Cache-Control', CATALOG_CACHE_CONTROL);
     return this.catalogService.equipment();
   }
 }

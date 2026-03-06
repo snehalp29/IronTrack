@@ -117,6 +117,25 @@ describe('AuthController', () => {
     );
   });
 
+  it('rejects refresh when only a body refresh token is provided', async () => {
+    const response = createResponseMock();
+
+    await expect(
+      controller.refresh(
+        {
+          refreshToken: 'refresh-token-value-123',
+        } as never,
+        { cookies: {} } as unknown as Request,
+        response,
+      ),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'INVALID_REFRESH_TOKEN',
+      }),
+    });
+    expect(authServiceMock.refresh).not.toHaveBeenCalled();
+  });
+
   it('delegates google auth', async () => {
     const response = createResponseMock();
     (authServiceMock.googleLogin as jest.Mock).mockResolvedValue({
@@ -152,6 +171,21 @@ describe('AuthController', () => {
         path: '/api/v1/auth',
       }),
     );
+  });
+
+  it('reuses cached refresh cookie config instead of reading config on every request', async () => {
+    const response = createResponseMock();
+    (authServiceMock.login as jest.Mock).mockResolvedValue({
+      accessToken: 'access-token-123',
+      refreshToken: 'refresh-token-123',
+    });
+
+    await controller.login(
+      { email: 'user@example.com', password: '12345678' },
+      response,
+    );
+
+    expect(configServiceMock.getOrThrow).not.toHaveBeenCalled();
   });
 
   it('marks token-based auth endpoints as public', () => {

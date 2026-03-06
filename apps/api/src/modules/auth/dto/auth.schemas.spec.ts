@@ -77,17 +77,15 @@ describe('auth schemas', () => {
     ).toBe(false);
   });
 
-  it('accepts an optional refresh token body for cookie-backed flows', () => {
+  it('accepts an empty refresh body for cookie-backed flows', () => {
+    expect(refreshSchema.safeParse({}).success).toBe(true);
+    expect(refreshSchema.safeParse(undefined).success).toBe(true);
+  });
+
+  it('rejects refresh token fields in the request body', () => {
     expect(
       refreshSchema.safeParse({
         refreshToken: 'valid-refresh-token-123',
-      }).success,
-    ).toBe(true);
-    expect(refreshSchema.safeParse({}).success).toBe(true);
-    expect(refreshSchema.safeParse(undefined).success).toBe(true);
-    expect(
-      refreshSchema.safeParse({
-        refreshToken: 'short',
       }).success,
     ).toBe(false);
   });

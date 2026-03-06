@@ -64,9 +64,15 @@ export const updateWorkoutTemplateSchema = z.object({
   orderIndex: z.number().int().nonnegative().optional(),
   exercises: z
     .array(templateExerciseSchema)
+    .min(1)
     .max(MAX_TEMPLATE_EXERCISES)
     .superRefine(addDuplicateOrderIndexIssue)
     .optional(),
+});
+
+export const listWorkoutTemplatesQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().positive().max(100).default(100),
 });
 
 export const reorderWorkoutTemplateSchema = z.object({
@@ -112,4 +118,7 @@ export type UpdateWorkoutTemplateDto = z.infer<
 >;
 export type ReorderWorkoutTemplateDto = z.infer<
   typeof reorderWorkoutTemplateSchema
+>;
+export type ListWorkoutTemplatesQuery = z.infer<
+  typeof listWorkoutTemplatesQuerySchema
 >;

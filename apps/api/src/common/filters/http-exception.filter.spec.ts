@@ -85,6 +85,29 @@ describe('HttpExceptionFilter', () => {
     );
   });
 
+  it('logs request paths without query strings', () => {
+    const filter = new HttpExceptionFilter();
+    const loggerError = jest
+      .spyOn(
+        (filter as never as { logger: { error: (...args: unknown[]) => void } })
+          .logger,
+        'error',
+      )
+      .mockImplementation();
+
+    const { host } = createHost({
+      method: 'GET',
+      url: '/x?token=secret&search=bench',
+    });
+
+    filter.catch(new Error('boom'), host as never);
+
+    expect(loggerError).toHaveBeenCalledWith(
+      'Unhandled error for GET /x',
+      expect.any(String),
+    );
+  });
+
   it('maps HttpException object response fields', () => {
     const filter = new HttpExceptionFilter();
     const { host, response } = createHost({ method: 'POST', url: '/items' });

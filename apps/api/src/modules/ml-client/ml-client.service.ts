@@ -1,7 +1,22 @@
 import { HttpService } from '@nestjs/axios';
-import { Injectable } from '@nestjs/common';
+import {
+  BadGatewayException,
+  GatewayTimeoutException,
+  Injectable,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
+
+const ML_REQUEST_TIMEOUT_MS = 5000;
+
+type MlAxiosLikeError = {
+  code?: unknown;
+  response?: {
+    status?: unknown;
+    data?: unknown;
+  };
+};
 
 @Injectable()
 export class MlClientService {
@@ -16,41 +31,47 @@ export class MlClientService {
   }
 
   async health() {
-    const { data } = await firstValueFrom(
-      this.httpService.get(this.buildUrl('/health')),
+    return this.request(() =>
+      this.httpService.get(this.buildUrl('/health'), {
+        timeout: ML_REQUEST_TIMEOUT_MS,
+      }),
     );
-    return data;
   }
 
   async nextLoad(payload: unknown) {
-    const { data } = await firstValueFrom(
-      this.httpService.post(this.buildUrl('/api/v1/next-load'), payload),
+    return this.request(() =>
+      this.httpService.post(this.buildUrl('/api/v1/next-load'), payload, {
+        timeout: ML_REQUEST_TIMEOUT_MS,
+      }),
     );
-    return data;
   }
 
   async restTime(payload: unknown) {
-    const { data } = await firstValueFrom(
-      this.httpService.post(this.buildUrl('/api/v1/rest-time'), payload),
+    return this.request(() =>
+      this.httpService.post(this.buildUrl('/api/v1/rest-time'), payload, {
+        timeout: ML_REQUEST_TIMEOUT_MS,
+      }),
     );
-    return data;
   }
 
   async painPattern(payload: unknown) {
-    const { data } = await firstValueFrom(
-      this.httpService.post(this.buildUrl('/api/v1/pain-pattern'), payload),
+    return this.request(() =>
+      this.httpService.post(this.buildUrl('/api/v1/pain-pattern'), payload, {
+        timeout: ML_REQUEST_TIMEOUT_MS,
+      }),
     );
-    return data;
   }
 
   async sessionRecommender(payload: unknown) {
-    const { data } = await firstValueFrom(
+    return this.request(() =>
       this.httpService.post(
         this.buildUrl('/api/v1/session-recommender'),
         payload,
+        {
+          timeout: ML_REQUEST_TIMEOUT_MS,
+        },
       ),
     );
-    return data;
   }
 
   private resolveBasePath(configuredBasePath: string | undefined): string {
@@ -63,4 +84,46 @@ export class MlClientService {
   private buildUrl(path: `/${string}`): string {
     return `${this.basePath}${path}`;
   }
+
+  private async request(
+    factory: () => ReturnType<HttpService['get']>,
+  ): Promise<unknown> {
+    try {
+      const { data } = await firstValueFrom(factory());
+      return data;
+    } catch (error) {
+      if (isMlAxiosLikeError(error)) {
+        if (error.code === 'ECONNABORTED') {
+          throw new GatewayTimeoutException({
+            code: 'ML_UPSTREAM_TIMEOUT',
+            message: 'ML service timed out',
+          });
+        }
+
+        if (
+          error.response?.status !== undefined &&
+          typeof error.response.status === 'number' &&
+          error.response.status >= 400 &&
+          error.response.status < 500
+        ) {
+          throw new UnprocessableEntityException({
+            code: 'ML_UPSTREAM_VALIDATION_ERROR',
+            message: 'ML service rejected the request payload',
+            details: error.response.data,
+          });
+        }
+
+        throw new BadGatewayException({
+          code: 'ML_UPSTREAM_ERROR',
+          message: 'ML service is unavailable',
+        });
+      }
+
+      throw error;
+    }
+  }
+}
+
+function isMlAxiosLikeError(error: unknown): error is MlAxiosLikeError {
+  return typeof error === 'object' && error !== null;
 }

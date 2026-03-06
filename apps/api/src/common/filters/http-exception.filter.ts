@@ -28,7 +28,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     if (!(exception instanceof HttpException)) {
       const stack = exception instanceof Error ? exception.stack : undefined;
       this.logger.error(
-        `Unhandled error for ${request.method} ${request.url}`,
+        `Unhandled error for ${request.method} ${this.getRequestLogPath(request)}`,
         stack,
       );
       response
@@ -41,7 +41,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const exceptionBody = exception.getResponse();
     if (statusCode >= HttpStatus.INTERNAL_SERVER_ERROR) {
       this.logger.error(
-        `Handled ${statusCode} error for ${request.method} ${request.url}`,
+        `Handled ${statusCode} error for ${request.method} ${this.getRequestLogPath(request)}`,
         exception.stack,
       );
       response.status(statusCode).json({ error: defaultPayload });
@@ -123,5 +123,13 @@ export class HttpExceptionFilter implements ExceptionFilter {
     } catch {
       return '[Unserializable]';
     }
+  }
+
+  private getRequestLogPath(request: Request): string {
+    if (typeof request.path === 'string' && request.path.length > 0) {
+      return request.path;
+    }
+
+    return request.url.split('?')[0] ?? request.url;
   }
 }
