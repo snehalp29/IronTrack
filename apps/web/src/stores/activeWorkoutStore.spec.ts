@@ -142,6 +142,10 @@ describe('activeWorkoutStore', () => {
     expect(
       useActiveWorkoutStore.getState().exercises[1]?.sets[0]?.isCompleted,
     ).toBe(false);
+
+    updateSet('e1', 'e1-set-1', { isCompleted: false });
+    expect(useActiveWorkoutStore.getState().restTimerSeconds).toBe(0);
+    expect(useActiveWorkoutStore.getState().restTimerActive).toBe(false);
   });
 
   it('removes sets and updates superset keys', () => {
@@ -216,6 +220,30 @@ describe('activeWorkoutStore', () => {
     expect(useActiveWorkoutStore.getState().restTimerSeconds).toBe(0);
     expect(useActiveWorkoutStore.getState().restTimerActive).toBe(false);
     expect(useActiveWorkoutStore.getState().restTimerDefaultSeconds).toBe(120);
+  });
+
+  it('syncs server refreshes for the same session without resetting the rest timer', () => {
+    const { setRestTimer, start, syncFromServer } =
+      useActiveWorkoutStore.getState();
+
+    start('session-7', [makeExercise('e1', 0)], {
+      startedAt: '2026-03-06T12:00:00.000Z',
+    });
+    setRestTimer(45);
+
+    syncFromServer(
+      'session-7',
+      [makeExercise('e1', 0), makeExercise('e2', 1)],
+      {
+        startedAt: '2026-03-06T12:00:00.000Z',
+      },
+    );
+
+    expect(useActiveWorkoutStore.getState().restTimerSeconds).toBe(45);
+    expect(useActiveWorkoutStore.getState().restTimerActive).toBe(true);
+    expect(
+      useActiveWorkoutStore.getState().exercises.map((item) => item.id),
+    ).toEqual(['e1', 'e2']);
   });
 
   it('declares a persisted store version and migration handler', () => {

@@ -39,6 +39,15 @@ type IncompleteModalProps = SimpleModalProps & {
   onConfirm: () => void;
 };
 
+type NotesModalProps = SimpleModalProps & {
+  exerciseName?: string;
+  errorMessage?: string;
+  isSaving: boolean;
+  notes: string;
+  onChange: (value: string) => void;
+  onSave: () => void;
+};
+
 const overflowModalMock = vi.hoisted(() =>
   vi.fn((props: OverflowModalProps) => (
     <div data-modal="overflow" data-open={String(props.open)} />
@@ -57,6 +66,11 @@ const supersetModalMock = vi.hoisted(() =>
 const incompleteModalMock = vi.hoisted(() =>
   vi.fn((props: IncompleteModalProps) => (
     <div data-modal="incomplete" data-open={String(props.open)} />
+  )),
+);
+const notesModalMock = vi.hoisted(() =>
+  vi.fn((props: NotesModalProps) => (
+    <div data-modal="notes" data-open={String(props.open)} />
   )),
 );
 
@@ -78,6 +92,10 @@ vi.mock('../components/workout/SupersetModal', () => ({
 
 vi.mock('../components/workout/IncompleteWarningModal', () => ({
   IncompleteWarningModal: incompleteModalMock,
+}));
+
+vi.mock('../components/workout/ExerciseNotesModal', () => ({
+  ExerciseNotesModal: notesModalMock,
 }));
 
 describe('ActiveWorkoutPage', () => {
@@ -125,6 +143,16 @@ describe('ActiveWorkoutPage', () => {
         open: false,
         onClose: vi.fn(),
         onConfirm: vi.fn(),
+      },
+      notes: {
+        open: false,
+        exerciseName: undefined,
+        errorMessage: undefined,
+        isSaving: false,
+        notes: '',
+        onChange: vi.fn(),
+        onClose: vi.fn(),
+        onSave: vi.fn(),
       },
       openOverflow: vi.fn(),
       openReorder: vi.fn(),
@@ -207,6 +235,16 @@ describe('ActiveWorkoutPage', () => {
         onClose: vi.fn(),
         onConfirm: vi.fn(),
       },
+      notes: {
+        open: true,
+        exerciseName: 'Bench Press',
+        errorMessage: undefined,
+        isSaving: false,
+        notes: 'Keep elbows tucked',
+        onChange: vi.fn(),
+        onClose: vi.fn(),
+        onSave: vi.fn(),
+      },
       openOverflow,
       openReorder,
       openSuperset,
@@ -260,6 +298,14 @@ describe('ActiveWorkoutPage', () => {
     expect(incompleteModalMock).toHaveBeenCalledWith(
       expect.objectContaining({
         open: true,
+      }),
+      undefined,
+    );
+    expect(notesModalMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        open: true,
+        exerciseName: 'Bench Press',
+        notes: 'Keep elbows tucked',
       }),
       undefined,
     );

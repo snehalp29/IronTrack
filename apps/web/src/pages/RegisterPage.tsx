@@ -28,6 +28,10 @@ export function RegisterPage() {
       },
     });
   const password = watch('password');
+  const emailError = formState.errors.email?.message?.toString();
+  const passwordError = formState.errors.password?.message?.toString();
+  const confirmPasswordError =
+    formState.errors.confirmPassword?.message?.toString();
   const rootError = formState.errors.root?.message?.toString();
 
   return (
@@ -35,6 +39,7 @@ export function RegisterPage() {
       <h1>Register</h1>
       <form
         className="grid"
+        noValidate
         onSubmit={handleSubmit(async ({ email, name, password }) => {
           clearErrors('root');
           try {
@@ -63,27 +68,35 @@ export function RegisterPage() {
           type="email"
           autoComplete="email"
           placeholder="Email"
+          aria-invalid={emailError ? 'true' : 'false'}
           {...register('email', emailValidationRules)}
         />
+        {emailError ? <p role="alert">{emailError}</p> : null}
         <label htmlFor="register-password">Password</label>
         <input
           id="register-password"
           type="password"
           autoComplete="new-password"
           placeholder="Password"
+          aria-invalid={passwordError ? 'true' : 'false'}
           {...register('password', passwordValidationRules)}
         />
+        {passwordError ? <p role="alert">{passwordError}</p> : null}
         <label htmlFor="register-confirm-password">Confirm Password</label>
         <input
           id="register-confirm-password"
           type="password"
           autoComplete="new-password"
           placeholder="Confirm Password"
+          aria-invalid={confirmPasswordError ? 'true' : 'false'}
           {...register(
             'confirmPassword',
             confirmPasswordValidationRules(password),
           )}
         />
+        {confirmPasswordError ? (
+          <p role="alert">{confirmPasswordError}</p>
+        ) : null}
         <button type="submit" disabled={formState.isSubmitting}>
           {formState.isSubmitting ? 'Creating Account...' : 'Create Account'}
         </button>

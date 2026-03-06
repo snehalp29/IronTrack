@@ -19,6 +19,8 @@ export function LoginPage() {
     useForm<LoginForm>({
       defaultValues: { email: '', password: '' },
     });
+  const emailError = formState.errors.email?.message?.toString();
+  const passwordError = formState.errors.password?.message?.toString();
   const rootError = formState.errors.root?.message?.toString();
 
   return (
@@ -26,6 +28,7 @@ export function LoginPage() {
       <h1>Login</h1>
       <form
         className="grid"
+        noValidate
         onSubmit={handleSubmit(async ({ email, password }) => {
           clearErrors('root');
           try {
@@ -46,16 +49,20 @@ export function LoginPage() {
           type="email"
           autoComplete="email"
           placeholder="Email"
+          aria-invalid={emailError ? 'true' : 'false'}
           {...register('email', emailValidationRules)}
         />
+        {emailError ? <p role="alert">{emailError}</p> : null}
         <label htmlFor="login-password">Password</label>
         <input
           id="login-password"
           type="password"
           autoComplete="current-password"
           placeholder="Password"
+          aria-invalid={passwordError ? 'true' : 'false'}
           {...register('password', passwordValidationRules)}
         />
+        {passwordError ? <p role="alert">{passwordError}</p> : null}
         <button type="submit" disabled={formState.isSubmitting}>
           {formState.isSubmitting ? 'Signing In...' : 'Sign In'}
         </button>

@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { ChecklistType } from '@prisma/client';
+import { ChecklistType, StreakType } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { StreakService } from './streak.service';
@@ -1053,5 +1053,61 @@ describe('StreakService', () => {
     );
 
     expect(prismaMock.userStreak.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('returns an empty workout streak when no record exists', async () => {
+    const prismaMock = {
+      userStreak: {
+        findUnique: jest.fn(async () => null),
+      },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        StreakService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(StreakService);
+    await expect(service.getWorkoutStreak('user-1')).resolves.toEqual({
+      currentStreakDays: 0,
+      longestStreakDays: 0,
+      lastCompletedDate: null,
+    });
+    expect(prismaMock.userStreak.findUnique).toHaveBeenCalledWith({
+      where: {
+        userId_streakType: {
+          userId: 'user-1',
+          streakType: StreakType.WORKOUT,
+        },
+      },
+    });
+  });
+
+  it('returns the persisted workout streak summary', async () => {
+    const prismaMock = {
+      userStreak: {
+        findUnique: jest.fn(async () => ({
+          currentStreakDays: 12,
+          longestStreakDays: 20,
+          lastCompletedDate: new Date('2026-03-06T00:00:00.000Z'),
+        })),
+      },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        StreakService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(StreakService);
+    await expect(service.getWorkoutStreak('user-1')).resolves.toEqual({
+      currentStreakDays: 12,
+      longestStreakDays: 20,
+      lastCompletedDate: '2026-03-06',
+    });
   });
 });

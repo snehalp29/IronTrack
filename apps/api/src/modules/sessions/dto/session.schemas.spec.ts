@@ -1,5 +1,6 @@
 import {
   addSessionExerciseSchema,
+  applySessionSupersetSchema,
   batchCreateSetsSchema,
   createSetSchema,
   listSessionsQuerySchema,
@@ -166,6 +167,25 @@ describe('session set schemas', () => {
       items: [
         { id: '11111111-1111-4111-8111-111111111111', orderIndex: 0 },
         { id: '22222222-2222-4222-8222-222222222222', orderIndex: 0 },
+      ],
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('allows filtering session listings by status', () => {
+    expect(
+      listSessionsQuerySchema.parse({
+        status: 'FINISHED',
+      }).status,
+    ).toBe('FINISHED');
+  });
+
+  it('rejects superset payloads with duplicate exercise ids', () => {
+    const result = applySessionSupersetSchema.safeParse({
+      exerciseIds: [
+        '11111111-1111-4111-8111-111111111111',
+        '11111111-1111-4111-8111-111111111111',
       ],
     });
 

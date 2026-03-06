@@ -51,6 +51,13 @@ interface ActiveWorkoutState {
       startedAt?: string;
     },
   ) => void;
+  syncFromServer: (
+    sessionId: string,
+    exercises: SessionExercise[],
+    options?: {
+      startedAt?: string;
+    },
+  ) => void;
   addExercise: (exercise: SessionExercise) => void;
   removeExercise: (exerciseId: string) => void;
   reorderExercises: (items: Array<{ id: string; orderIndex: number }>) => void;
@@ -199,6 +206,22 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()(
           restTimerActive: false,
           completeSummary: undefined,
         }),
+      syncFromServer: (sessionId, exercises, options) =>
+        set((current) => ({
+          state: 'IN_PROGRESS',
+          sessionId,
+          startedAt: options?.startedAt ?? current.startedAt,
+          exercises,
+          restTimerSeconds:
+            current.sessionId === sessionId ? current.restTimerSeconds : 0,
+          restTimerEndsAt:
+            current.sessionId === sessionId
+              ? current.restTimerEndsAt
+              : undefined,
+          restTimerActive:
+            current.sessionId === sessionId ? current.restTimerActive : false,
+          completeSummary: undefined,
+        })),
       addExercise: (exercise) =>
         set((current) => ({
           exercises: [...current.exercises, exercise].sort(
@@ -241,13 +264,22 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()(
               : exercise,
           );
 
-          if (patch.isCompleted) {
+          if (patch.isCompleted === true) {
             const restTimerSeconds = current.restTimerDefaultSeconds;
             return {
               exercises: nextExercises,
               restTimerSeconds,
               restTimerEndsAt: Date.now() + restTimerSeconds * 1000,
               restTimerActive: restTimerSeconds > 0,
+            };
+          }
+
+          if (patch.isCompleted === false) {
+            return {
+              exercises: nextExercises,
+              restTimerSeconds: 0,
+              restTimerEndsAt: undefined,
+              restTimerActive: false,
             };
           }
 

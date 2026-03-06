@@ -1,3 +1,4 @@
+import { ExerciseNotesModal } from '../components/workout/ExerciseNotesModal';
 import { ExerciseOverflowModal } from '../components/workout/ExerciseOverflowModal';
 import { IncompleteWarningModal } from '../components/workout/IncompleteWarningModal';
 import { ReorderModal } from '../components/workout/ReorderModal';
@@ -74,6 +75,16 @@ export function ActiveWorkoutPage() {
         onEditNotes={data.overflow.onEditNotes}
         onSwapExercise={data.overflow.onSwapExercise}
         onDeleteExercise={data.overflow.onDeleteExercise}
+      />
+      <ExerciseNotesModal
+        open={data.notes.open}
+        exerciseName={data.notes.exerciseName}
+        errorMessage={data.notes.errorMessage}
+        isSaving={data.notes.isSaving}
+        notes={data.notes.notes}
+        onChange={data.notes.onChange}
+        onClose={data.notes.onClose}
+        onSave={data.notes.onSave}
       />
       <ReorderModal
         open={data.reorder.open}

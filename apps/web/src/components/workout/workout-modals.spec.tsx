@@ -8,6 +8,7 @@ import {
   findButtonsByTextIncludes,
   findElement,
 } from '../../testing/react-tree';
+import { ExerciseNotesModal } from './ExerciseNotesModal';
 import { ExerciseOverflowModal } from './ExerciseOverflowModal';
 import { IncompleteWarningModal } from './IncompleteWarningModal';
 import { ReorderModal } from './ReorderModal';
@@ -180,6 +181,61 @@ describe('workout modals', () => {
 
     expect(onToggleExercise).toHaveBeenCalledWith('se-1');
     expect(onApply).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('ExerciseNotesModal renders editable notes with save and close actions', () => {
+    expect(
+      ExerciseNotesModal({
+        open: false,
+        exerciseName: undefined,
+        errorMessage: undefined,
+        isSaving: false,
+        notes: '',
+        onChange: vi.fn(),
+        onClose: vi.fn(),
+        onSave: vi.fn(),
+      }),
+    ).toBeNull();
+
+    const onChange = vi.fn();
+    const onClose = vi.fn();
+    const onSave = vi.fn();
+    const view = ExerciseNotesModal({
+      open: true,
+      exerciseName: 'Bench Press',
+      errorMessage: 'Failed to save notes',
+      isSaving: false,
+      notes: 'Keep elbows tucked',
+      onChange,
+      onClose,
+      onSave,
+    });
+
+    expect(view).not.toBeNull();
+    const html = render(view as ReactElement);
+    expect(html).toContain('Edit Exercise Notes');
+    expect(html).toContain('Bench Press');
+    expect(html).toContain('Failed to save notes');
+    expect(html).toContain('Keep elbows tucked');
+
+    const textarea = findElement(
+      view,
+      (element) => element.type === 'textarea',
+    );
+    const onTextareaChange = textarea?.props.onChange as
+      | ((event: { target: { value: string } }) => void)
+      | undefined;
+    onTextareaChange?.({
+      target: {
+        value: 'Drive through the bar',
+      },
+    });
+    findButtonByLabel(view, 'Save Notes')?.props.onClick?.();
+    findButtonByLabel(view, 'Cancel')?.props.onClick?.();
+
+    expect(onChange).toHaveBeenCalledWith('Drive through the bar');
+    expect(onSave).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

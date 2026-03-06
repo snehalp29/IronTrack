@@ -16,6 +16,7 @@ import { useActiveWorkoutStore } from '../stores/activeWorkoutStore';
 import {
   type ActiveSessionPayload,
   type WorkoutTemplatePayload,
+  applyWorkoutSuperset,
   createExercise,
   deleteCurrentUser,
   deleteWorkoutExercise,
@@ -25,6 +26,7 @@ import {
   fetchEquipment,
   fetchMuscleGroups,
   fetchWeeklyProgress,
+  fetchWorkoutStreak,
   fetchWorkoutTemplateById,
   fetchWorkoutTemplates,
   finishWorkoutSession,
@@ -74,6 +76,8 @@ const INITIAL_WIZARD_FORM_VALUES: WizardFormValues = {
   defaultCues: '',
 };
 
+const SUPPORTED_TIMEZONES = resolveSupportedTimezones();
+
 export function useDashboardPageData() {
   const userQuery = useQuery({
     queryKey: ['user', 'me'],
@@ -88,9 +92,9 @@ export function useDashboardPageData() {
     queryKey: ['templates'],
     queryFn: fetchWorkoutTemplates,
   });
-  const sessionsQuery = useQuery({
-    queryKey: ['sessions', 'dashboard'],
-    queryFn: () => listWorkoutSessions({ page: 1, pageSize: 30 }),
+  const streakQuery = useQuery({
+    queryKey: ['streak', 'workout'],
+    queryFn: fetchWorkoutStreak,
   });
 
   return {
@@ -98,12 +102,12 @@ export function useDashboardPageData() {
       userQuery.isLoading ||
       checklistQuery.isLoading ||
       templatesQuery.isLoading ||
-      sessionsQuery.isLoading,
+      streakQuery.isLoading,
     errorMessage:
       asErrorMessage(userQuery.error) ??
       asErrorMessage(checklistQuery.error) ??
       asErrorMessage(templatesQuery.error) ??
-      asErrorMessage(sessionsQuery.error),
+      asErrorMessage(streakQuery.error),
     checklistCompleteCount:
       checklistQuery.data?.filter((item) => item.isCompleted).length ?? 0,
     checklistTotalCount: checklistQuery.data?.length ?? 0,
@@ -113,26 +117,32 @@ export function useDashboardPageData() {
           name: templatesQuery.data[0].name,
         }
       : undefined,
-    workoutStreakDays: computeWorkoutStreakDays(
-      sessionsQuery.data?.items ?? [],
-      userQuery.data?.timezone,
-    ),
+    workoutStreakDays: streakQuery.data?.currentStreakDays ?? 0,
   };
 }
 
 export function useHistoryPageData() {
+  const userQuery = useQuery({
+    queryKey: ['user', 'me'],
+    queryFn: fetchCurrentUser,
+  });
   const sessionsQuery = useQuery({
     queryKey: ['sessions', 'history'],
-    queryFn: () => listWorkoutSessions({ page: 1, pageSize: 20 }),
+    queryFn: () =>
+      listWorkoutSessions({ page: 1, pageSize: 20, status: 'FINISHED' }),
   });
 
   return {
-    isLoading: sessionsQuery.isLoading,
-    errorMessage: asErrorMessage(sessionsQuery.error),
+    isLoading: userQuery.isLoading || sessionsQuery.isLoading,
+    errorMessage:
+      asErrorMessage(userQuery.error) ?? asErrorMessage(sessionsQuery.error),
     items:
       sessionsQuery.data?.items.map((item) => ({
         id: item.id,
-        startedAt: item.startedAt.slice(0, 10),
+        startedAt: formatDateInTimezone(
+          item.startedAt,
+          userQuery.data?.timezone ?? 'UTC',
+        ),
         templateName: item.workoutTemplate?.name ?? 'Ad-hoc Workout',
         durationLabel: formatDurationLabel(item.durationSeconds ?? 0),
         volumeLabel: formatNumber(item.totalVolume ?? 0),
@@ -341,10 +351,6 @@ export function useExerciseSelectPageData() {
 }
 
 export function useCompletionFlowData() {
-  const userQuery = useQuery({
-    queryKey: ['user', 'me'],
-    queryFn: fetchCurrentUser,
-  });
   const progressQuery = useQuery({
     queryKey: ['progress', 'weekly'],
     queryFn: () => fetchWeeklyProgress(),
@@ -353,13 +359,16 @@ export function useCompletionFlowData() {
     queryKey: ['templates', 'completion'],
     queryFn: fetchWorkoutTemplates,
   });
-  const sessionsQuery = useQuery({
-    queryKey: ['sessions', 'completion'],
-    queryFn: () => listWorkoutSessions({ page: 1, pageSize: 30 }),
+  const streakQuery = useQuery({
+    queryKey: ['streak', 'workout'],
+    queryFn: fetchWorkoutStreak,
   });
 
   const recommendedTemplate = useMemo(() => {
-    const template = templatesQuery.data?.[0];
+    const template = selectRecommendedTemplate(
+      templatesQuery.data ?? [],
+      progressQuery.data,
+    );
     if (!template) {
       return undefined;
     }
@@ -383,10 +392,7 @@ export function useCompletionFlowData() {
             `${item.name} ${item.volume >= 0 ? '+' : ''}${Math.round(item.volume)}`,
         ) ?? [],
     recommendedTemplate,
-    streakDays: computeWorkoutStreakDays(
-      sessionsQuery.data?.items ?? [],
-      userQuery.data?.timezone,
-    ),
+    streakDays: streakQuery.data?.currentStreakDays ?? 0,
   };
 }
 
@@ -480,7 +486,9 @@ export function useActiveWorkoutPageData() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const state = useActiveWorkoutStore((store) => store.state);
+  const clearWorkout = useActiveWorkoutStore((store) => store.clear);
   const sessionId = useActiveWorkoutStore((store) => store.sessionId);
+  const syncFromServer = useActiveWorkoutStore((store) => store.syncFromServer);
   const startedAt = useActiveWorkoutStore((store) => store.startedAt);
   const start = useActiveWorkoutStore((store) => store.start);
   const exercises = useActiveWorkoutStore((store) => store.exercises);
@@ -504,32 +512,53 @@ export function useActiveWorkoutPageData() {
   >([]);
   const [selectedSupersetExerciseIds, setSelectedSupersetExerciseIds] =
     useState<string[]>([]);
+  const [showNotes, setShowNotes] = useState(false);
+  const [notesErrorMessage, setNotesErrorMessage] = useState<string>();
+  const [isSavingNotes, setIsSavingNotes] = useState(false);
+  const [notesDraft, setNotesDraft] = useState('');
   const activeSessionQuery = useQuery({
     queryKey: ['active-session'],
     queryFn: fetchActiveSession,
   });
 
   useEffect(() => {
-    if (!activeSessionQuery.data) {
-      return;
-    }
-
     if (state === 'COMPLETED') {
       return;
     }
 
-    if (activeSessionQuery.data.id === sessionId && startedAt) {
+    if (activeSessionQuery.isSuccess && activeSessionQuery.data === null) {
+      if (state !== 'IDLE') {
+        clearWorkout();
+        setErrorMessage('Workout session is no longer available');
+      }
       return;
     }
 
-    start(
-      activeSessionQuery.data.id,
-      mapSessionExercises(activeSessionQuery.data),
-      {
+    if (!activeSessionQuery.data) {
+      return;
+    }
+
+    const mappedExercises = mapSessionExercises(activeSessionQuery.data);
+    if (activeSessionQuery.data.id === sessionId && startedAt) {
+      syncFromServer(activeSessionQuery.data.id, mappedExercises, {
         startedAt: activeSessionQuery.data.startedAt,
-      },
-    );
-  }, [activeSessionQuery.data, sessionId, start, startedAt, state]);
+      });
+      return;
+    }
+
+    start(activeSessionQuery.data.id, mappedExercises, {
+      startedAt: activeSessionQuery.data.startedAt,
+    });
+  }, [
+    activeSessionQuery.data,
+    activeSessionQuery.isSuccess,
+    clearWorkout,
+    sessionId,
+    start,
+    startedAt,
+    state,
+    syncFromServer,
+  ]);
 
   const totals = useMemo(() => {
     const allSets = exercises.flatMap((exercise) => exercise.sets);
@@ -546,11 +575,15 @@ export function useActiveWorkoutPageData() {
 
   const syncActiveSession = async () => {
     const session = await fetchActiveSession();
-    if (session) {
-      start(session.id, mapSessionExercises(session), {
-        startedAt: session.startedAt,
-      });
+    if (!session) {
+      clearWorkout();
+      setErrorMessage('Workout session is no longer available');
+      return;
     }
+
+    syncFromServer(session.id, mapSessionExercises(session), {
+      startedAt: session.startedAt,
+    });
   };
 
   return {
@@ -568,6 +601,16 @@ export function useActiveWorkoutPageData() {
       setId: string,
       isCompleted: boolean,
     ) => {
+      const previousSet = exercises
+        .find((exercise) => exercise.id === sessionExerciseId)
+        ?.sets.find((set) => set.id === setId);
+      if (!previousSet) {
+        return;
+      }
+
+      updateSet(sessionExerciseId, setId, {
+        isCompleted,
+      });
       try {
         const updated = await toggleWorkoutSetCompletion(
           sessionExerciseId,
@@ -581,6 +624,12 @@ export function useActiveWorkoutPageData() {
           weight: updated.weight ?? undefined,
         });
       } catch (error) {
+        updateSet(sessionExerciseId, setId, {
+          durationSeconds: previousSet.durationSeconds,
+          isCompleted: previousSet.isCompleted,
+          reps: previousSet.reps,
+          weight: previousSet.weight,
+        });
         setErrorMessage(asErrorMessage(error) ?? 'Failed to update set');
       }
     },
@@ -636,19 +685,9 @@ export function useActiveWorkoutPageData() {
         if (!sessionId || !selectedOverflowExercise) {
           return;
         }
-
-        const nextNotes = globalThis.prompt?.(
-          'Exercise notes',
-          selectedOverflowExercise.notes ?? '',
-        );
-        if (nextNotes === undefined || nextNotes === null) {
-          return;
-        }
-
-        await updateWorkoutExercise(sessionId, selectedOverflowExercise.id, {
-          notes: nextNotes,
-        });
-        await syncActiveSession();
+        setNotesErrorMessage(undefined);
+        setNotesDraft(selectedOverflowExercise.notes ?? '');
+        setShowNotes(true);
         setShowOverflow(false);
       },
       onSwapExercise: () => {
@@ -665,10 +704,13 @@ export function useActiveWorkoutPageData() {
         if (!sessionId || !selectedOverflowExercise) {
           return;
         }
-
-        await deleteWorkoutExercise(sessionId, selectedOverflowExercise.id);
-        removeExercise(selectedOverflowExercise.id);
-        setShowOverflow(false);
+        try {
+          await deleteWorkoutExercise(sessionId, selectedOverflowExercise.id);
+          removeExercise(selectedOverflowExercise.id);
+          setShowOverflow(false);
+        } catch (error) {
+          setErrorMessage(asErrorMessage(error) ?? 'Failed to remove exercise');
+        }
       },
     },
     reorder: {
@@ -691,9 +733,15 @@ export function useActiveWorkoutPageData() {
           id: exercise.id,
           orderIndex: index,
         }));
-        await reorderWorkoutExercises(sessionId, items);
-        reorderExercises(items);
-        setShowReorder(false);
+        try {
+          await reorderWorkoutExercises(sessionId, items);
+          reorderExercises(items);
+          setShowReorder(false);
+        } catch (error) {
+          setErrorMessage(
+            asErrorMessage(error) ?? 'Failed to reorder exercises',
+          );
+        }
       },
     },
     superset: {
@@ -718,21 +766,51 @@ export function useActiveWorkoutPageData() {
           setShowSuperset(false);
           return;
         }
+        try {
+          const session = await applyWorkoutSuperset(
+            sessionId,
+            selectedSupersetExerciseIds,
+          );
+          syncFromServer(session.id, mapSessionExercises(session), {
+            startedAt: session.startedAt,
+          });
+          setShowSuperset(false);
+        } catch (error) {
+          setErrorMessage(asErrorMessage(error) ?? 'Failed to update superset');
+        }
+      },
+    },
+    notes: {
+      open: showNotes,
+      exerciseName: selectedOverflowExercise?.name,
+      errorMessage: notesErrorMessage,
+      isSaving: isSavingNotes,
+      notes: notesDraft,
+      onChange: (value: string) => {
+        setNotesDraft(value);
+      },
+      onClose: () => {
+        setNotesErrorMessage(undefined);
+        setShowNotes(false);
+      },
+      onSave: async () => {
+        if (!sessionId || !selectedOverflowExercise) {
+          return;
+        }
 
-        const supersetGroupKey = `group-${Date.now()}`;
-        await Promise.all(
-          exercises.map((exercise) =>
-            updateWorkoutExercise(sessionId, exercise.id, {
-              supersetGroupKey: selectedSupersetExerciseIds.includes(
-                exercise.id,
-              )
-                ? supersetGroupKey
-                : null,
-            }),
-          ),
-        );
-        await syncActiveSession();
-        setShowSuperset(false);
+        try {
+          setNotesErrorMessage(undefined);
+          setIsSavingNotes(true);
+          await updateWorkoutExercise(sessionId, selectedOverflowExercise.id, {
+            notes: notesDraft,
+          });
+          await syncActiveSession();
+          setShowNotes(false);
+        } catch (error) {
+          setNotesErrorMessage(asErrorMessage(error) ?? 'Failed to save notes');
+        } finally {
+          setIsSavingNotes(false);
+        }
       },
     },
     incomplete: {
@@ -889,6 +967,39 @@ function buildRecommendationReason(
   return `targets underworked ${leastCoveredMuscle.name.toLowerCase()}`;
 }
 
+function selectRecommendedTemplate(
+  templates: WorkoutTemplatePayload[],
+  progress: Awaited<ReturnType<typeof fetchWeeklyProgress>> | undefined,
+): WorkoutTemplatePayload | undefined {
+  const [firstTemplate] = templates;
+  if (!firstTemplate || !progress) {
+    return firstTemplate;
+  }
+
+  const rankedMuscles = progress.perMuscleVolume
+    .slice()
+    .sort((left, right) => left.volume - right.volume)
+    .map((item) => item.name.toLowerCase());
+
+  let selectedTemplate = firstTemplate;
+  let selectedScore = Number.POSITIVE_INFINITY;
+
+  for (const template of templates) {
+    const coverage = new Set(
+      (template.muscleCoverage ?? []).map((muscle) => muscle.toLowerCase()),
+    );
+    const score = rankedMuscles.findIndex((muscle) => coverage.has(muscle));
+    const normalizedScore = score === -1 ? Number.POSITIVE_INFINITY : score;
+
+    if (normalizedScore < selectedScore) {
+      selectedTemplate = template;
+      selectedScore = normalizedScore;
+    }
+  }
+
+  return selectedTemplate;
+}
+
 function optionalNumber(value: string): number | undefined {
   const trimmed = value.trim();
   if (!trimmed) {
@@ -910,16 +1021,18 @@ function parsePositiveInteger(value: string, fallback: number): number {
 }
 
 function getSupportedTimezones(currentTimezone: string): string[] {
+  return Array.from(new Set([currentTimezone, ...SUPPORTED_TIMEZONES]));
+}
+
+function resolveSupportedTimezones(): string[] {
   const supportedValuesOf = (
     Intl as typeof Intl & {
       supportedValuesOf?: (key: 'timeZone') => string[];
     }
   ).supportedValuesOf;
-  const timezones = supportedValuesOf
+  return supportedValuesOf
     ? supportedValuesOf('timeZone')
     : ['UTC', 'America/New_York', 'America/Los_Angeles'];
-
-  return Array.from(new Set([currentTimezone, ...timezones]));
 }
 
 function mapSessionExercises(session: ActiveSessionPayload) {

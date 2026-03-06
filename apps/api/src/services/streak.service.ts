@@ -16,6 +16,25 @@ export class StreakService {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  async getWorkoutStreak(userId: string) {
+    const streak = await this.prisma.userStreak.findUnique({
+      where: {
+        userId_streakType: {
+          userId,
+          streakType: StreakType.WORKOUT,
+        },
+      },
+    });
+
+    return {
+      currentStreakDays: streak?.currentStreakDays ?? 0,
+      longestStreakDays: streak?.longestStreakDays ?? 0,
+      lastCompletedDate: streak?.lastCompletedDate
+        ? this.formatStoredDate(streak.lastCompletedDate)
+        : null,
+    };
+  }
+
   async onSessionFinished(
     userId: string,
     completedAt?: Date,

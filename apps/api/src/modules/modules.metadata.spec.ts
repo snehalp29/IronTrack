@@ -21,6 +21,7 @@ import { SessionSetsController } from './sessions/session-sets.controller';
 import { SessionsController } from './sessions/sessions.controller';
 import { SessionsModule } from './sessions/sessions.module';
 import { SessionsService } from './sessions/sessions.service';
+import { StreakController } from './streak/streak.controller';
 import { StreakModule } from './streak/streak.module';
 import { UsersController } from './users/users.controller';
 import { UsersModule } from './users/users.module';
@@ -118,6 +119,9 @@ describe('Feature module metadata', () => {
   });
 
   it('configures streak module', () => {
+    expect(
+      Reflect.getMetadata(MODULE_METADATA.CONTROLLERS, StreakModule),
+    ).toEqual([StreakController]);
     expect(
       Reflect.getMetadata(MODULE_METADATA.PROVIDERS, StreakModule),
     ).toEqual([StreakService]);

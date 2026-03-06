@@ -938,6 +938,29 @@ describe('SessionsService', () => {
     );
   });
 
+  it('lists sessions with an optional status filter', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.workoutSession.findMany as jest.Mock).mockResolvedValue([]);
+    (prismaMock.workoutSession.count as jest.Mock).mockResolvedValue(0);
+
+    await service.listSessions('user-1', {
+      page: 1,
+      pageSize: 10,
+      templateId: undefined,
+      startDate: undefined,
+      endDate: undefined,
+      status: 'FINISHED',
+    });
+
+    expect(prismaMock.workoutSession.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: 'FINISHED',
+        }),
+      }),
+    );
+  });
+
   it('lists sessions with only a start date lower bound', async () => {
     const { service, prismaMock } = createService();
     (prismaMock.workoutSession.findMany as jest.Mock).mockResolvedValue([]);
@@ -986,6 +1009,108 @@ describe('SessionsService', () => {
         }),
       }),
     );
+  });
+
+  it('applies a superset atomically and returns the refreshed session', async () => {
+    const { service, prismaMock, supersetMock } = createService();
+    (prismaMock.workoutSession.findFirst as jest.Mock)
+      .mockResolvedValueOnce({
+        id: 'session-1',
+        sessionExercises: [
+          { id: 'session-exercise-1' },
+          { id: 'session-exercise-2' },
+          { id: 'session-exercise-3' },
+        ],
+      })
+      .mockResolvedValueOnce({
+        id: 'session-1',
+        startedAt: new Date('2026-03-06T12:00:00.000Z'),
+        sessionExercises: [
+          {
+            id: 'session-exercise-1',
+            orderIndex: 0,
+            supersetGroupKey: 'group-1',
+            exercise: { id: 'exercise-1', name: 'Bench Press' },
+            sets: [],
+          },
+          {
+            id: 'session-exercise-2',
+            orderIndex: 1,
+            supersetGroupKey: 'group-1',
+            exercise: { id: 'exercise-2', name: 'Rows' },
+            sets: [],
+          },
+          {
+            id: 'session-exercise-3',
+            orderIndex: 2,
+            supersetGroupKey: null,
+            exercise: { id: 'exercise-3', name: 'Squat' },
+            sets: [],
+          },
+        ],
+      });
+    (prismaMock.sessionExercise.updateMany as jest.Mock)
+      .mockResolvedValueOnce({ count: 3 })
+      .mockResolvedValueOnce({ count: 2 });
+    (supersetMock.interleave as jest.Mock).mockImplementation((items) =>
+      items.map((item: { item: unknown }) => item.item),
+    );
+
+    await expect(
+      service.applySessionSuperset('user-1', 'session-1', {
+        exerciseIds: ['session-exercise-1', 'session-exercise-2'],
+      }),
+    ).resolves.toMatchObject({
+      id: 'session-1',
+      sessionExercises: [
+        expect.objectContaining({ supersetGroupKey: 'group-1' }),
+        expect.objectContaining({ supersetGroupKey: 'group-1' }),
+        expect.objectContaining({ supersetGroupKey: null }),
+      ],
+    });
+
+    expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+    expect(prismaMock.sessionExercise.updateMany).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        where: expect.objectContaining({
+          sessionId: 'session-1',
+          deletedAt: null,
+        }),
+        data: {
+          supersetGroupKey: null,
+        },
+      }),
+    );
+    expect(prismaMock.sessionExercise.updateMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: expect.objectContaining({
+          sessionId: 'session-1',
+          id: {
+            in: ['session-exercise-1', 'session-exercise-2'],
+          },
+        }),
+        data: {
+          supersetGroupKey: expect.any(String),
+        },
+      }),
+    );
+  });
+
+  it('rejects superset updates when an exercise is not part of the session', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.workoutSession.findFirst as jest.Mock).mockResolvedValue({
+      id: 'session-1',
+      sessionExercises: [{ id: 'session-exercise-1' }],
+    });
+
+    await expect(
+      service.applySessionSuperset('user-1', 'session-1', {
+        exerciseIds: ['session-exercise-1', 'missing-exercise'],
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prismaMock.sessionExercise.updateMany).not.toHaveBeenCalled();
   });
 
   it('preserves explicit timezone offsets when building session date bounds', async () => {

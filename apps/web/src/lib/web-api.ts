@@ -45,6 +45,7 @@ const listSessionsResponseSchema = z.object({
       startedAt: isoDateTimeSchema,
       durationSeconds: optionalNumberSchema,
       totalVolume: optionalNumberSchema,
+      status: z.enum(['IN_PROGRESS', 'FINISHED']).optional(),
       workoutTemplate: z
         .object({
           id: z.string().min(1),
@@ -117,6 +118,12 @@ const weeklyProgressSchema = z.object({
   perMuscleVolume: z.array(progressVolumeSchema),
 });
 
+const workoutStreakSchema = z.object({
+  currentStreakDays: z.number().int().nonnegative(),
+  longestStreakDays: z.number().int().nonnegative(),
+  lastCompletedDate: z.string().nullable(),
+});
+
 const exerciseListSchema = z.object({
   items: z.array(
     z.object({
@@ -169,6 +176,7 @@ export type ListSessionsPayload = z.infer<typeof listSessionsResponseSchema>;
 export type ExerciseListPayload = z.infer<typeof exerciseListSchema>;
 export type CatalogItemPayload = z.infer<typeof catalogItemSchema>;
 export type WeeklyProgressPayload = z.infer<typeof weeklyProgressSchema>;
+export type WorkoutStreakPayload = z.infer<typeof workoutStreakSchema>;
 
 export async function fetchCurrentUser() {
   return requirePayload(
@@ -214,6 +222,14 @@ export async function fetchWeeklyProgress(startDate?: string) {
   return requirePayload(
     apiFetch(`/progress/weekly${suffix}`, {
       schema: weeklyProgressSchema,
+    }),
+  );
+}
+
+export async function fetchWorkoutStreak() {
+  return requirePayload(
+    apiFetch('/streaks/workout', {
+      schema: workoutStreakSchema,
     }),
   );
 }
@@ -270,6 +286,7 @@ export async function finishWorkoutSession(sessionId: string) {
 export async function listWorkoutSessions(input?: {
   page?: number;
   pageSize?: number;
+  status?: 'IN_PROGRESS' | 'FINISHED';
 }) {
   const searchParams = new URLSearchParams();
   if (input?.page) {
@@ -277,6 +294,9 @@ export async function listWorkoutSessions(input?: {
   }
   if (input?.pageSize) {
     searchParams.set('pageSize', String(input.pageSize));
+  }
+  if (input?.status) {
+    searchParams.set('status', input.status);
   }
 
   const query = searchParams.toString();
@@ -356,6 +376,19 @@ export async function swapWorkoutExercise(
         toExerciseTemplateId,
       } as unknown as BodyInit,
       schema: sessionExerciseSchema,
+    }),
+  );
+}
+
+export async function applyWorkoutSuperset(
+  sessionId: string,
+  exerciseIds: string[],
+) {
+  return requirePayload(
+    apiFetch(`/sessions/${sessionId}/exercises/superset`, {
+      method: 'PATCH',
+      body: { exerciseIds } as unknown as BodyInit,
+      schema: workoutSessionSchema,
     }),
   );
 }

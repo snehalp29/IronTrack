@@ -187,6 +187,13 @@ const cases: MetadataBranchCase[] = [
     },
   },
   {
+    name: 'StreakController metadata fallback',
+    target: './streak/streak.controller',
+    mocks: {
+      '../services/streak.service': { StreakService: {} as unknown },
+    },
+  },
+  {
     name: 'CompletionService metadata fallback',
     target: '../services/completion.service',
     mocks: {

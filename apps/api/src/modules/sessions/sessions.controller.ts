@@ -13,6 +13,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   addSessionExerciseSchema,
+  applySessionSupersetSchema,
   listSessionsQuerySchema,
   reorderSessionExercisesSchema,
   startSessionSchema,
@@ -22,6 +23,7 @@ import {
 } from './dto/session.schemas';
 import type {
   AddSessionExerciseDto,
+  ApplySessionSupersetDto,
   ListSessionsQuery,
   ReorderSessionExercisesDto,
   StartSessionDto,
@@ -138,5 +140,15 @@ export class SessionsController {
     body: SwapSessionExerciseDto,
   ) {
     return this.sessionsService.swapSessionExercise(user.sub, sessionId, body);
+  }
+
+  @Patch(':sessionId/exercises/superset')
+  async applySuperset(
+    @CurrentUser() user: { sub: string },
+    @Param('sessionId') sessionId: string,
+    @Body(new ZodValidationPipe(applySessionSupersetSchema))
+    body: ApplySessionSupersetDto,
+  ) {
+    return this.sessionsService.applySessionSuperset(user.sub, sessionId, body);
   }
 }

@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { CompletionService } from '../../services/completion.service';
@@ -15,6 +16,7 @@ import { SupersetService } from '../../services/superset.service';
 import { VolumeService } from '../../services/volume.service';
 import {
   AddSessionExerciseDto,
+  ApplySessionSupersetDto,
   BatchCreateSetsDto,
   CreateSetDto,
   ListSessionsQuery,
@@ -375,6 +377,7 @@ export class SessionsService {
     const where = {
       userId,
       deletedAt: null,
+      status: query.status,
       workoutTemplateId: query.templateId,
       startedAt:
         query.startDate || query.endDate
@@ -411,6 +414,71 @@ export class SessionsService {
         total,
       },
     };
+  }
+
+  async applySessionSuperset(
+    userId: string,
+    sessionId: string,
+    input: ApplySessionSupersetDto,
+  ) {
+    const selectedExerciseIds = Array.from(new Set(input.exerciseIds));
+
+    await this.prisma.$transaction(async (tx) => {
+      const session = await tx.workoutSession.findFirst({
+        where: {
+          id: sessionId,
+          userId,
+          deletedAt: null,
+          status: 'IN_PROGRESS',
+        },
+        select: {
+          id: true,
+          sessionExercises: {
+            where: { deletedAt: null },
+            select: { id: true },
+          },
+        },
+      });
+
+      if (!session) {
+        this.throwSessionNotFound();
+      }
+
+      const availableExerciseIds = new Set(
+        session.sessionExercises.map((exercise) => exercise.id),
+      );
+      if (
+        selectedExerciseIds.some(
+          (exerciseId) => !availableExerciseIds.has(exerciseId),
+        )
+      ) {
+        this.throwInvalidSupersetSelection();
+      }
+
+      await tx.sessionExercise.updateMany({
+        where: {
+          sessionId,
+          deletedAt: null,
+        },
+        data: {
+          supersetGroupKey: null,
+        },
+      });
+      await tx.sessionExercise.updateMany({
+        where: {
+          sessionId,
+          deletedAt: null,
+          id: {
+            in: selectedExerciseIds,
+          },
+        },
+        data: {
+          supersetGroupKey: randomUUID(),
+        },
+      });
+    });
+
+    return this.getSession(userId, sessionId);
   }
 
   async getActiveSession(userId: string) {
@@ -1488,6 +1556,13 @@ export class SessionsService {
     throw new ForbiddenException({
       code: 'EXERCISE_FORBIDDEN',
       message: 'Exercise not found or inaccessible',
+    });
+  }
+
+  private throwInvalidSupersetSelection(): never {
+    throw new BadRequestException({
+      code: 'INVALID_SUPERSET_SELECTION',
+      message: 'Selected exercises must belong to the active session',
     });
   }
 }

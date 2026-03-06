@@ -15,6 +15,7 @@ describe('SessionsController', () => {
     deleteSessionExercise: jest.fn(),
     reorderSessionExercises: jest.fn(),
     swapSessionExercise: jest.fn(),
+    applySessionSuperset: jest.fn(),
   } as unknown as SessionsService;
 
   const controller = new SessionsController(sessionsServiceMock);
@@ -200,6 +201,29 @@ describe('SessionsController', () => {
       ok: true,
     });
     expect(sessionsServiceMock.swapSessionExercise).toHaveBeenCalledWith(
+      'u1',
+      's1',
+      body,
+    );
+  });
+
+  it('delegates applySuperset', async () => {
+    const body = {
+      exerciseIds: [
+        '11111111-1111-1111-1111-111111111111',
+        '22222222-2222-2222-2222-222222222222',
+      ],
+    };
+    (sessionsServiceMock.applySessionSuperset as jest.Mock).mockResolvedValue({
+      id: 's1',
+    });
+
+    await expect(
+      controller.applySuperset({ sub: 'u1' }, 's1', body),
+    ).resolves.toEqual({
+      id: 's1',
+    });
+    expect(sessionsServiceMock.applySessionSuperset).toHaveBeenCalledWith(
       'u1',
       's1',
       body,

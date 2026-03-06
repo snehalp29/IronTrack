@@ -73,6 +73,7 @@ export const listSessionsQuerySchema = z
   .object({
     page: z.coerce.number().int().positive().default(1),
     pageSize: z.coerce.number().int().positive().max(100).default(20),
+    status: z.enum(['IN_PROGRESS', 'FINISHED']).optional(),
     templateId: z.string().uuid().optional(),
     startDate: z.string().datetime().optional(),
     endDate: z.string().datetime().optional(),
@@ -158,6 +159,26 @@ export const swapSessionExerciseSchema = z.object({
   toExerciseTemplateId: z.string().uuid(),
 });
 
+export const applySessionSupersetSchema = z.object({
+  exerciseIds: z
+    .array(z.string().uuid())
+    .min(2)
+    .max(4)
+    .superRefine((exerciseIds, ctx) => {
+      const seenIds = new Set<string>();
+      for (const [index, exerciseId] of exerciseIds.entries()) {
+        if (seenIds.has(exerciseId)) {
+          ctx.addIssue({
+            code: 'custom',
+            message: 'Duplicate exercise id in superset payload',
+            path: [index],
+          });
+        }
+        seenIds.add(exerciseId);
+      }
+    }),
+});
+
 const baseCreateSetSchema = z.object({
   orderIndex: z.number().int().nonnegative(),
   type: z.enum([
@@ -217,6 +238,9 @@ export type ReorderSessionExercisesDto = z.infer<
   typeof reorderSessionExercisesSchema
 >;
 export type SwapSessionExerciseDto = z.infer<typeof swapSessionExerciseSchema>;
+export type ApplySessionSupersetDto = z.infer<
+  typeof applySessionSupersetSchema
+>;
 export type CreateSetDto = z.infer<typeof createSetSchema>;
 export type UpdateSetDto = z.infer<typeof updateSetSchema>;
 export type ToggleSetCompletionDto = z.infer<typeof toggleSetCompletionSchema>;

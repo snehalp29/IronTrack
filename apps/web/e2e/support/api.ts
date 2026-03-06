@@ -3,6 +3,44 @@ import type { Page, Route } from '@playwright/test';
 const API_ORIGIN = 'http://localhost:3000';
 const API_PREFIX = '/api/v1';
 
+type WorkoutStreakResponse = {
+  currentStreakDays: number;
+  longestStreakDays: number;
+  lastCompletedDate: string | null;
+};
+
+type SessionHistoryItem = {
+  id: string;
+  startedAt: string;
+  durationSeconds: number | null;
+  totalVolume: number | null;
+  status?: 'IN_PROGRESS' | 'FINISHED';
+  workoutTemplate?: {
+    id: string;
+    name: string;
+  } | null;
+};
+
+type ActiveSession = ReturnType<typeof createActiveSession>;
+
+type MockAuthOptions = {
+  refreshStatus?: number;
+  refreshErrorMessage?: string;
+};
+
+type MockApiDelays = {
+  updateExerciseMs?: number;
+  refreshMs?: number;
+};
+
+type MockApiOptions = {
+  activeSession?: ActiveSession | null;
+  sessions?: SessionHistoryItem[];
+  workoutStreak?: WorkoutStreakResponse;
+  auth?: MockAuthOptions;
+  delays?: MockApiDelays;
+};
+
 export function createAccessToken(expiresInSeconds = 60 * 60): string {
   return [
     base64UrlEncode(JSON.stringify({ alg: 'HS256', typ: 'JWT' })),
@@ -15,8 +53,13 @@ export function createAccessToken(expiresInSeconds = 60 * 60): string {
   ].join('.');
 }
 
-export async function seedAuthenticatedSession(page: Page): Promise<void> {
-  const accessToken = createAccessToken();
+export async function seedAuthenticatedSession(
+  page: Page,
+  options?: {
+    expiresInSeconds?: number;
+  },
+): Promise<void> {
+  const accessToken = createAccessToken(options?.expiresInSeconds);
   await page.addInitScript((token: string) => {
     window.localStorage.setItem(
       'irontrack.auth.session',
@@ -25,9 +68,16 @@ export async function seedAuthenticatedSession(page: Page): Promise<void> {
   }, accessToken);
 }
 
-export async function mockApi(page: Page): Promise<void> {
+export async function mockApi(
+  page: Page,
+  options: MockApiOptions = {},
+): Promise<void> {
   const state = {
-    activeSession: createActiveSession(),
+    activeSession: options.activeSession ?? createActiveSession(),
+    sessions: options.sessions ?? createSessionHistory(),
+    workoutStreak: options.workoutStreak ?? createWorkoutStreak(),
+    auth: options.auth ?? {},
+    delays: options.delays ?? {},
   };
 
   await page.route(`${API_ORIGIN}${API_PREFIX}/**`, async (route) => {
@@ -38,7 +88,11 @@ export async function mockApi(page: Page): Promise<void> {
 async function handleApiRoute(
   route: Route,
   state: {
-    activeSession: ReturnType<typeof createActiveSession> | null;
+    activeSession: ActiveSession | null;
+    sessions: SessionHistoryItem[];
+    workoutStreak: WorkoutStreakResponse;
+    auth: MockAuthOptions;
+    delays: MockApiDelays;
   },
 ): Promise<void> {
   const request = route.request();
@@ -84,6 +138,23 @@ async function handleApiRoute(
   }
 
   if (path === '/api/v1/auth/refresh' && method === 'POST') {
+    if (state.delays.refreshMs) {
+      await delay(state.delays.refreshMs);
+    }
+
+    if (state.auth.refreshStatus && state.auth.refreshStatus >= 400) {
+      await route.fulfill({
+        status: state.auth.refreshStatus,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          error: {
+            message: state.auth.refreshErrorMessage ?? 'Request failed',
+          },
+        }),
+      });
+      return;
+    }
+
     await fulfillJson(route, { accessToken: createAccessToken() });
     return;
   }
@@ -196,47 +267,25 @@ async function handleApiRoute(
     return;
   }
 
-  if (path === '/api/v1/sessions?page=1&pageSize=30' && method === 'GET') {
-    await fulfillJson(route, {
-      items: [
-        {
-          id: 'session-previous',
-          startedAt: `${todayDate()}T07:00:00.000Z`,
-          durationSeconds: 1800,
-          totalVolume: 10240,
-          workoutTemplate: {
-            id: 'template-1',
-            name: 'Push Day A',
-          },
-        },
-      ],
-      pagination: {
-        page: 1,
-        pageSize: 30,
-        total: 1,
-      },
-    });
-    return;
-  }
+  if (url.pathname === '/api/v1/sessions' && method === 'GET') {
+    const requestedPage = Number(url.searchParams.get('page') ?? '1');
+    const requestedPageSize = Number(url.searchParams.get('pageSize') ?? '20');
+    const status = url.searchParams.get('status');
+    const filteredItems = status
+      ? state.sessions.filter((item) => item.status === status)
+      : state.sessions;
+    const startIndex = (requestedPage - 1) * requestedPageSize;
+    const items = filteredItems.slice(
+      startIndex,
+      startIndex + requestedPageSize,
+    );
 
-  if (path === '/api/v1/sessions?page=1&pageSize=20' && method === 'GET') {
     await fulfillJson(route, {
-      items: [
-        {
-          id: 'session-previous',
-          startedAt: `${todayDate()}T07:00:00.000Z`,
-          durationSeconds: 1800,
-          totalVolume: 10240,
-          workoutTemplate: {
-            id: 'template-1',
-            name: 'Push Day A',
-          },
-        },
-      ],
+      items,
       pagination: {
-        page: 1,
-        pageSize: 20,
-        total: 1,
+        page: requestedPage,
+        pageSize: requestedPageSize,
+        total: filteredItems.length,
       },
     });
     return;
@@ -254,6 +303,11 @@ async function handleApiRoute(
         { id: 'muscle-2', name: 'Shoulders', volume: 800 },
       ],
     });
+    return;
+  }
+
+  if (path === '/api/v1/streaks/workout' && method === 'GET') {
+    await fulfillJson(route, state.workoutStreak);
     return;
   }
 
@@ -324,6 +378,66 @@ async function handleApiRoute(
     return;
   }
 
+  if (
+    url.pathname.startsWith('/api/v1/sessions/session-1/exercises/') &&
+    method === 'PATCH' &&
+    !url.pathname.endsWith('/reorder') &&
+    !url.pathname.endsWith('/superset')
+  ) {
+    if (state.delays.updateExerciseMs) {
+      await delay(state.delays.updateExerciseMs);
+    }
+
+    const sessionExerciseId = url.pathname.split('/')[6];
+    const payload = request.postDataJSON() as {
+      notes?: string;
+      supersetGroupKey?: string | null;
+    };
+
+    const sessionExercise = updateSessionExercise(
+      state,
+      sessionExerciseId,
+      payload,
+    );
+
+    if (!sessionExercise) {
+      await fulfillNotFound(route, method, path);
+      return;
+    }
+
+    await fulfillJson(route, sessionExercise);
+    return;
+  }
+
+  if (
+    path === '/api/v1/sessions/session-1/exercises/superset' &&
+    method === 'PATCH'
+  ) {
+    const payload = request.postDataJSON() as { exerciseIds?: string[] };
+    const groupKey = payload.exerciseIds?.length ? 'superset-1' : null;
+
+    if (state.activeSession) {
+      state.activeSession = {
+        ...state.activeSession,
+        sessionExercises: state.activeSession.sessionExercises.map(
+          (exercise) =>
+            payload.exerciseIds?.includes(exercise.id)
+              ? {
+                  ...exercise,
+                  supersetGroupKey: groupKey,
+                }
+              : {
+                  ...exercise,
+                  supersetGroupKey: null,
+                },
+        ),
+      };
+    }
+
+    await fulfillJson(route, state.activeSession);
+    return;
+  }
+
   if (path === '/api/v1/exercises?page=1&pageSize=100' && method === 'GET') {
     await fulfillJson(route, {
       items: [
@@ -372,18 +486,94 @@ async function handleApiRoute(
     return;
   }
 
-  await route.fulfill({
-    status: 404,
-    contentType: 'application/json',
-    body: JSON.stringify({
-      error: {
-        message: `Unhandled API route: ${method} ${path}`,
-      },
-    }),
-  });
+  await fulfillNotFound(route, method, path);
 }
 
-function createActiveSession() {
+export function createActiveSession(options?: {
+  includeSecondExercise?: boolean;
+}): {
+  id: string;
+  workoutTemplateId: string;
+  startedAt: string;
+  durationSeconds: number;
+  totalVolume: number;
+  status: string;
+  sessionExercises: Array<{
+    id: string;
+    exerciseTemplateId: string;
+    orderIndex: number;
+    supersetGroupKey: string | null;
+    notes: string | null;
+    exercise: {
+      id: string;
+      name: string;
+    };
+    sets: Array<{
+      id: string;
+      orderIndex: number;
+      reps: number;
+      weight: number;
+      durationSeconds: number;
+      isCompleted: boolean;
+    }>;
+  }>;
+} {
+  const sessionExercises = [
+    {
+      id: 'session-exercise-1',
+      exerciseTemplateId: 'exercise-bench',
+      orderIndex: 0,
+      supersetGroupKey: null,
+      notes: null,
+      exercise: {
+        id: 'exercise-bench',
+        name: 'Bench Press',
+      },
+      sets: [
+        {
+          id: 'set-1',
+          orderIndex: 0,
+          reps: 8,
+          weight: 100,
+          durationSeconds: 0,
+          isCompleted: true,
+        },
+        {
+          id: 'set-2',
+          orderIndex: 1,
+          reps: 8,
+          weight: 100,
+          durationSeconds: 0,
+          isCompleted: false,
+        },
+      ],
+    },
+  ];
+
+  if (options?.includeSecondExercise) {
+    sessionExercises.push({
+      id: 'session-exercise-2',
+      exerciseTemplateId: 'exercise-row',
+      orderIndex: 1,
+      supersetGroupKey: null,
+      notes: null,
+      exercise: {
+        id: 'exercise-row',
+        name: 'Cable Row',
+      },
+      sets: [
+        {
+          id: 'set-3',
+          orderIndex: 0,
+          reps: 10,
+          weight: 80,
+          durationSeconds: 0,
+          isCompleted: false,
+        },
+      ],
+    });
+  }
+
   return {
     id: 'session-1',
     workoutTemplateId: 'template-1',
@@ -391,37 +581,7 @@ function createActiveSession() {
     durationSeconds: 900,
     totalVolume: 5120,
     status: 'ACTIVE',
-    sessionExercises: [
-      {
-        id: 'session-exercise-1',
-        exerciseTemplateId: 'exercise-bench',
-        orderIndex: 0,
-        supersetGroupKey: null,
-        notes: null,
-        exercise: {
-          id: 'exercise-bench',
-          name: 'Bench Press',
-        },
-        sets: [
-          {
-            id: 'set-1',
-            orderIndex: 0,
-            reps: 8,
-            weight: 100,
-            durationSeconds: 0,
-            isCompleted: true,
-          },
-          {
-            id: 'set-2',
-            orderIndex: 1,
-            reps: 8,
-            weight: 100,
-            durationSeconds: 0,
-            isCompleted: false,
-          },
-        ],
-      },
-    ],
+    sessionExercises,
   };
 }
 
@@ -441,6 +601,93 @@ async function fulfillJson(
 
 function todayDate(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+function createSessionHistory(): SessionHistoryItem[] {
+  return [
+    {
+      id: 'session-previous',
+      startedAt: `${todayDate()}T07:00:00.000Z`,
+      durationSeconds: 1800,
+      totalVolume: 10240,
+      status: 'FINISHED',
+      workoutTemplate: {
+        id: 'template-1',
+        name: 'Push Day A',
+      },
+    },
+  ];
+}
+
+function createWorkoutStreak(): WorkoutStreakResponse {
+  return {
+    currentStreakDays: 3,
+    longestStreakDays: 5,
+    lastCompletedDate: todayDate(),
+  };
+}
+
+async function fulfillNotFound(
+  route: Route,
+  method: string,
+  path: string,
+): Promise<void> {
+  await route.fulfill({
+    status: 404,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      error: {
+        message: `Unhandled API route: ${method} ${path}`,
+      },
+    }),
+  });
+}
+
+function updateSessionExercise(
+  state: {
+    activeSession: ActiveSession | null;
+  },
+  sessionExerciseId: string,
+  payload: {
+    notes?: string;
+    supersetGroupKey?: string | null;
+  },
+) {
+  if (!state.activeSession) {
+    return null;
+  }
+
+  let updatedExercise: ActiveSession['sessionExercises'][number] | null = null;
+  state.activeSession = {
+    ...state.activeSession,
+    sessionExercises: state.activeSession.sessionExercises.map((exercise) => {
+      if (exercise.id !== sessionExerciseId) {
+        return exercise;
+      }
+
+      updatedExercise = {
+        ...exercise,
+        notes:
+          payload.notes !== undefined
+            ? payload.notes
+            : (exercise.notes ?? null),
+        supersetGroupKey:
+          payload.supersetGroupKey !== undefined
+            ? payload.supersetGroupKey
+            : exercise.supersetGroupKey,
+      };
+
+      return updatedExercise;
+    }),
+  };
+
+  return updatedExercise;
+}
+
+function delay(durationMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, durationMs);
+  });
 }
 
 function base64UrlEncode(value: string): string {
