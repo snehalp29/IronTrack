@@ -1,9 +1,12 @@
 import { expect, test } from '@playwright/test';
 
+import { mockApi, seedAuthenticatedSession } from './support/api';
+
 test.describe('Onboarding Flow', () => {
   test('first-time user can register and complete initial setup steps', async ({
     page,
   }) => {
+    await mockApi(page);
     await page.goto('/register');
 
     await expect(page.getByRole('heading', { name: 'Register' })).toBeVisible();
@@ -36,7 +39,7 @@ test.describe('Onboarding Flow', () => {
       page.getByRole('heading', { name: 'Select Exercise' }),
     ).toBeVisible();
 
-    await page.getByRole('link', { name: 'Create New Exercise' }).click();
+    await page.getByRole('button', { name: 'Create New Exercise' }).click();
     await expect(page).toHaveURL(/\/exercise\/create$/);
     await expect(
       page.getByRole('heading', { name: 'Create / Edit Exercise' }),
@@ -67,18 +70,17 @@ test.describe('Onboarding Flow', () => {
     await page.getByRole('link', { name: 'Dashboard' }).click();
     await expect(page).toHaveURL(/\/$/);
     await page.getByRole('link', { name: 'Start' }).click();
+    await expect(page).toHaveURL(/\/workout\/template-1\/preview$/);
+    await page.getByRole('button', { name: 'Start Workout' }).click();
     await expect(page).toHaveURL(/\/workout\/active$/);
 
-    await page.getByRole('button', { name: 'Start Session' }).click();
     await expect(
       page.getByRole('heading', { name: 'Active Workout' }),
     ).toBeVisible();
 
-    const setButtons = page.getByRole('button', { name: /Set \d:/ });
-    const setCount = await setButtons.count();
-    for (let index = 0; index < setCount; index += 1) {
-      await setButtons.nth(index).click();
-    }
+    await page
+      .getByRole('button', { name: /Set 2: .*tap to complete/ })
+      .click();
 
     await page.getByRole('button', { name: 'Finish Workout' }).click();
     await expect(page).toHaveURL(/\/workout\/complete$/);
@@ -88,6 +90,8 @@ test.describe('Onboarding Flow', () => {
   });
 
   test('existing user can log in and reach setup pages', async ({ page }) => {
+    await seedAuthenticatedSession(page);
+    await mockApi(page);
     await page.goto('/login');
 
     await expect(page.getByRole('heading', { name: 'Login' })).toBeVisible();

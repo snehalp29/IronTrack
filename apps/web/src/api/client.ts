@@ -1,7 +1,20 @@
-import { clearAuthSession, getAuthSession } from '../auth/auth-session';
+import type { ZodType } from 'zod';
+
+import {
+  clearAuthSession,
+  getAuthSession,
+  persistAuthSession,
+} from '../auth/auth-session';
 
 const DEFAULT_API_BASE_URL = 'http://localhost:3000/api/v1';
 const API_BASE_URL = resolveApiBaseUrl(import.meta.env.VITE_API_URL);
+let loginRedirectHandler: ((path: string) => void) | null = null;
+let refreshInFlight: Promise<boolean> | null = null;
+
+interface ApiFetchOptions<T> extends RequestInit {
+  schema?: ZodType<T>;
+  skipAuthRefresh?: boolean;
+}
 
 export function resolveApiBaseUrl(
   configuredApiUrl: string | undefined,
@@ -20,25 +33,38 @@ export function buildApiUrl(baseUrl: string, path: string): string {
   return `${normalizedBaseUrl}${normalizedPath}`;
 }
 
+export function setLoginRedirect(
+  handler: ((path: string) => void) | null,
+): void {
+  loginRedirectHandler = handler;
+}
+
 export async function apiFetch<T>(
   path: string,
-  init?: RequestInit,
+  init?: ApiFetchOptions<T>,
 ): Promise<T | undefined> {
-  const headers = normalizeHeaders(init?.headers);
-  attachAuthHeader(headers);
-  const body = normalizeRequestBody(init?.body, headers);
-
-  const response = await fetch(buildApiUrl(API_BASE_URL, path), {
-    ...init,
-    headers,
-    body,
-  });
+  const response = await performRequest(path, init);
 
   if (!response.ok) {
     const payload: unknown = await response.json().catch(() => null);
+    if (response.status === 401 && !init?.skipAuthRefresh) {
+      try {
+        if (await refreshStoredSession()) {
+          return apiFetch(path, {
+            ...init,
+            skipAuthRefresh: true,
+          });
+        }
+      } catch (error) {
+        clearAuthSession();
+        redirectToLogin('/login');
+        throw error;
+      }
+    }
+
     if (response.status === 401) {
       clearAuthSession();
-      redirectToLogin();
+      redirectToLogin('/login');
     }
     throw new Error(
       getApiErrorMessage(payload) ?? `Request failed (${response.status})`,
@@ -49,7 +75,7 @@ export async function apiFetch<T>(
     return undefined;
   }
 
-  return parseJsonIfNotEmpty<T>(response);
+  return parseJsonIfNotEmpty(response, init?.schema);
 }
 
 function attachAuthHeader(headers: Record<string, string>): void {
@@ -61,15 +87,48 @@ function attachAuthHeader(headers: Record<string, string>): void {
   headers.Authorization = `Bearer ${session.accessToken}`;
 }
 
+async function performRequest<T>(
+  path: string,
+  init?: ApiFetchOptions<T>,
+): Promise<Response> {
+  const {
+    schema: _schema,
+    skipAuthRefresh: _skipAuthRefresh,
+    ...requestInit
+  } = init ?? {};
+  void _schema;
+  void _skipAuthRefresh;
+  const headers = normalizeHeaders(init?.headers);
+  attachAuthHeader(headers);
+  const body = normalizeRequestBody(init?.body, headers);
+
+  return fetch(buildApiUrl(API_BASE_URL, path), {
+    ...requestInit,
+    headers,
+    body,
+  });
+}
+
 async function parseJsonIfNotEmpty<T>(
   response: Response,
+  schema?: ZodType<T>,
 ): Promise<T | undefined> {
   const text = await response.text();
   if (text.trim().length === 0) {
     return undefined;
   }
 
-  return JSON.parse(text) as T;
+  const payload = JSON.parse(text) as unknown;
+  if (!schema) {
+    return payload as T;
+  }
+
+  const parsed = schema.safeParse(payload);
+  if (!parsed.success) {
+    throw new Error('API response shape was invalid');
+  }
+
+  return parsed.data;
 }
 
 function isEmptySuccessfulResponse(response: Response): boolean {
@@ -127,13 +186,60 @@ function hasHeader(headers: Record<string, string>, name: string): boolean {
   return Object.keys(headers).some((key) => key.toLowerCase() === target);
 }
 
-function redirectToLogin(): void {
-  const location = readBrowserLocation();
-  if (!location || location.pathname === '/login') {
+async function refreshStoredSession(): Promise<boolean> {
+  const session = getAuthSession();
+  if (!session?.accessToken) {
+    return false;
+  }
+
+  if (!refreshInFlight) {
+    refreshInFlight = fetch(buildApiUrl(API_BASE_URL, '/auth/refresh'), {
+      method: 'POST',
+      credentials: 'include',
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          const payload: unknown = await response.json().catch(() => null);
+          throw new Error(
+            getApiErrorMessage(payload) ??
+              `Request failed (${response.status})`,
+          );
+        }
+
+        const payload = await parseJsonIfNotEmpty(response);
+        if (
+          !payload ||
+          typeof payload !== 'object' ||
+          typeof (payload as { accessToken?: unknown }).accessToken !== 'string'
+        ) {
+          throw new Error('API response shape was invalid');
+        }
+
+        persistAuthSession({
+          accessToken: (payload as { accessToken: string }).accessToken,
+        });
+        return true;
+      })
+      .finally(() => {
+        refreshInFlight = null;
+      });
+  }
+
+  return refreshInFlight;
+}
+
+function redirectToLogin(path: string): void {
+  if (loginRedirectHandler) {
+    loginRedirectHandler(path);
     return;
   }
 
-  location.assign('/login');
+  const location = readBrowserLocation();
+  if (!location || location.pathname === path) {
+    return;
+  }
+
+  location.assign(path);
 }
 
 function normalizeRequestBody(

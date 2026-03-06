@@ -1,31 +1,60 @@
+import { useSettingsPageData } from '../lib/web-data';
+
 export function SettingsPage() {
+  const data = useSettingsPageData();
+
   return (
     <div className="card">
       <h1>Settings</h1>
-      <div className="grid">
+      {data.errorMessage ? <p className="meta">{data.errorMessage}</p> : null}
+      <form className="grid" onSubmit={data.onSave}>
         <label>
           Name
-          <input defaultValue="Iron Lifter" />
+          <input value={data.name} onChange={data.onNameChange} />
         </label>
         <label>
           Timezone
-          <select defaultValue="UTC">
-            <option value="UTC">UTC</option>
-            <option value="America/New_York">America/New_York</option>
-            <option value="America/Los_Angeles">America/Los_Angeles</option>
+          <select value={data.timezone} onChange={data.onTimezoneChange}>
+            {data.timezones.map((timezone) => (
+              <option key={timezone} value={timezone}>
+                {timezone}
+              </option>
+            ))}
           </select>
         </label>
         <label>
           Units
-          <select defaultValue="METRIC">
+          <select
+            value={data.unitPreference}
+            onChange={data.onUnitPreferenceChange}
+          >
             <option value="METRIC">Metric (kg)</option>
             <option value="IMPERIAL">Imperial (lb)</option>
           </select>
         </label>
-        <button>Save Settings</button>
-        <button className="secondary">Logout</button>
-        <button style={{ background: '#7f1d1d' }}>Delete Account</button>
-      </div>
+        <label>
+          Default Rest (seconds)
+          <input
+            type="number"
+            min="1"
+            value={data.restTimerDefaultSeconds}
+            onChange={data.onRestTimerDefaultSecondsChange}
+          />
+        </label>
+        <button type="submit" disabled={data.isSaving}>
+          Save Settings
+        </button>
+        <button type="button" className="secondary" onClick={data.onLogout}>
+          Logout
+        </button>
+        <button
+          type="button"
+          style={{ background: '#7f1d1d' }}
+          onClick={data.onDeleteAccount}
+        >
+          Delete Account
+        </button>
+      </form>
     </div>
   );
 }

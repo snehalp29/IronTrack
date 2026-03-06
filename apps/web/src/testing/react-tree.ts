@@ -5,8 +5,9 @@ type ElementProps = Record<string, unknown>;
 
 export type ElementWithProps = ReactElement<ElementProps>;
 export type ClickableElement = ReactElement<{
-  onClick?: () => void;
   children?: ReactNode;
+  disabled?: boolean;
+  onClick?: () => void;
 }>;
 export type FormElement = ReactElement<{
   onSubmit?: (event?: { preventDefault?: () => void }) => void;

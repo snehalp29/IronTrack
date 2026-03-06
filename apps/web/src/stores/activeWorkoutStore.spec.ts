@@ -39,14 +39,19 @@ describe('activeWorkoutStore', () => {
     const { start, finish, clear } = useActiveWorkoutStore.getState();
     const sessionExercises: SessionExercise[] = [makeExercise('se-1', 0)];
 
-    start('session-1', sessionExercises);
+    start('session-1', sessionExercises, {
+      startedAt: '2026-03-06T12:00:00.000Z',
+    });
     expect(useActiveWorkoutStore.getState().state).toBe('IN_PROGRESS');
     expect(useActiveWorkoutStore.getState().sessionId).toBe('session-1');
-    expect(useActiveWorkoutStore.getState().startedAt).toBeTypeOf('string');
+    expect(useActiveWorkoutStore.getState().startedAt).toBe(
+      '2026-03-06T12:00:00.000Z',
+    );
 
     const summary = { totalVolume: 1000, durationSeconds: 1200, prs: 1 };
     finish(summary);
     expect(useActiveWorkoutStore.getState().state).toBe('COMPLETED');
+    expect(useActiveWorkoutStore.getState().sessionId).toBeUndefined();
     expect(useActiveWorkoutStore.getState().completeSummary).toEqual(summary);
 
     clear();
@@ -57,6 +62,7 @@ describe('activeWorkoutStore', () => {
       exercises: [],
       restTimerSeconds: 0,
       restTimerActive: false,
+      restTimerDefaultSeconds: 90,
       completeSummary: undefined,
     });
   });
@@ -105,12 +111,14 @@ describe('activeWorkoutStore', () => {
     expect(exerciseTwo.sets.map((setItem) => setItem.id)).toEqual(['e2-set-1']);
   });
 
-  it('updates sets and starts rest timer only when a set is marked completed', () => {
-    const { start, updateSet } = useActiveWorkoutStore.getState();
+  it('updates sets and starts rest timer from the configured default when a set is marked completed', () => {
+    const { start, setRestTimerDefault, updateSet } =
+      useActiveWorkoutStore.getState();
     start('session-4', [
       makeExercise('e1', 0, [makeSet('e1-set-1', 0), makeSet('e1-set-2', 1)]),
       makeExercise('e2', 1),
     ]);
+    setRestTimerDefault(150);
 
     updateSet('e1', 'e1-set-1', { reps: 10 });
     expect(useActiveWorkoutStore.getState().restTimerSeconds).toBe(0);
@@ -123,8 +131,11 @@ describe('activeWorkoutStore', () => {
     );
 
     updateSet('e1', 'e1-set-1', { isCompleted: true });
-    expect(useActiveWorkoutStore.getState().restTimerSeconds).toBe(90);
+    expect(useActiveWorkoutStore.getState().restTimerSeconds).toBe(150);
     expect(useActiveWorkoutStore.getState().restTimerActive).toBe(true);
+    expect(useActiveWorkoutStore.getState().restTimerEndsAt).toBeTypeOf(
+      'number',
+    );
     expect(
       useActiveWorkoutStore.getState().exercises[0]?.sets[0]?.isCompleted,
     ).toBe(true);
@@ -163,8 +174,10 @@ describe('activeWorkoutStore', () => {
     ).toBe(undefined);
   });
 
-  it('handles rest timer transitions', () => {
+  it('handles rest timer transitions from an absolute end timestamp', () => {
     const { setRestTimer, tickRestTimer } = useActiveWorkoutStore.getState();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-06T12:00:00.000Z'));
 
     tickRestTimer();
     expect(useActiveWorkoutStore.getState().restTimerSeconds).toBe(0);
@@ -172,17 +185,47 @@ describe('activeWorkoutStore', () => {
 
     setRestTimer(3);
     expect(useActiveWorkoutStore.getState().restTimerActive).toBe(true);
+    expect(useActiveWorkoutStore.getState().restTimerEndsAt).toBe(
+      new Date('2026-03-06T12:00:03.000Z').getTime(),
+    );
 
+    vi.setSystemTime(new Date('2026-03-06T12:00:01.500Z'));
     tickRestTimer();
     expect(useActiveWorkoutStore.getState().restTimerSeconds).toBe(2);
 
     setRestTimer(1);
+    vi.setSystemTime(new Date('2026-03-06T12:00:03.100Z'));
     tickRestTimer();
     expect(useActiveWorkoutStore.getState().restTimerSeconds).toBe(0);
     expect(useActiveWorkoutStore.getState().restTimerActive).toBe(false);
 
     setRestTimer(0);
     expect(useActiveWorkoutStore.getState().restTimerActive).toBe(false);
+  });
+
+  it('persists the configured rest timer default across workout starts', () => {
+    const { setRestTimer, setRestTimerDefault, start } =
+      useActiveWorkoutStore.getState();
+
+    setRestTimer(45);
+    setRestTimerDefault(120);
+    expect(useActiveWorkoutStore.getState().restTimerActive).toBe(true);
+
+    start('session-6', [makeExercise('e1', 0)]);
+
+    expect(useActiveWorkoutStore.getState().restTimerSeconds).toBe(0);
+    expect(useActiveWorkoutStore.getState().restTimerActive).toBe(false);
+    expect(useActiveWorkoutStore.getState().restTimerDefaultSeconds).toBe(120);
+  });
+
+  it('declares a persisted store version and migration handler', () => {
+    const persistOptions = useActiveWorkoutStore.persist.getOptions() as {
+      migrate?: (persistedState: unknown) => unknown;
+      version?: number;
+    };
+
+    expect(persistOptions.version).toBe(1);
+    expect(persistOptions.migrate).toBeTypeOf('function');
   });
 
   it('uses browser localStorage when available', async () => {

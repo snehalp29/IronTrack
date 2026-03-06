@@ -60,12 +60,14 @@ describe('auth schemas', () => {
     ).toBe(false);
   });
 
-  it('requires refresh token minimum length', () => {
+  it('accepts an optional refresh token body for cookie-backed flows', () => {
     expect(
       refreshSchema.safeParse({
         refreshToken: 'valid-refresh-token-123',
       }).success,
     ).toBe(true);
+    expect(refreshSchema.safeParse({}).success).toBe(true);
+    expect(refreshSchema.safeParse(undefined).success).toBe(true);
     expect(
       refreshSchema.safeParse({
         refreshToken: 'short',

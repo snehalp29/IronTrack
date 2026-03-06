@@ -1,5 +1,9 @@
 import { apiFetch } from '../api/client';
-import { persistAuthSession } from './auth-session';
+import {
+  clearAuthSession,
+  getAuthSession,
+  persistAuthSession,
+} from './auth-session';
 
 export interface LoginWithPasswordInput {
   email: string;
@@ -41,11 +45,13 @@ interface GoogleWindow {
 
 const GOOGLE_IDENTITY_SCRIPT_ID = 'irontrack-google-identity-client';
 const GOOGLE_IDENTITY_SCRIPT_URL = 'https://accounts.google.com/gsi/client';
+const GOOGLE_SIGN_IN_TIMEOUT_MS = 15_000;
 let googleIdentityClientPromise: Promise<GoogleAccountsIdApi> | null = null;
 
 export async function loginWithPassword(input: LoginWithPasswordInput) {
   const authSession = await apiFetch('/auth/login', {
     method: 'POST',
+    credentials: 'include',
     body: input as unknown as BodyInit,
   });
 
@@ -55,6 +61,7 @@ export async function loginWithPassword(input: LoginWithPasswordInput) {
 export async function registerWithPassword(input: RegisterWithPasswordInput) {
   const authSession = await apiFetch('/auth/register', {
     method: 'POST',
+    credentials: 'include',
     body: input as unknown as BodyInit,
   });
 
@@ -64,6 +71,7 @@ export async function registerWithPassword(input: RegisterWithPasswordInput) {
 export async function exchangeGoogleIdToken(idToken: string) {
   const authSession = await apiFetch('/auth/google', {
     method: 'POST',
+    credentials: 'include',
     body: { idToken } as unknown as BodyInit,
   });
 
@@ -78,19 +86,48 @@ export async function signInWithGoogle() {
   return exchangeGoogleIdToken(idToken);
 }
 
+export async function refreshStoredSession() {
+  const session = getAuthSession();
+  if (!session?.accessToken) {
+    throw new Error('No persisted session to refresh');
+  }
+
+  const authSession = await apiFetch('/auth/refresh', {
+    method: 'POST',
+    credentials: 'include',
+    skipAuthRefresh: true,
+  });
+
+  return persistAuthSessionFromPayload(authSession);
+}
+
+export async function logoutCurrentSession() {
+  const session = getAuthSession();
+  if (!session?.accessToken) {
+    clearAuthSession();
+    return { success: true };
+  }
+
+  const result = await apiFetch('/auth/logout', {
+    method: 'POST',
+    credentials: 'include',
+    skipAuthRefresh: true,
+  });
+  clearAuthSession();
+  return result ?? { success: true };
+}
+
 function persistAuthSessionFromPayload(payload: unknown) {
   if (
     !payload ||
     typeof payload !== 'object' ||
-    typeof (payload as { accessToken?: unknown }).accessToken !== 'string' ||
-    typeof (payload as { refreshToken?: unknown }).refreshToken !== 'string'
+    typeof (payload as { accessToken?: unknown }).accessToken !== 'string'
   ) {
     throw new Error('Auth response did not include a valid session');
   }
 
   return persistAuthSession({
     accessToken: (payload as { accessToken: string }).accessToken,
-    refreshToken: (payload as { refreshToken: string }).refreshToken,
   });
 }
 
@@ -104,20 +141,25 @@ function resolveGoogleClientId(): string {
 }
 
 async function loadGoogleAccountsId(): Promise<GoogleAccountsIdApi> {
+  const existingApi = readGoogleAccountsId();
+  if (existingApi) {
+    return existingApi;
+  }
+
   if (googleIdentityClientPromise) {
     return googleIdentityClientPromise;
   }
 
   googleIdentityClientPromise = new Promise<GoogleAccountsIdApi>(
     (resolve, reject) => {
-      if (typeof document === 'undefined') {
-        reject(new Error('Google sign-in is only available in the browser'));
+      const availableApi = readGoogleAccountsId();
+      if (availableApi) {
+        resolve(availableApi);
         return;
       }
 
-      const existingApi = readGoogleAccountsId();
-      if (existingApi) {
-        resolve(existingApi);
+      if (typeof document === 'undefined') {
+        reject(new Error('Google sign-in is only available in the browser'));
         return;
       }
 
@@ -127,6 +169,7 @@ async function loadGoogleAccountsId(): Promise<GoogleAccountsIdApi> {
       const script = existingScript ?? document.createElement('script');
 
       const handleReady = () => {
+        script.dataset.loaded = 'true';
         const googleAccountsId = readGoogleAccountsId();
         if (!googleAccountsId) {
           reject(new Error('Google sign-in client failed to initialize'));
@@ -135,6 +178,11 @@ async function loadGoogleAccountsId(): Promise<GoogleAccountsIdApi> {
 
         resolve(googleAccountsId);
       };
+
+      if (existingScript?.dataset.loaded === 'true') {
+        handleReady();
+        return;
+      }
 
       if (!existingScript) {
         script.id = GOOGLE_IDENTITY_SCRIPT_ID;
@@ -183,18 +231,40 @@ function requestGoogleIdToken(
 ): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     let settled = false;
+    const timeoutId = setTimeout(() => {
+      rejectOnce(new Error('Google sign-in timed out'));
+    }, GOOGLE_SIGN_IN_TIMEOUT_MS);
+
+    const resolveOnce = (credential: string) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      clearTimeout(timeoutId);
+      resolve(credential);
+    };
+
+    const rejectOnce = (error: Error) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      clearTimeout(timeoutId);
+      reject(error);
+    };
 
     googleAccountsId.initialize({
       client_id: clientId,
       callback: (response) => {
         const credential = response.credential?.trim();
         if (!credential) {
-          reject(new Error('Google sign-in did not return an ID token'));
+          rejectOnce(new Error('Google sign-in did not return an ID token'));
           return;
         }
 
-        settled = true;
-        resolve(credential);
+        resolveOnce(credential);
       },
     });
 
@@ -204,7 +274,7 @@ function requestGoogleIdToken(
       }
 
       if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-        reject(new Error('Google sign-in was not completed'));
+        rejectOnce(new Error('Google sign-in was not completed'));
       }
     });
   });

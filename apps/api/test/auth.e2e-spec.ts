@@ -1,5 +1,6 @@
 import { INestApplication, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import cookieParser from 'cookie-parser';
 import { randomUUID } from 'crypto';
 import request from 'supertest';
 
@@ -263,6 +264,7 @@ describe('AuthController (e2e)', () => {
 
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api/v1');
+    app.use(cookieParser());
     await app.init();
   });
 
@@ -294,36 +296,40 @@ describe('AuthController (e2e)', () => {
 
     expect(registerRes.status).toBe(201);
     expect(registerRes.body.accessToken).toBeTruthy();
-    expect(registerRes.body.refreshToken).toBeTruthy();
+    expect(registerRes.body.refreshToken).toBeUndefined();
+    expect(registerRes.headers['set-cookie']?.[0]).toContain(
+      'irontrack_refresh_token=',
+    );
 
-    const loginRes = await request(app.getHttpServer())
-      .post('/api/v1/auth/login')
-      .send({
-        email: 'e2e@example.com',
-        password: 'Str0ngPassword!',
-      });
+    const agent = request.agent(app.getHttpServer());
+
+    const loginRes = await agent.post('/api/v1/auth/login').send({
+      email: 'e2e@example.com',
+      password: 'Str0ngPassword!',
+    });
 
     expect(loginRes.status).toBe(200);
-    expect(loginRes.body.refreshToken).toBeTruthy();
+    expect(loginRes.body.refreshToken).toBeUndefined();
+    expect(loginRes.headers['set-cookie']?.[0]).toContain(
+      'irontrack_refresh_token=',
+    );
 
-    const refreshRes = await request(app.getHttpServer())
-      .post('/api/v1/auth/refresh')
-      .send({
-        refreshToken: loginRes.body.refreshToken,
-      });
+    const refreshRes = await agent.post('/api/v1/auth/refresh').send({});
 
     expect(refreshRes.status).toBe(200);
     expect(refreshRes.body.accessToken).toBeTruthy();
+    expect(refreshRes.body.refreshToken).toBeUndefined();
 
-    const logoutRes = await request(app.getHttpServer())
+    const logoutRes = await agent
       .post('/api/v1/auth/logout')
       .set('Authorization', `Bearer ${refreshRes.body.accessToken}`)
-      .send({
-        refreshToken: refreshRes.body.refreshToken,
-      });
+      .send({});
 
     expect(logoutRes.status).toBe(200);
     expect(logoutRes.body.success).toBe(true);
+    expect(logoutRes.headers['set-cookie']?.[0]).toContain(
+      'irontrack_refresh_token=;',
+    );
   });
 
   it('google login validates id token and issues tokens', async () => {
@@ -335,7 +341,10 @@ describe('AuthController (e2e)', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.accessToken).toBeTruthy();
-    expect(response.body.refreshToken).toBeTruthy();
+    expect(response.body.refreshToken).toBeUndefined();
+    expect(response.headers['set-cookie']?.[0]).toContain(
+      'irontrack_refresh_token=',
+    );
     expect(googleTokenVerifierMock.verifyIdToken).toHaveBeenCalledWith(
       'valid-google-id-token-1234567890',
     );

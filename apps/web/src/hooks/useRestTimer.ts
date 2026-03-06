@@ -11,7 +11,7 @@ export function useRestTimer(): void {
       return;
     }
 
-    const timer = window.setInterval(() => tick(), 1000);
+    const timer = window.setInterval(() => tick(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [active, tick]);
 }

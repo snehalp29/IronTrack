@@ -22,7 +22,7 @@ function mockStoreState(active: boolean, tick: () => void) {
     (
       selector: (state: {
         restTimerActive: boolean;
-        tickRestTimer: () => void;
+        tickRestTimer: (now?: number) => void;
       }) => unknown,
     ) =>
       selector({
@@ -94,6 +94,7 @@ describe('useRestTimer', () => {
     expect(intervalCallback).toBeDefined();
     intervalCallback?.();
     expect(tick).toHaveBeenCalledTimes(1);
+    expect(tick).toHaveBeenCalledWith(expect.any(Number));
 
     expect(cleanup).toBeDefined();
     cleanup?.();

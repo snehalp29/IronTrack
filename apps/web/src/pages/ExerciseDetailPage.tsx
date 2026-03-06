@@ -2,12 +2,19 @@ import { useSearchParams } from 'react-router-dom';
 
 export function ExerciseDetailPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const tab = searchParams.get('tab') ?? 'guide';
+  const rawTab = searchParams.get('tab');
+  const tab = rawTab === 'history' ? 'history' : 'guide';
   const setTab = (nextTab: 'guide' | 'history') => {
     const nextSearchParams = new URLSearchParams(searchParams);
     nextSearchParams.set('tab', nextTab);
     setSearchParams(nextSearchParams, { replace: true });
   };
+
+  if (rawTab && rawTab !== 'guide' && rawTab !== 'history') {
+    const nextSearchParams = new URLSearchParams(searchParams);
+    nextSearchParams.set('tab', 'guide');
+    setSearchParams(nextSearchParams, { replace: true });
+  }
 
   return (
     <div className="card">

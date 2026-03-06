@@ -1,6 +1,12 @@
 import { useForm } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
 
+import {
+  confirmPasswordValidationRules,
+  emailValidationRules,
+  getAuthErrorMessage,
+  passwordValidationRules,
+} from '../auth/auth-form';
 import { registerWithPassword, signInWithGoogle } from '../auth/auth-service';
 
 interface RegisterForm {
@@ -12,15 +18,17 @@ interface RegisterForm {
 
 export function RegisterPage() {
   const navigate = useNavigate();
-  const { register, handleSubmit, watch } = useForm<RegisterForm>({
-    defaultValues: {
-      name: '',
-      email: '',
-      password: '',
-      confirmPassword: '',
-    },
-  });
+  const { clearErrors, formState, handleSubmit, register, setError, watch } =
+    useForm<RegisterForm>({
+      defaultValues: {
+        name: '',
+        email: '',
+        password: '',
+        confirmPassword: '',
+      },
+    });
   const password = watch('password');
+  const rootError = formState.errors.root?.message?.toString();
 
   return (
     <div className="layout card">
@@ -28,54 +36,75 @@ export function RegisterPage() {
       <form
         className="grid"
         onSubmit={handleSubmit(async ({ email, name, password }) => {
-          await registerWithPassword({ email, name, password });
-          navigate('/');
+          clearErrors('root');
+          try {
+            await registerWithPassword({ email, name, password });
+            navigate('/');
+          } catch (error) {
+            setError('root', {
+              message: getAuthErrorMessage(error),
+              type: 'server',
+            });
+          }
         })}
       >
-        <label htmlFor="name">Name</label>
+        {rootError ? <p role="alert">{rootError}</p> : null}
+        <label htmlFor="register-name">Name</label>
         <input
-          id="name"
+          id="register-name"
           type="text"
           autoComplete="name"
           placeholder="Name"
           {...register('name')}
         />
-        <label htmlFor="email">Email</label>
+        <label htmlFor="register-email">Email</label>
         <input
-          id="email"
+          id="register-email"
           type="email"
           autoComplete="email"
           placeholder="Email"
-          {...register('email')}
+          {...register('email', emailValidationRules)}
         />
-        <label htmlFor="password">Password</label>
+        <label htmlFor="register-password">Password</label>
         <input
-          id="password"
+          id="register-password"
           type="password"
           autoComplete="new-password"
           placeholder="Password"
-          {...register('password')}
+          {...register('password', passwordValidationRules)}
         />
-        <label htmlFor="confirmPassword">Confirm Password</label>
+        <label htmlFor="register-confirm-password">Confirm Password</label>
         <input
-          id="confirmPassword"
+          id="register-confirm-password"
           type="password"
           autoComplete="new-password"
           placeholder="Confirm Password"
-          {...register('confirmPassword', {
-            validate: (value) => value === password || 'Passwords must match',
-          })}
+          {...register(
+            'confirmPassword',
+            confirmPasswordValidationRules(password),
+          )}
         />
-        <button type="submit">Create Account</button>
+        <button type="submit" disabled={formState.isSubmitting}>
+          {formState.isSubmitting ? 'Creating Account...' : 'Create Account'}
+        </button>
         <button
           type="button"
           className="secondary"
+          disabled={formState.isSubmitting}
           onClick={async () => {
-            await signInWithGoogle();
-            navigate('/');
+            clearErrors('root');
+            try {
+              await signInWithGoogle();
+              navigate('/');
+            } catch (error) {
+              setError('root', {
+                message: getAuthErrorMessage(error),
+                type: 'server',
+              });
+            }
           }}
         >
-          Sign Up with Google
+          Continue with Google
         </button>
       </form>
       <small>

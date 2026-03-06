@@ -1,6 +1,11 @@
 import { useForm } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
 
+import {
+  emailValidationRules,
+  getAuthErrorMessage,
+  passwordValidationRules,
+} from '../auth/auth-form';
 import { loginWithPassword, signInWithGoogle } from '../auth/auth-service';
 
 interface LoginForm {
@@ -10,9 +15,11 @@ interface LoginForm {
 
 export function LoginPage() {
   const navigate = useNavigate();
-  const { register, handleSubmit } = useForm<LoginForm>({
-    defaultValues: { email: '', password: '' },
-  });
+  const { clearErrors, formState, handleSubmit, register, setError } =
+    useForm<LoginForm>({
+      defaultValues: { email: '', password: '' },
+    });
+  const rootError = formState.errors.root?.message?.toString();
 
   return (
     <div className="layout card">
@@ -20,17 +27,26 @@ export function LoginPage() {
       <form
         className="grid"
         onSubmit={handleSubmit(async ({ email, password }) => {
-          await loginWithPassword({ email, password });
-          navigate('/');
+          clearErrors('root');
+          try {
+            await loginWithPassword({ email, password });
+            navigate('/');
+          } catch (error) {
+            setError('root', {
+              message: getAuthErrorMessage(error),
+              type: 'server',
+            });
+          }
         })}
       >
+        {rootError ? <p role="alert">{rootError}</p> : null}
         <label htmlFor="login-email">Email</label>
         <input
           id="login-email"
           type="email"
           autoComplete="email"
           placeholder="Email"
-          {...register('email')}
+          {...register('email', emailValidationRules)}
         />
         <label htmlFor="login-password">Password</label>
         <input
@@ -38,15 +54,26 @@ export function LoginPage() {
           type="password"
           autoComplete="current-password"
           placeholder="Password"
-          {...register('password')}
+          {...register('password', passwordValidationRules)}
         />
-        <button type="submit">Sign In</button>
+        <button type="submit" disabled={formState.isSubmitting}>
+          {formState.isSubmitting ? 'Signing In...' : 'Sign In'}
+        </button>
         <button
           type="button"
           className="secondary"
+          disabled={formState.isSubmitting}
           onClick={async () => {
-            await signInWithGoogle();
-            navigate('/');
+            clearErrors('root');
+            try {
+              await signInWithGoogle();
+              navigate('/');
+            } catch (error) {
+              setError('root', {
+                message: getAuthErrorMessage(error),
+                type: 'server',
+              });
+            }
           }}
         >
           Continue with Google

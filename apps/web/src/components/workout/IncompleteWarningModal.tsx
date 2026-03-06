@@ -1,3 +1,5 @@
+import { focusInitialModalTarget, handleModalKeyDown } from './modal-focus';
+
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -14,6 +16,9 @@ export function IncompleteWarningModal({ open, onClose, onConfirm }: Props) {
       aria-modal="true"
       aria-labelledby="incomplete-warning-title"
       aria-describedby="incomplete-warning-description"
+      ref={focusInitialModalTarget}
+      tabIndex={-1}
+      onKeyDown={(event) => handleModalKeyDown(event, onClose)}
     >
       <h3 id="incomplete-warning-title">Incomplete Workout</h3>
       <p id="incomplete-warning-description" className="meta">

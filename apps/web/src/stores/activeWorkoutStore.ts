@@ -28,19 +28,29 @@ export interface SessionExercise {
   sets: WorkoutSet[];
 }
 
+const ACTIVE_WORKOUT_STORE_VERSION = 1;
+
 interface ActiveWorkoutState {
   state: WorkoutFlowState;
   sessionId?: string;
   startedAt?: string;
   exercises: SessionExercise[];
   restTimerSeconds: number;
+  restTimerEndsAt?: number;
   restTimerActive: boolean;
+  restTimerDefaultSeconds: number;
   completeSummary?: {
     totalVolume: number;
     durationSeconds: number;
     prs: number;
   };
-  start: (sessionId: string, exercises: SessionExercise[]) => void;
+  start: (
+    sessionId: string,
+    exercises: SessionExercise[],
+    options?: {
+      startedAt?: string;
+    },
+  ) => void;
   addExercise: (exercise: SessionExercise) => void;
   removeExercise: (exerciseId: string) => void;
   reorderExercises: (items: Array<{ id: string; orderIndex: number }>) => void;
@@ -58,7 +68,8 @@ interface ActiveWorkoutState {
     prs: number;
   }) => void;
   setRestTimer: (seconds: number) => void;
-  tickRestTimer: () => void;
+  setRestTimerDefault: (seconds: number) => void;
+  tickRestTimer: (nowMs?: number) => void;
   clear: () => void;
 }
 
@@ -83,6 +94,89 @@ function createNoopStorage(): StateStorage {
   };
 }
 
+function createInitialWorkoutSnapshot() {
+  return {
+    state: 'IDLE' as WorkoutFlowState,
+    sessionId: undefined as string | undefined,
+    startedAt: undefined as string | undefined,
+    exercises: [] as SessionExercise[],
+    restTimerSeconds: 0,
+    restTimerEndsAt: undefined as number | undefined,
+    restTimerActive: false,
+    restTimerDefaultSeconds: 90,
+    completeSummary: undefined as
+      | {
+          totalVolume: number;
+          durationSeconds: number;
+          prs: number;
+        }
+      | undefined,
+  };
+}
+
+function isWorkoutFlowState(value: unknown): value is WorkoutFlowState {
+  return (
+    value === 'IDLE' ||
+    value === 'STARTING' ||
+    value === 'IN_PROGRESS' ||
+    value === 'FINISHING' ||
+    value === 'COMPLETED'
+  );
+}
+
+function normalizePersistedWorkoutState(persistedState: unknown) {
+  const initialState = createInitialWorkoutSnapshot();
+  if (!persistedState || typeof persistedState !== 'object') {
+    return initialState;
+  }
+
+  const maybeState = persistedState as Partial<typeof initialState>;
+  return {
+    state: isWorkoutFlowState(maybeState.state)
+      ? maybeState.state
+      : initialState.state,
+    sessionId:
+      typeof maybeState.sessionId === 'string'
+        ? maybeState.sessionId
+        : initialState.sessionId,
+    startedAt:
+      typeof maybeState.startedAt === 'string'
+        ? maybeState.startedAt
+        : initialState.startedAt,
+    exercises: Array.isArray(maybeState.exercises)
+      ? maybeState.exercises
+      : initialState.exercises,
+    restTimerSeconds:
+      typeof maybeState.restTimerSeconds === 'number' &&
+      Number.isFinite(maybeState.restTimerSeconds)
+        ? maybeState.restTimerSeconds
+        : initialState.restTimerSeconds,
+    restTimerEndsAt:
+      typeof maybeState.restTimerEndsAt === 'number' &&
+      Number.isFinite(maybeState.restTimerEndsAt)
+        ? maybeState.restTimerEndsAt
+        : initialState.restTimerEndsAt,
+    restTimerActive:
+      typeof maybeState.restTimerActive === 'boolean'
+        ? maybeState.restTimerActive
+        : initialState.restTimerActive,
+    restTimerDefaultSeconds:
+      typeof maybeState.restTimerDefaultSeconds === 'number' &&
+      Number.isFinite(maybeState.restTimerDefaultSeconds) &&
+      maybeState.restTimerDefaultSeconds > 0
+        ? maybeState.restTimerDefaultSeconds
+        : initialState.restTimerDefaultSeconds,
+    completeSummary:
+      maybeState.completeSummary &&
+      typeof maybeState.completeSummary === 'object' &&
+      typeof maybeState.completeSummary.totalVolume === 'number' &&
+      typeof maybeState.completeSummary.durationSeconds === 'number' &&
+      typeof maybeState.completeSummary.prs === 'number'
+        ? maybeState.completeSummary
+        : initialState.completeSummary,
+  };
+}
+
 const activeWorkoutStorage = createJSONStorage<ActiveWorkoutState>(() => {
   if (typeof window === 'undefined' || !window.localStorage) {
     return createNoopStorage();
@@ -93,19 +187,16 @@ const activeWorkoutStorage = createJSONStorage<ActiveWorkoutState>(() => {
 export const useActiveWorkoutStore = create<ActiveWorkoutState>()(
   persist(
     (set, get) => ({
-      state: 'IDLE',
-      sessionId: undefined,
-      startedAt: undefined,
-      exercises: [],
-      restTimerSeconds: 0,
-      restTimerActive: false,
-      completeSummary: undefined,
-      start: (sessionId, exercises) =>
+      ...createInitialWorkoutSnapshot(),
+      start: (sessionId, exercises, options) =>
         set({
           state: 'IN_PROGRESS',
           sessionId,
-          startedAt: new Date().toISOString(),
+          startedAt: options?.startedAt ?? new Date().toISOString(),
           exercises,
+          restTimerSeconds: 0,
+          restTimerEndsAt: undefined,
+          restTimerActive: false,
           completeSummary: undefined,
         }),
       addExercise: (exercise) =>
@@ -151,10 +242,12 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()(
           );
 
           if (patch.isCompleted) {
+            const restTimerSeconds = current.restTimerDefaultSeconds;
             return {
               exercises: nextExercises,
-              restTimerSeconds: 90,
-              restTimerActive: true,
+              restTimerSeconds,
+              restTimerEndsAt: Date.now() + restTimerSeconds * 1000,
+              restTimerActive: restTimerSeconds > 0,
             };
           }
 
@@ -182,39 +275,56 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()(
       finish: (summary) =>
         set({
           state: 'COMPLETED',
+          sessionId: undefined,
           completeSummary: summary,
           restTimerActive: false,
           restTimerSeconds: 0,
+          restTimerEndsAt: undefined,
         }),
       setRestTimer: (seconds) =>
-        set({ restTimerSeconds: seconds, restTimerActive: seconds > 0 }),
-      tickRestTimer: () => {
-        const { restTimerSeconds, restTimerActive } = get();
-        if (!restTimerActive) {
-          return;
-        }
-
-        if (restTimerSeconds <= 1) {
-          set({ restTimerSeconds: 0, restTimerActive: false });
-          return;
-        }
-
-        set({ restTimerSeconds: restTimerSeconds - 1 });
-      },
-      clear: () =>
         set({
-          state: 'IDLE',
-          sessionId: undefined,
-          startedAt: undefined,
-          exercises: [],
-          restTimerSeconds: 0,
-          restTimerActive: false,
-          completeSummary: undefined,
+          restTimerSeconds: seconds,
+          restTimerEndsAt:
+            seconds > 0 ? Date.now() + seconds * 1000 : undefined,
+          restTimerActive: seconds > 0,
         }),
+      setRestTimerDefault: (seconds) =>
+        set({
+          restTimerDefaultSeconds: Math.max(1, Math.trunc(seconds)),
+        }),
+      tickRestTimer: (nowMs = Date.now()) => {
+        const { restTimerEndsAt, restTimerActive } = get();
+        if (!restTimerActive || !restTimerEndsAt) {
+          return;
+        }
+
+        const remainingSeconds = Math.max(
+          0,
+          Math.ceil((restTimerEndsAt - nowMs) / 1000),
+        );
+
+        if (remainingSeconds <= 0) {
+          set({
+            restTimerSeconds: 0,
+            restTimerEndsAt: undefined,
+            restTimerActive: false,
+          });
+          return;
+        }
+
+        set({ restTimerSeconds: remainingSeconds });
+      },
+      clear: () => set(createInitialWorkoutSnapshot()),
     }),
     {
+      migrate: ((persistedState: unknown) =>
+        normalizePersistedWorkoutState(persistedState)) as unknown as (
+        persistedState: unknown,
+        version: number,
+      ) => ActiveWorkoutState,
       name: 'irontrack-active-workout',
       storage: activeWorkoutStorage,
+      version: ACTIVE_WORKOUT_STORE_VERSION,
     },
   ),
 );

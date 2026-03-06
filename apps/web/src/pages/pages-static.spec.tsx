@@ -16,20 +16,16 @@ import { NotFoundPage } from './NotFoundPage';
 import { SettingsPage } from './SettingsPage';
 import { WorkoutPreviewPage } from './WorkoutPreviewPage';
 
+const useDashboardPageDataMock = vi.hoisted(() => vi.fn());
+const useHistoryPageDataMock = vi.hoisted(() => vi.fn());
+const useSettingsPageDataMock = vi.hoisted(() => vi.fn());
+const useWorkoutPreviewPageDataMock = vi.hoisted(() => vi.fn());
+const useExerciseSelectPageDataMock = vi.hoisted(() => vi.fn());
+const useCompletionFlowDataMock = vi.hoisted(() => vi.fn());
 const useActiveWorkoutStoreMock = vi.hoisted(() => vi.fn());
-const clearMock = vi.hoisted(() => vi.fn());
 const navigateMock = vi.hoisted(() => vi.fn());
 const routeParamsState = vi.hoisted(() => ({
   value: { templateId: 'tpl-42' } as { templateId?: string },
-}));
-const summaryState = vi.hoisted(() => ({
-  value: undefined as
-    | {
-        totalVolume: number;
-        durationSeconds: number;
-        prs: number;
-      }
-    | undefined,
 }));
 
 vi.mock('react-router-dom', () => ({
@@ -48,8 +44,17 @@ vi.mock('react-router-dom', () => ({
       {children}
     </a>
   ),
-  useParams: () => routeParamsState.value,
   useNavigate: () => navigateMock,
+  useParams: () => routeParamsState.value,
+}));
+
+vi.mock('../lib/web-data', () => ({
+  useCompletionFlowData: useCompletionFlowDataMock,
+  useDashboardPageData: useDashboardPageDataMock,
+  useExerciseSelectPageData: useExerciseSelectPageDataMock,
+  useHistoryPageData: useHistoryPageDataMock,
+  useSettingsPageData: useSettingsPageDataMock,
+  useWorkoutPreviewPageData: useWorkoutPreviewPageDataMock,
 }));
 
 vi.mock('../stores/activeWorkoutStore', () => ({
@@ -62,10 +67,183 @@ function render(element: ReactElement): string {
 
 describe('static/simple pages', () => {
   beforeEach(() => {
-    clearMock.mockReset();
-    navigateMock.mockReset();
+    vi.clearAllMocks();
     routeParamsState.value = { templateId: 'tpl-42' };
-    summaryState.value = undefined;
+
+    useDashboardPageDataMock.mockReturnValue({
+      isLoading: false,
+      errorMessage: undefined,
+      checklistCompleteCount: 3,
+      checklistTotalCount: 4,
+      nextTemplate: { id: 'tpl-42', name: 'Push Day A' },
+      workoutStreakDays: 5,
+    });
+    useHistoryPageDataMock.mockReturnValue({
+      isLoading: false,
+      errorMessage: undefined,
+      items: [
+        {
+          id: 'session-1',
+          startedAt: '2026-02-27T12:00:00.000Z',
+          templateName: 'Push Day A',
+          durationLabel: '52m',
+          volumeLabel: '12,450',
+        },
+      ],
+    });
+    useSettingsPageDataMock.mockReturnValue({
+      errorMessage: undefined,
+      isSaving: false,
+      name: 'Iron Lifter',
+      timezone: 'America/New_York',
+      unitPreference: 'METRIC',
+      restTimerDefaultSeconds: '120',
+      timezones: ['UTC', 'America/New_York', 'Asia/Kolkata'],
+      onDeleteAccount: vi.fn(),
+      onLogout: vi.fn(),
+      onNameChange: vi.fn(),
+      onRestTimerDefaultSecondsChange: vi.fn(),
+      onSave: vi.fn(),
+      onTimezoneChange: vi.fn(),
+      onUnitPreferenceChange: vi.fn(),
+    });
+    useWorkoutPreviewPageDataMock.mockReturnValue({
+      errorMessage: undefined,
+      isLoading: false,
+      onStartWorkout: vi.fn(),
+      template: {
+        id: 'tpl-42',
+        name: 'Push Day A',
+        exercises: [
+          { id: 'tx-1', name: 'Barbell Bench Press', setsLabel: '4 x 8' },
+        ],
+      },
+    });
+    useExerciseSelectPageDataMock.mockReturnValue({
+      errorMessage: undefined,
+      isLoading: false,
+      items: [
+        { id: 'ex-1', name: 'Barbell Bench Press' },
+        { id: 'ex-2', name: 'Pull-Up' },
+      ],
+      onCreateExercise: vi.fn(),
+      onSelectExercise: vi.fn(),
+    });
+    useCompletionFlowDataMock.mockReturnValue({
+      progressCards: ['Chest +2 sessions', 'Back +1 session'],
+      recommendedTemplate: {
+        id: 'tpl-99',
+        name: 'Pull Day B',
+        reason: 'targets underworked lats and rear delts',
+      },
+      streakDays: 9,
+      weeklyCoverageLabel: 'Muscle coverage: 71%',
+    });
+    useActiveWorkoutStoreMock.mockImplementation(
+      (
+        selector: (state: {
+          clear: () => void;
+          completeSummary:
+            | {
+                totalVolume: number;
+                durationSeconds: number;
+                prs: number;
+              }
+            | undefined;
+        }) => unknown,
+      ) =>
+        selector({
+          clear: vi.fn(),
+          completeSummary: {
+            totalVolume: 9999,
+            durationSeconds: 1234,
+            prs: 3,
+          },
+        }),
+    );
+  });
+
+  it('renders dashboard data from the dashboard controller', () => {
+    const html = render(<DashboardPage />);
+    expect(html).toContain('Current streak: 5 days');
+    expect(html).toContain('Checklist: 3 / 4 complete');
+    expect(html).toContain('Push Day A');
+    expect(html).toContain('href="/workout/tpl-42/preview"');
+  });
+
+  it('renders history entries from session data', () => {
+    const html = render(<HistoryPage />);
+    expect(html).toContain('Workout History');
+    expect(html).toContain('Push Day A');
+    expect(html).toContain('52m');
+    expect(html).toContain('12,450');
+  });
+
+  it('renders exercise selection list from controller data', () => {
+    const html = render(<ExerciseSelectPage />);
+    expect(html).toContain('Select Exercise');
+    expect(html).toContain('Barbell Bench Press');
+    expect(html).toContain('Pull-Up');
+    expect(html).toContain('Create New Exercise');
+  });
+
+  it('renders workout preview details from the API-backed controller', () => {
+    const html = render(<WorkoutPreviewPage />);
+    expect(html).toContain('Workout Preview');
+    expect(html).toContain('Push Day A');
+    expect(html).toContain('Barbell Bench Press');
+    expect(html).toContain('4 x 8');
+  });
+
+  it('renders a fallback message when templateId is missing', () => {
+    routeParamsState.value = {};
+    useWorkoutPreviewPageDataMock.mockReturnValue({
+      errorMessage: 'Template not found.',
+      isLoading: false,
+      onStartWorkout: vi.fn(),
+      template: undefined,
+    });
+
+    const html = render(<WorkoutPreviewPage />);
+    expect(html).toContain('Workout Preview');
+    expect(html).toContain('Template not found.');
+    expect(html).toContain('href="/"');
+  });
+
+  it('renders not-found view', () => {
+    const html = render(<NotFoundPage />);
+    expect(html).toContain('Not Found');
+    expect(html).toContain('The page does not exist.');
+    expect(html).toContain('href="/"');
+  });
+
+  it('renders settings controls from controller state', () => {
+    const html = render(<SettingsPage />);
+    expect(html).toContain('Settings');
+    expect(html).toContain('America/New_York');
+    expect(html).toContain('Asia/Kolkata');
+    expect(html).toContain('Metric (kg)');
+    expect(html).toContain('Default Rest (seconds)');
+  });
+
+  it('renders completion step navigation and dynamic completion content', () => {
+    expect(render(<CompletionMotivationPage />)).toContain(
+      'href="/workout/complete/summary"',
+    );
+    expect(render(<CompletionSummaryPage />)).toContain('Volume: 9999');
+    expect(render(<CompletionSummaryPage />)).toContain('PRs: 3');
+    expect(render(<CompletionProgressPage />)).toContain(
+      'Muscle coverage: 71%',
+    );
+    expect(render(<CompletionNextPage />)).toContain('Pull Day B');
+    expect(render(<CompletionNextPage />)).toContain(
+      'href="/workout/tpl-99/preview"',
+    );
+    expect(render(<CompletionStreakPage />)).toContain('9 days');
+  });
+
+  it('clears the completed workout store from streak page', () => {
+    const clearMock = vi.fn();
     useActiveWorkoutStoreMock.mockImplementation(
       (
         selector: (state: {
@@ -81,100 +259,14 @@ describe('static/simple pages', () => {
       ) =>
         selector({
           clear: clearMock,
-          completeSummary: summaryState.value,
+          completeSummary: {
+            totalVolume: 9999,
+            durationSeconds: 1234,
+            prs: 3,
+          },
         }),
     );
-  });
 
-  it('renders dashboard links', () => {
-    const html = render(<DashboardPage />);
-    expect(html).toContain('Today Overview');
-    expect(html).toContain('Next Workout');
-    expect(html).toContain('href="/workout/active"');
-    expect(html).toContain('href="/workout/123/preview"');
-  });
-
-  it('renders history entries', () => {
-    const html = render(<HistoryPage />);
-    expect(html).toContain('Workout History');
-    expect(html).toContain('Push Day A');
-    expect(html).toContain('Pull Day A');
-    expect(html).toContain('Leg Day A');
-  });
-
-  it('renders exercise selection list and create link', () => {
-    const html = render(<ExerciseSelectPage />);
-    expect(html).toContain('Select Exercise');
-    expect(html).toContain('Barbell Bench Press');
-    expect(html).toContain('Pull-Up');
-    expect(html).toContain('Barbell Back Squat');
-    expect(html).toContain('href="/exercise/create"');
-  });
-
-  it('renders workout preview with route params', () => {
-    const html = render(<WorkoutPreviewPage />);
-    expect(html).toContain('Workout Preview');
-    expect(html).toContain('Template ID: tpl-42');
-    expect(html).toContain('href="/workout/active"');
-  });
-
-  it('renders a fallback message when templateId is missing', () => {
-    routeParamsState.value = {};
-
-    const html = render(<WorkoutPreviewPage />);
-    expect(html).toContain('Workout Preview');
-    expect(html).toContain('Template not found.');
-    expect(html).toContain('href="/"');
-  });
-
-  it('renders not-found view', () => {
-    const html = render(<NotFoundPage />);
-    expect(html).toContain('Not Found');
-    expect(html).toContain('The page does not exist.');
-    expect(html).toContain('href="/"');
-  });
-
-  it('renders settings controls', () => {
-    const html = render(<SettingsPage />);
-    expect(html).toContain('Settings');
-    expect(html).toContain('America/New_York');
-    expect(html).toContain('Metric (kg)');
-    expect(html).toContain('Delete Account');
-  });
-
-  it('renders completion step navigation', () => {
-    expect(render(<CompletionMotivationPage />)).toContain(
-      'href="/workout/complete/summary"',
-    );
-    expect(render(<CompletionSummaryPage />)).toContain(
-      'href="/workout/complete/progress"',
-    );
-    expect(render(<CompletionProgressPage />)).toContain(
-      'href="/workout/complete/next"',
-    );
-    expect(render(<CompletionNextPage />)).toContain(
-      'href="/workout/complete/streak"',
-    );
-  });
-
-  it('renders summary fallbacks and provided values', () => {
-    const fallbackHtml = render(<CompletionSummaryPage />);
-    expect(fallbackHtml).toContain('Volume: 0');
-    expect(fallbackHtml).toContain('Duration: 0s');
-    expect(fallbackHtml).toContain('PRs: 0');
-
-    summaryState.value = {
-      totalVolume: 9999,
-      durationSeconds: 1234,
-      prs: 3,
-    };
-    const valueHtml = render(<CompletionSummaryPage />);
-    expect(valueHtml).toContain('Volume: 9999');
-    expect(valueHtml).toContain('Duration: 1234s');
-    expect(valueHtml).toContain('PRs: 3');
-  });
-
-  it('calls clear from completion streak page', () => {
     const view = CompletionStreakPage();
     const button = findButtonByLabel(view, 'Back to Dashboard');
     expect(button).toBeDefined();

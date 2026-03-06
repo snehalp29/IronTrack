@@ -1,13 +1,20 @@
 import { Link } from 'react-router-dom';
 
+import { useCompletionFlowData } from '../lib/web-data';
+
 export function CompletionProgressPage() {
+  const data = useCompletionFlowData();
+
   return (
     <div className="card">
       <h1>Weekly Progress</h1>
-      <p className="meta">Muscle coverage: 71%</p>
+      <p className="meta">{data.weeklyCoverageLabel}</p>
       <div className="two grid">
-        <div className="card">Chest +2 sessions</div>
-        <div className="card">Back +1 session</div>
+        {data.progressCards.map((card) => (
+          <div key={card} className="card">
+            {card}
+          </div>
+        ))}
       </div>
       <Link to="/workout/complete/next" className="button-link">
         Up Next

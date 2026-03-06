@@ -7,15 +7,32 @@ import {
 } from '../testing/react-tree';
 import { ActiveWorkoutPage } from './ActiveWorkoutPage';
 
-const useStateMock = vi.hoisted(() => vi.fn());
-const useMemoMock = vi.hoisted(() => vi.fn());
-const useNavigateMock = vi.hoisted(() => vi.fn());
-const useRestTimerMock = vi.hoisted(() => vi.fn());
-const useActiveWorkoutStoreMock = vi.hoisted(() => vi.fn());
+const useActiveWorkoutPageDataMock = vi.hoisted(() => vi.fn());
 
 type SimpleModalProps = {
   open: boolean;
   onClose: () => void;
+};
+
+type OverflowModalProps = SimpleModalProps & {
+  exerciseName?: string;
+  onDeleteExercise: () => void;
+  onEditNotes: () => void;
+  onSwapExercise: () => void;
+};
+
+type ReorderModalProps = SimpleModalProps & {
+  exercises: Array<{ id: string; name: string; orderIndex: number }>;
+  onApply: () => void;
+  onMoveDown: (exerciseId: string) => void;
+  onMoveUp: (exerciseId: string) => void;
+};
+
+type SupersetModalProps = SimpleModalProps & {
+  exercises: Array<{ id: string; name: string }>;
+  onApply: () => void;
+  onToggleExercise: (exerciseId: string) => void;
+  selectedExerciseIds: string[];
 };
 
 type IncompleteModalProps = SimpleModalProps & {
@@ -23,17 +40,17 @@ type IncompleteModalProps = SimpleModalProps & {
 };
 
 const overflowModalMock = vi.hoisted(() =>
-  vi.fn((props: SimpleModalProps) => (
+  vi.fn((props: OverflowModalProps) => (
     <div data-modal="overflow" data-open={String(props.open)} />
   )),
 );
 const reorderModalMock = vi.hoisted(() =>
-  vi.fn((props: SimpleModalProps) => (
+  vi.fn((props: ReorderModalProps) => (
     <div data-modal="reorder" data-open={String(props.open)} />
   )),
 );
 const supersetModalMock = vi.hoisted(() =>
-  vi.fn((props: SimpleModalProps) => (
+  vi.fn((props: SupersetModalProps) => (
     <div data-modal="superset" data-open={String(props.open)} />
   )),
 );
@@ -43,25 +60,8 @@ const incompleteModalMock = vi.hoisted(() =>
   )),
 );
 
-vi.mock('react', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('react')>();
-  return {
-    ...actual,
-    useState: useStateMock,
-    useMemo: useMemoMock,
-  };
-});
-
-vi.mock('react-router-dom', () => ({
-  useNavigate: useNavigateMock,
-}));
-
-vi.mock('../hooks/useRestTimer', () => ({
-  useRestTimer: useRestTimerMock,
-}));
-
-vi.mock('../stores/activeWorkoutStore', () => ({
-  useActiveWorkoutStore: useActiveWorkoutStoreMock,
+vi.mock('../lib/web-data', () => ({
+  useActiveWorkoutPageData: useActiveWorkoutPageDataMock,
 }));
 
 vi.mock('../components/workout/ExerciseOverflowModal', () => ({
@@ -80,97 +80,79 @@ vi.mock('../components/workout/IncompleteWarningModal', () => ({
   IncompleteWarningModal: incompleteModalMock,
 }));
 
-type StoreState = {
-  state: 'IDLE' | 'IN_PROGRESS' | 'COMPLETED';
-  start: (sessionId: string, exercises: unknown[]) => void;
-  exercises: Array<{
-    id: string;
-    name: string;
-    sets: Array<{
-      id: string;
-      orderIndex: number;
-      weight: number;
-      reps: number;
-      isCompleted: boolean;
-    }>;
-  }>;
-  updateSet: (
-    exerciseId: string,
-    setId: string,
-    patch: { isCompleted: boolean },
-  ) => void;
-  finish: (summary: {
-    totalVolume: number;
-    durationSeconds: number;
-    prs: number;
-  }) => void;
-  restTimerSeconds: number;
-};
-
 describe('ActiveWorkoutPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    useMemoMock.mockImplementation((factory: () => unknown) => factory());
   });
 
-  it('renders idle state and starts seeded session', () => {
-    const navigate = vi.fn();
-    const start = vi.fn();
-    const updateSet = vi.fn();
-    const finish = vi.fn();
-    const store: StoreState = {
+  it('renders the empty active-session state from controller data', () => {
+    const startWorkout = vi.fn();
+    useActiveWorkoutPageDataMock.mockReturnValue({
       state: 'IDLE',
-      start,
       exercises: [],
-      updateSet,
-      finish,
+      totals: { completed: 0, total: 0 },
       restTimerSeconds: 0,
-    };
-
-    useNavigateMock.mockReturnValue(navigate);
-    useActiveWorkoutStoreMock.mockImplementation(
-      (selector: (state: StoreState) => unknown) => selector(store),
-    );
-
-    const setOverflow = vi.fn();
-    const setReorder = vi.fn();
-    const setSuperset = vi.fn();
-    const setIncomplete = vi.fn();
-    useStateMock
-      .mockReturnValueOnce([false, setOverflow])
-      .mockReturnValueOnce([false, setReorder])
-      .mockReturnValueOnce([false, setSuperset])
-      .mockReturnValueOnce([false, setIncomplete]);
+      errorMessage: undefined,
+      idleActionLabel: 'Choose Workout',
+      onIdleAction: startWorkout,
+      onFinishWorkout: vi.fn(),
+      onToggleSet: vi.fn(),
+      overflow: {
+        open: false,
+        exerciseName: undefined,
+        onClose: vi.fn(),
+        onEditNotes: vi.fn(),
+        onSwapExercise: vi.fn(),
+        onDeleteExercise: vi.fn(),
+      },
+      reorder: {
+        open: false,
+        exercises: [],
+        onClose: vi.fn(),
+        onMoveUp: vi.fn(),
+        onMoveDown: vi.fn(),
+        onApply: vi.fn(),
+      },
+      superset: {
+        open: false,
+        exercises: [],
+        selectedExerciseIds: [],
+        onClose: vi.fn(),
+        onToggleExercise: vi.fn(),
+        onApply: vi.fn(),
+      },
+      incomplete: {
+        open: false,
+        onClose: vi.fn(),
+        onConfirm: vi.fn(),
+      },
+      openOverflow: vi.fn(),
+      openReorder: vi.fn(),
+      openSuperset: vi.fn(),
+    });
 
     const view = ActiveWorkoutPage();
     const html = renderToStaticMarkup(view);
     expect(html).toContain('No active session');
-    expect(useRestTimerMock).toHaveBeenCalledTimes(1);
 
-    findButtonByLabel(view, 'Start Session')?.props.onClick?.();
-    expect(start).toHaveBeenCalledTimes(1);
-    expect(start).toHaveBeenCalledWith(
-      'session-local-1',
-      expect.arrayContaining([
-        expect.objectContaining({ id: 'se-1' }),
-        expect.objectContaining({ id: 'se-2' }),
-      ]),
-    );
-    expect(navigate).not.toHaveBeenCalled();
+    findButtonByLabel(view, 'Choose Workout')?.props.onClick?.();
+    expect(startWorkout).toHaveBeenCalledTimes(1);
   });
 
-  it('handles in-progress actions and incomplete finish flow', () => {
-    const navigate = vi.fn();
-    const start = vi.fn();
-    const updateSet = vi.fn();
-    const finish = vi.fn();
-    const store: StoreState = {
+  it('renders real exercises and delegates active workout actions to the controller', () => {
+    const onToggleSet = vi.fn();
+    const openOverflow = vi.fn();
+    const openReorder = vi.fn();
+    const openSuperset = vi.fn();
+    const onFinishWorkout = vi.fn();
+
+    useActiveWorkoutPageDataMock.mockReturnValue({
       state: 'IN_PROGRESS',
-      start,
       exercises: [
         {
-          id: 'ex-1',
-          name: 'Bench',
+          id: 'se-1',
+          name: 'Bench Press',
+          orderIndex: 0,
           sets: [
             {
               id: 'set-1',
@@ -189,133 +171,97 @@ describe('ActiveWorkoutPage', () => {
           ],
         },
       ],
-      updateSet,
-      finish,
+      totals: { completed: 1, total: 2 },
       restTimerSeconds: 45,
-    };
-
-    useNavigateMock.mockReturnValue(navigate);
-    useActiveWorkoutStoreMock.mockImplementation(
-      (selector: (state: StoreState) => unknown) => selector(store),
-    );
-
-    const setOverflow = vi.fn();
-    const setReorder = vi.fn();
-    const setSuperset = vi.fn();
-    const setIncomplete = vi.fn();
-    useStateMock
-      .mockReturnValueOnce([false, setOverflow])
-      .mockReturnValueOnce([false, setReorder])
-      .mockReturnValueOnce([false, setSuperset])
-      .mockReturnValueOnce([false, setIncomplete]);
+      errorMessage: 'Session sync failed',
+      idleActionLabel: 'Choose Workout',
+      onIdleAction: vi.fn(),
+      onFinishWorkout,
+      onToggleSet,
+      overflow: {
+        open: true,
+        exerciseName: 'Bench Press',
+        onClose: vi.fn(),
+        onEditNotes: vi.fn(),
+        onSwapExercise: vi.fn(),
+        onDeleteExercise: vi.fn(),
+      },
+      reorder: {
+        open: true,
+        exercises: [{ id: 'se-1', name: 'Bench Press', orderIndex: 0 }],
+        onClose: vi.fn(),
+        onMoveUp: vi.fn(),
+        onMoveDown: vi.fn(),
+        onApply: vi.fn(),
+      },
+      superset: {
+        open: true,
+        exercises: [{ id: 'se-1', name: 'Bench Press' }],
+        selectedExerciseIds: ['se-1'],
+        onClose: vi.fn(),
+        onToggleExercise: vi.fn(),
+        onApply: vi.fn(),
+      },
+      incomplete: {
+        open: true,
+        onClose: vi.fn(),
+        onConfirm: vi.fn(),
+      },
+      openOverflow,
+      openReorder,
+      openSuperset,
+    });
 
     const view = ActiveWorkoutPage();
     const html = renderToStaticMarkup(view);
     expect(html).toContain('Completed sets: 1 / 2');
     expect(html).toContain('Rest Timer: 45s');
+    expect(html).toContain('Session sync failed');
+    expect(html).toContain('Bench Press');
 
     findButtonByLabel(view, 'Overflow')?.props.onClick?.();
     findButtonByLabel(view, 'Reorder')?.props.onClick?.();
     findButtonByLabel(view, 'Superset')?.props.onClick?.();
-    expect(setOverflow).toHaveBeenCalledWith(true);
-    expect(setReorder).toHaveBeenCalledWith(true);
-    expect(setSuperset).toHaveBeenCalledWith(true);
+    findButtonByLabel(view, 'Finish Workout')?.props.onClick?.();
+
+    expect(openOverflow).toHaveBeenCalledTimes(1);
+    expect(openReorder).toHaveBeenCalledTimes(1);
+    expect(openSuperset).toHaveBeenCalledTimes(1);
+    expect(onFinishWorkout).toHaveBeenCalledTimes(1);
 
     const setButtons = findButtonsByTextIncludes(view, 'Set ');
     expect(setButtons).toHaveLength(2);
     setButtons[0]?.props.onClick?.();
     setButtons[1]?.props.onClick?.();
-    expect(updateSet).toHaveBeenNthCalledWith(1, 'ex-1', 'set-1', {
-      isCompleted: true,
-    });
-    expect(updateSet).toHaveBeenNthCalledWith(2, 'ex-1', 'set-2', {
-      isCompleted: false,
-    });
+    expect(onToggleSet).toHaveBeenNthCalledWith(1, 'se-1', 'set-1', true);
+    expect(onToggleSet).toHaveBeenNthCalledWith(2, 'se-1', 'set-2', false);
 
-    findButtonByLabel(view, 'Finish Workout')?.props.onClick?.();
-    expect(setIncomplete).toHaveBeenCalledWith(true);
-    expect(finish).not.toHaveBeenCalled();
-    expect(navigate).not.toHaveBeenCalled();
-
-    const overflowProps = overflowModalMock.mock.calls[0]?.[0];
-    const reorderProps = reorderModalMock.mock.calls[0]?.[0];
-    const supersetProps = supersetModalMock.mock.calls[0]?.[0];
-    const incompleteProps = incompleteModalMock.mock.calls[0]?.[0];
-
-    expect(overflowProps?.open).toBe(false);
-    expect(reorderProps?.open).toBe(false);
-    expect(supersetProps?.open).toBe(false);
-    expect(incompleteProps?.open).toBe(false);
-
-    overflowProps?.onClose();
-    reorderProps?.onClose();
-    supersetProps?.onClose();
-    incompleteProps?.onClose();
-    expect(setOverflow).toHaveBeenCalledWith(false);
-    expect(setReorder).toHaveBeenCalledWith(false);
-    expect(setSuperset).toHaveBeenCalledWith(false);
-    expect(setIncomplete).toHaveBeenCalledWith(false);
-  });
-
-  it('finalizes completed workouts from finish button and warning confirm action', () => {
-    const navigate = vi.fn();
-    const start = vi.fn();
-    const updateSet = vi.fn();
-    const finish = vi.fn();
-    const store: StoreState = {
-      state: 'IN_PROGRESS',
-      start,
-      exercises: [
-        {
-          id: 'ex-2',
-          name: 'Incline Press',
-          sets: [
-            {
-              id: 'set-3',
-              orderIndex: 0,
-              weight: 80,
-              reps: 10,
-              isCompleted: true,
-            },
-          ],
-        },
-      ],
-      updateSet,
-      finish,
-      restTimerSeconds: 0,
-    };
-
-    useNavigateMock.mockReturnValue(navigate);
-    useActiveWorkoutStoreMock.mockImplementation(
-      (selector: (state: StoreState) => unknown) => selector(store),
+    expect(overflowModalMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        open: true,
+        exerciseName: 'Bench Press',
+      }),
+      undefined,
     );
-
-    const setOverflow = vi.fn();
-    const setReorder = vi.fn();
-    const setSuperset = vi.fn();
-    const setIncomplete = vi.fn();
-    useStateMock
-      .mockReturnValueOnce([true, setOverflow])
-      .mockReturnValueOnce([true, setReorder])
-      .mockReturnValueOnce([true, setSuperset])
-      .mockReturnValueOnce([true, setIncomplete]);
-
-    const view = ActiveWorkoutPage();
-    renderToStaticMarkup(view);
-    findButtonByLabel(view, 'Finish Workout')?.props.onClick?.();
-    expect(finish).toHaveBeenCalledWith({
-      totalVolume: 12450,
-      durationSeconds: 3120,
-      prs: 2,
-    });
-    expect(setIncomplete).toHaveBeenCalledWith(false);
-    expect(navigate).toHaveBeenCalledWith('/workout/complete');
-
-    const incompleteProps = incompleteModalMock.mock.calls[0]?.[0];
-    expect(incompleteProps?.open).toBe(true);
-
-    incompleteProps?.onConfirm();
-    expect(finish).toHaveBeenCalledTimes(2);
-    expect(navigate).toHaveBeenCalledTimes(2);
+    expect(reorderModalMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        open: true,
+        exercises: [{ id: 'se-1', name: 'Bench Press', orderIndex: 0 }],
+      }),
+      undefined,
+    );
+    expect(supersetModalMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        open: true,
+        selectedExerciseIds: ['se-1'],
+      }),
+      undefined,
+    );
+    expect(incompleteModalMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        open: true,
+      }),
+      undefined,
+    );
   });
 });

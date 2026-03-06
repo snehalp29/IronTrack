@@ -3,7 +3,11 @@ import { type ReactElement, cloneElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
-import { findButtonByLabel } from '../../testing/react-tree';
+import {
+  findButtonByLabel,
+  findButtonsByTextIncludes,
+  findElement,
+} from '../../testing/react-tree';
 import { ExerciseOverflowModal } from './ExerciseOverflowModal';
 import { IncompleteWarningModal } from './IncompleteWarningModal';
 import { ReorderModal } from './ReorderModal';
@@ -14,27 +18,53 @@ function render(element: ReactElement): string {
 }
 
 describe('workout modals', () => {
-  it('ExerciseOverflowModal returns null when closed and renders content when open', () => {
-    expect(ExerciseOverflowModal({ open: false, onClose: vi.fn() })).toBeNull();
+  it('ExerciseOverflowModal renders actionable controls and close semantics', () => {
+    expect(
+      ExerciseOverflowModal({
+        open: false,
+        exerciseName: undefined,
+        onClose: vi.fn(),
+        onEditNotes: vi.fn(),
+        onSwapExercise: vi.fn(),
+        onDeleteExercise: vi.fn(),
+      }),
+    ).toBeNull();
 
     const onClose = vi.fn();
-    const view = ExerciseOverflowModal({ open: true, onClose });
+    const onEditNotes = vi.fn();
+    const onSwapExercise = vi.fn();
+    const onDeleteExercise = vi.fn();
+    const view = ExerciseOverflowModal({
+      open: true,
+      exerciseName: 'Bench Press',
+      onClose,
+      onEditNotes,
+      onSwapExercise,
+      onDeleteExercise,
+    });
     expect(view).not.toBeNull();
     const html = render(view as ReactElement);
     expect(html).toContain('Exercise Actions');
-    expect(html).toContain('class="card modal modal--accent"');
+    expect(html).toContain('Bench Press');
     expect(html).toContain('role="dialog"');
     expect(html).toContain('aria-modal="true"');
-    expect(html).toContain('aria-labelledby="exercise-overflow-title"');
-    expect(html).toContain('class="danger"');
+    expect(html).toContain('tabindex="-1"');
 
-    const closeButton = findButtonByLabel(view, 'Close');
-    expect(closeButton).toBeDefined();
-    closeButton?.props.onClick?.();
+    findButtonByLabel(view, 'Edit Notes')?.props.onClick?.();
+    findButtonByLabel(view, 'Swap Exercise')?.props.onClick?.();
+    findButtonByLabel(view, 'Delete Exercise')?.props.onClick?.();
+    findButtonByLabel(view, 'Close')?.props.onClick?.();
+
+    expect(onEditNotes).toHaveBeenCalledTimes(1);
+    expect(onSwapExercise).toHaveBeenCalledTimes(1);
+    expect(onDeleteExercise).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
+    expect(
+      findElement(view, (element) => element.props.onKeyDown !== undefined),
+    ).toBeDefined();
   });
 
-  it('IncompleteWarningModal returns null when closed and wires confirm/close callbacks', () => {
+  it('IncompleteWarningModal renders warning actions and accessibility metadata', () => {
     expect(
       IncompleteWarningModal({
         open: false,
@@ -53,61 +83,103 @@ describe('workout modals', () => {
     expect(view).not.toBeNull();
     const html = render(view as ReactElement);
     expect(html).toContain('Incomplete Workout');
-    expect(html).toContain('class="card modal modal--warning"');
     expect(html).toContain('role="alertdialog"');
-    expect(html).toContain('aria-modal="true"');
-    expect(html).toContain('aria-labelledby="incomplete-warning-title"');
     expect(html).toContain('aria-describedby="incomplete-warning-description"');
-    expect(html).toContain('class="modal__actions"');
-    expect(html).toContain('class="danger"');
+    expect(html).toContain('tabindex="-1"');
 
-    const confirmButton = findButtonByLabel(view, 'Finish Anyway');
-    const continueButton = findButtonByLabel(view, 'Continue Workout');
-    expect(confirmButton).toBeDefined();
-    expect(continueButton).toBeDefined();
-
-    confirmButton?.props.onClick?.();
-    continueButton?.props.onClick?.();
+    findButtonByLabel(view, 'Finish Anyway')?.props.onClick?.();
+    findButtonByLabel(view, 'Continue Workout')?.props.onClick?.();
 
     expect(onConfirm).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('ReorderModal returns null when closed and calls close when done button clicked', () => {
-    expect(ReorderModal({ open: false, onClose: vi.fn() })).toBeNull();
+  it('ReorderModal lets the caller move items and apply the new order', () => {
+    expect(
+      ReorderModal({
+        open: false,
+        exercises: [],
+        onClose: vi.fn(),
+        onMoveUp: vi.fn(),
+        onMoveDown: vi.fn(),
+        onApply: vi.fn(),
+      }),
+    ).toBeNull();
 
     const onClose = vi.fn();
-    const view = ReorderModal({ open: true, onClose });
+    const onMoveUp = vi.fn();
+    const onMoveDown = vi.fn();
+    const onApply = vi.fn();
+    const view = ReorderModal({
+      open: true,
+      exercises: [
+        { id: 'se-1', name: 'Bench Press', orderIndex: 0 },
+        { id: 'se-2', name: 'Incline Press', orderIndex: 1 },
+      ],
+      onClose,
+      onMoveUp,
+      onMoveDown,
+      onApply,
+    });
     expect(view).not.toBeNull();
     const html = render(view as ReactElement);
     expect(html).toContain('Reorder Exercises');
-    expect(html).toContain('class="card modal modal--accent"');
-    expect(html).toContain('role="dialog"');
-    expect(html).toContain('aria-modal="true"');
-    expect(html).toContain('aria-labelledby="reorder-modal-title"');
+    expect(html).toContain('Bench Press');
+    expect(html).toContain('Incline Press');
 
-    const doneButton = findButtonByLabel(view, 'Done');
-    expect(doneButton).toBeDefined();
-    doneButton?.props.onClick?.();
+    const moveButtons = findButtonsByTextIncludes(view, 'Move ');
+    expect(moveButtons).toHaveLength(4);
+    moveButtons[0]?.props.onClick?.();
+    moveButtons[3]?.props.onClick?.();
+    findButtonByLabel(view, 'Apply Order')?.props.onClick?.();
+    findButtonByLabel(view, 'Cancel')?.props.onClick?.();
+
+    expect(onMoveUp).toHaveBeenCalledWith('se-1');
+    expect(onMoveDown).toHaveBeenCalledWith('se-2');
+    expect(onApply).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('SupersetModal returns null when closed and calls close when apply button clicked', () => {
-    expect(SupersetModal({ open: false, onClose: vi.fn() })).toBeNull();
+  it('SupersetModal lets the caller select exercises and apply the grouping', () => {
+    expect(
+      SupersetModal({
+        open: false,
+        exercises: [],
+        selectedExerciseIds: [],
+        onClose: vi.fn(),
+        onToggleExercise: vi.fn(),
+        onApply: vi.fn(),
+      }),
+    ).toBeNull();
 
     const onClose = vi.fn();
-    const view = SupersetModal({ open: true, onClose });
+    const onToggleExercise = vi.fn();
+    const onApply = vi.fn();
+    const view = SupersetModal({
+      open: true,
+      exercises: [
+        { id: 'se-1', name: 'Bench Press' },
+        { id: 'se-2', name: 'Rows' },
+      ],
+      selectedExerciseIds: ['se-1'],
+      onClose,
+      onToggleExercise,
+      onApply,
+    });
     expect(view).not.toBeNull();
     const html = render(view as ReactElement);
     expect(html).toContain('Superset Builder');
-    expect(html).toContain('class="card modal modal--accent"');
-    expect(html).toContain('role="dialog"');
-    expect(html).toContain('aria-modal="true"');
-    expect(html).toContain('aria-labelledby="superset-modal-title"');
+    expect(html).toContain('Bench Press');
+    expect(html).toContain('Rows');
 
-    const applyButton = findButtonByLabel(view, 'Apply');
-    expect(applyButton).toBeDefined();
-    applyButton?.props.onClick?.();
+    const toggleButtons = findButtonsByTextIncludes(view, 'Select ');
+    expect(toggleButtons).toHaveLength(2);
+    toggleButtons[0]?.props.onClick?.();
+    findButtonByLabel(view, 'Apply Superset')?.props.onClick?.();
+    findButtonByLabel(view, 'Cancel')?.props.onClick?.();
+
+    expect(onToggleExercise).toHaveBeenCalledWith('se-1');
+    expect(onApply).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

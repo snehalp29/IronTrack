@@ -1,13 +1,16 @@
 import { Link, useParams } from 'react-router-dom';
 
+import { useWorkoutPreviewPageData } from '../lib/web-data';
+
 export function WorkoutPreviewPage() {
   const { templateId } = useParams<'templateId'>();
+  const data = useWorkoutPreviewPageData(templateId);
 
-  if (!templateId) {
+  if (!templateId || !data.template) {
     return (
       <div className="card">
         <h1>Workout Preview</h1>
-        <p className="meta">Template not found.</p>
+        <p className="meta">{data.errorMessage ?? 'Template not found.'}</p>
         <Link to="/" className="button-link">
           Back to Dashboard
         </Link>
@@ -18,15 +21,17 @@ export function WorkoutPreviewPage() {
   return (
     <div className="card">
       <h1>Workout Preview</h1>
-      <p className="meta">Template ID: {templateId}</p>
+      <p className="meta">{data.template.name}</p>
       <ul>
-        <li>Barbell Bench Press - 4 x 8</li>
-        <li>Incline Dumbbell Press - 3 x 10</li>
-        <li>Cable Fly - 3 x 12</li>
+        {data.template.exercises.map((exercise) => (
+          <li key={exercise.id}>
+            {exercise.name} - {exercise.setsLabel}
+          </li>
+        ))}
       </ul>
-      <Link to="/workout/active" className="button-link">
+      <button className="button-link" onClick={data.onStartWorkout}>
         Start Workout
-      </Link>
+      </button>
     </div>
   );
 }

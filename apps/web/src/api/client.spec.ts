@@ -1,11 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 
 import {
   clearAuthSession,
   getAuthSession,
   persistAuthSession,
 } from '../auth/auth-session';
-import { apiFetch, buildApiUrl, resolveApiBaseUrl } from './client';
+import {
+  apiFetch,
+  buildApiUrl,
+  resolveApiBaseUrl,
+  setLoginRedirect,
+} from './client';
 
 function createStorageMock() {
   const store = new Map<string, string>();
@@ -44,6 +50,7 @@ describe('resolveApiBaseUrl', () => {
 describe('apiFetch', () => {
   afterEach(() => {
     clearAuthSession();
+    setLoginRedirect(null);
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -63,6 +70,30 @@ describe('apiFetch', () => {
         headers: {},
       },
     );
+  });
+
+  it('validates parsed payloads against a runtime schema when one is provided', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: vi.fn().mockResolvedValue(JSON.stringify({ ok: true })),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      apiFetch('/health', {
+        schema: z.object({
+          ok: z.boolean(),
+        }),
+      }),
+    ).resolves.toEqual({ ok: true });
+
+    await expect(
+      apiFetch('/health', {
+        schema: z.object({
+          status: z.literal('healthy'),
+        }),
+      }),
+    ).rejects.toThrow('API response shape was invalid');
   });
 
   it('returns undefined for 204 no-content responses', async () => {
@@ -186,7 +217,6 @@ describe('apiFetch', () => {
     vi.stubGlobal('localStorage', createStorageMock());
     persistAuthSession({
       accessToken: 'access-token-123',
-      refreshToken: 'refresh-token-123',
     });
 
     const fetchMock = vi.fn().mockResolvedValue({
@@ -214,7 +244,6 @@ describe('apiFetch', () => {
     vi.stubGlobal('localStorage', createStorageMock());
     persistAuthSession({
       accessToken: 'access-token-123',
-      refreshToken: 'refresh-token-123',
     });
 
     const fetchMock = vi.fn().mockResolvedValue({
@@ -464,6 +493,111 @@ describe('apiFetch', () => {
     );
   });
 
+  it('refreshes the auth session after a 401 and retries the original request once', async () => {
+    vi.stubGlobal('localStorage', createStorageMock());
+    persistAuthSession({
+      accessToken: 'expired-access-token',
+    });
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: vi.fn().mockResolvedValue({
+          error: { message: 'expired' },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: vi.fn().mockResolvedValue(
+          JSON.stringify({
+            accessToken: 'fresh-access-token',
+          }),
+        ),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: vi.fn().mockResolvedValue(JSON.stringify({ ok: true })),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(apiFetch('/sessions')).resolves.toEqual({ ok: true });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost:3000/api/v1/sessions',
+      {
+        headers: {
+          Authorization: 'Bearer expired-access-token',
+        },
+      },
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:3000/api/v1/auth/refresh',
+      {
+        method: 'POST',
+        credentials: 'include',
+      },
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      'http://localhost:3000/api/v1/sessions',
+      {
+        headers: {
+          Authorization: 'Bearer fresh-access-token',
+        },
+      },
+    );
+    expect(getAuthSession()).toEqual({
+      accessToken: 'fresh-access-token',
+    });
+  });
+
+  it('uses registered app navigation instead of a hard browser reload when auth recovery fails', async () => {
+    const redirectToLogin = vi.fn();
+    setLoginRedirect(redirectToLogin);
+    vi.stubGlobal('localStorage', createStorageMock());
+    persistAuthSession({
+      accessToken: 'expired-access-token',
+    });
+
+    const assignMock = vi.fn();
+    vi.stubGlobal('window', {
+      location: {
+        assign: assignMock,
+        pathname: '/history',
+      },
+    });
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: vi.fn().mockResolvedValue({
+          error: { message: 'expired' },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: vi.fn().mockResolvedValue({
+          error: { message: 'refresh expired' },
+        }),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(apiFetch('/sessions/s1')).rejects.toThrow('refresh expired');
+
+    expect(getAuthSession()).toBeNull();
+    expect(redirectToLogin).toHaveBeenCalledWith('/login');
+    expect(assignMock).not.toHaveBeenCalled();
+  });
+
   it('falls back to status message when payload has no nested message', async () => {
     const assignMock = vi.fn();
     vi.stubGlobal('localStorage', createStorageMock());
@@ -475,7 +609,6 @@ describe('apiFetch', () => {
     });
     persistAuthSession({
       accessToken: 'access-token-123',
-      refreshToken: 'refresh-token-123',
     });
 
     const fetchMock = vi.fn().mockResolvedValue({

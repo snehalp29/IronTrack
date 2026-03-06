@@ -15,9 +15,12 @@ export const loginSchema = z.object({
   password: z.string().min(8).max(128),
 });
 
-export const refreshSchema = z.object({
-  refreshToken: z.string().min(10),
-});
+export const refreshSchema = z
+  .object({
+    refreshToken: z.string().min(10).optional(),
+  })
+  .optional()
+  .transform((value) => value ?? {});
 
 export const googleAuthSchema = z.object({
   idToken: z.string().min(20),
@@ -25,5 +28,8 @@ export const googleAuthSchema = z.object({
 
 export type RegisterDto = z.infer<typeof registerSchema>;
 export type LoginDto = z.infer<typeof loginSchema>;
-export type RefreshDto = z.infer<typeof refreshSchema>;
+export type RefreshRequestDto = z.infer<typeof refreshSchema>;
+export interface RefreshDto {
+  refreshToken: string;
+}
 export type GoogleAuthDto = z.infer<typeof googleAuthSchema>;

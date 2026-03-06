@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+import { mockApi } from './support/api';
+
 test('login and register routes are reachable via client routing', async ({
   page,
 }) => {
@@ -15,6 +17,7 @@ test('login and register routes are reachable via client routing', async ({
 });
 
 test('login form submission navigates to dashboard', async ({ page }) => {
+  await mockApi(page);
   await page.goto('/login');
   await page.getByPlaceholder('Email').fill('demo@irontrack.local');
   await page.getByPlaceholder('Password').fill('DemoPass123!');
