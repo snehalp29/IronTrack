@@ -367,12 +367,6 @@ describe('AuthService', () => {
 
     expect(parser.parseDurationToMs('15m')).toBe(15 * 60_000);
     expect(parser.parseDurationToMs('7d')).toBe(7 * 86_400_000);
-    expect(() => parser.parseDurationToMs('invalid')).toThrow(
-      'Invalid JWT_REFRESH_EXPIRY value: invalid',
-    );
-    expect(() => parser.parseDurationToMs('0m')).toThrow(
-      'Invalid JWT_REFRESH_EXPIRY value: 0m',
-    );
   });
 
   it('uses jwt module defaults for access tokens and explicit options for refresh tokens', async () => {

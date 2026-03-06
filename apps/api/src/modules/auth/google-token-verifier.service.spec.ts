@@ -1,3 +1,4 @@
+import { BadGatewayException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { sign } from 'jsonwebtoken';
 import { generateKeyPairSync } from 'node:crypto';
@@ -272,7 +273,7 @@ describe('GoogleTokenVerifierService', () => {
 
     await expect(service.verifyIdToken(createToken())).rejects.toMatchObject({
       response: {
-        code: 'INVALID_GOOGLE_TOKEN',
+        code: 'GOOGLE_JWKS_UNAVAILABLE',
       },
     });
     expect(jsonSpy).not.toHaveBeenCalled();
@@ -288,7 +289,29 @@ describe('GoogleTokenVerifierService', () => {
     });
   });
 
+  it('maps non-OK JWKS responses to a bad gateway error', async () => {
+    fetchSpy.mockResolvedValue(
+      createJwksResponse(
+        { error: 'unavailable' },
+        {
+          ok: false,
+          status: 503,
+        },
+      ),
+    );
+
+    await expect(service.verifyIdToken(createToken())).rejects.toBeInstanceOf(
+      BadGatewayException,
+    );
+    await expect(service.verifyIdToken(createToken())).rejects.toMatchObject({
+      response: {
+        code: 'GOOGLE_JWKS_UNAVAILABLE',
+      },
+    });
+  });
+
   it('rejects when JWT is expired', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-03-06T12:00:00.000Z'));
     fetchSpy.mockResolvedValue(
       createJwksResponse({ keys: [createSigningJwk()] }),
     );
@@ -296,7 +319,7 @@ describe('GoogleTokenVerifierService', () => {
     await expect(
       service.verifyIdToken(
         createToken({
-          exp: Math.floor(Date.now() / 1000) - 1,
+          exp: Math.floor(Date.now() / 1000) - 61,
         }),
       ),
     ).rejects.toMatchObject({
@@ -304,6 +327,25 @@ describe('GoogleTokenVerifierService', () => {
         code: 'INVALID_GOOGLE_TOKEN',
       },
     });
+  });
+
+  it('accepts tokens within the allowed clock skew tolerance window', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-03-06T12:00:00.000Z'));
+    fetchSpy.mockResolvedValue(
+      createJwksResponse({ keys: [createSigningJwk()] }),
+    );
+
+    await expect(
+      service.verifyIdToken(
+        createToken({
+          exp: Math.floor(Date.now() / 1000) - 30,
+        }),
+      ),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        email: 'verified@irontrack.local',
+      }),
+    );
   });
 
   it('rejects when token kid does not exist in signing keys', async () => {

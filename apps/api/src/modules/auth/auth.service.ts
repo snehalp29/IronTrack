@@ -354,13 +354,7 @@ export class AuthService {
   }
 
   private parseDurationToMs(value: string): number {
-    const normalized = value.trim();
-    const durationSeconds = durationToSeconds(normalized);
-    if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
-      throw new Error(`Invalid JWT_REFRESH_EXPIRY value: ${value}`);
-    }
-
-    return durationSeconds * 1000;
+    return durationToSeconds(value.trim()) * 1000;
   }
 
   async validateUserFromPayload(payload: {

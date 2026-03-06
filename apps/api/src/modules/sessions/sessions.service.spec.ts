@@ -170,6 +170,7 @@ describe('SessionsService', () => {
 
   it('returns a started session with superset ordering applied', async () => {
     const { service, prismaMock, supersetMock } = createService();
+    (prismaMock.workoutSession.findFirst as jest.Mock).mockResolvedValue(null);
     (prismaMock.workoutSession.create as jest.Mock).mockResolvedValue({
       id: 'session-1',
       sessionExercises: [
@@ -201,6 +202,28 @@ describe('SessionsService', () => {
       id: 'session-1',
       sessionExercises: [{ id: 'se-2' }, { id: 'se-1' }],
     });
+    expect(prismaMock.$transaction).toHaveBeenCalledWith(expect.any(Function));
+  });
+
+  it('rejects starting a new session while another session is already in progress', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.workoutSession.findFirst as jest.Mock).mockResolvedValue({
+      id: 'active-session',
+      status: 'IN_PROGRESS',
+    });
+
+    await expect(
+      service.startSession('user-1', {
+        notes: 'inline',
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            orderIndex: 0,
+          },
+        ],
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(prismaMock.workoutSession.create).not.toHaveBeenCalled();
   });
 
   it('uses template exercise index when orderIndex is missing', async () => {
@@ -622,6 +645,10 @@ describe('SessionsService', () => {
     expect(result.totalVolume).toBe(1200);
     expect(result.newPrs).toEqual([{ id: 'pr1' }]);
     expect(result.warning).toBe('Workout has incomplete sets');
+    expect(completionMock.calculate).toHaveBeenCalledWith(
+      'session-1',
+      'user-1',
+    );
     expect(streakMock.onSessionFinished).toHaveBeenCalledWith(
       'user-1',
       expect.any(Date),
@@ -2248,15 +2275,8 @@ describe('SessionsService', () => {
     ).rejects.toEqual(dbError);
   });
 
-  it('ignores soft-deleted rows when refetching an idempotency race', async () => {
+  it('returns a structured conflict when an idempotency race collides with a soft-deleted row', async () => {
     const { service, prismaMock } = createService();
-    const dbError = {
-      code: 'P2002',
-      meta: {
-        target: ['sessionExerciseId', 'idempotencyKey'],
-      },
-    };
-    let findFirstCalls = 0;
     (prismaMock.sessionExercise.findFirst as jest.Mock).mockResolvedValue({
       id: 'se1',
       exerciseTemplateId: 'exercise-1',
@@ -2265,22 +2285,19 @@ describe('SessionsService', () => {
         status: 'IN_PROGRESS',
       },
     });
-    (prismaMock.set.findFirst as jest.Mock).mockImplementation(
-      async (args?: { where?: { deletedAt?: null } }) => {
-        findFirstCalls += 1;
-        if (findFirstCalls === 1) {
-          return null;
-        }
-
-        return args?.where?.deletedAt === null
-          ? null
-          : {
-              id: 'deleted-race-set',
-              deletedAt: new Date('2026-03-06T00:00:00.000Z'),
-            };
+    (prismaMock.set.findFirst as jest.Mock)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: 'deleted-race-set',
+        deletedAt: new Date('2026-03-06T00:00:00.000Z'),
+      });
+    (prismaMock.set.create as jest.Mock).mockRejectedValue({
+      code: 'P2002',
+      meta: {
+        target: ['sessionExerciseId', 'idempotencyKey'],
       },
-    );
-    (prismaMock.set.create as jest.Mock).mockRejectedValue(dbError);
+    });
 
     await expect(
       service.createSet('user-1', 'se1', {
@@ -2289,7 +2306,11 @@ describe('SessionsService', () => {
         payload: {},
         idempotencyKey: 'idem-soft-deleted-race',
       }),
-    ).rejects.toEqual(dbError);
+    ).rejects.toMatchObject({
+      response: {
+        code: 'SET_IDEMPOTENCY_KEY_REUSED',
+      },
+    });
   });
 
   it('rethrows non-object errors during idempotent create', async () => {

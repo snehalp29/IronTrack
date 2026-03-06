@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { StreakService } from '../../services/streak.service';
@@ -15,10 +15,23 @@ export class ChecklistService {
   ) {}
 
   async getByDate(userId: string, date: string) {
+    const requestedDate = new Date(`${date}T00:00:00.000Z`);
+    const today = new Date();
+    const todayUtc = new Date(
+      Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()),
+    );
+
+    if (requestedDate.getTime() > todayUtc.getTime()) {
+      throw new BadRequestException({
+        code: 'FUTURE_DATE_NOT_ALLOWED',
+        message: 'Future dates are not allowed',
+      });
+    }
+
     return this.prisma.checklistItem.findMany({
       where: {
         userId,
-        date: new Date(`${date}T00:00:00.000Z`),
+        date: requestedDate,
       },
       orderBy: { type: 'asc' },
     });

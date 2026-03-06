@@ -1,3 +1,5 @@
+import { BadRequestException } from '@nestjs/common';
+
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { StreakService } from '../../services/streak.service';
 import { ChecklistService } from './checklist.service';
@@ -70,6 +72,18 @@ describe('ChecklistService', () => {
       },
       orderBy: { type: 'asc' },
     });
+  });
+
+  it('rejects future getByDate requests', async () => {
+    const { service, prismaMock } = createService();
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+
+    await expect(service.getByDate('user-1', tomorrow)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(prismaMock.checklistItem.findMany).not.toHaveBeenCalled();
   });
 
   it('upserts completed checklist item and records streak check', async () => {

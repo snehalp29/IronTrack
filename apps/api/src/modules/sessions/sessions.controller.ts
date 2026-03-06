@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   Patch,
   Post,
@@ -65,6 +66,7 @@ export class SessionsController {
   }
 
   @Post(':id/finish')
+  @HttpCode(200)
   async finish(@CurrentUser() user: { sub: string }, @Param('id') id: string) {
     return this.sessionsService.finishSession(user.sub, id);
   }
@@ -79,8 +81,9 @@ export class SessionsController {
   }
 
   @Delete(':id')
+  @HttpCode(204)
   async remove(@CurrentUser() user: { sub: string }, @Param('id') id: string) {
-    return this.sessionsService.softDeleteSession(user.sub, id);
+    await this.sessionsService.softDeleteSession(user.sub, id);
   }
 
   @Post(':sessionId/exercises')

@@ -229,7 +229,23 @@ export const createSetSchema = baseCreateSetSchema.superRefine(
 
 export const updateSetSchema = baseCreateSetSchema
   .partial()
-  .superRefine(validateSetCompletionConsistency);
+  .superRefine((value, ctx) => {
+    validateSetCompletionConsistency(value, ctx);
+
+    const updatesLoadFields =
+      value.weight !== undefined ||
+      value.reps !== undefined ||
+      value.durationSeconds !== undefined;
+
+    if (updatesLoadFields && value.payload === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'payload must be provided when weight, reps, or durationSeconds is updated',
+        path: ['payload'],
+      });
+    }
+  });
 
 export const toggleSetCompletionSchema = z.object({
   isCompleted: z.boolean(),

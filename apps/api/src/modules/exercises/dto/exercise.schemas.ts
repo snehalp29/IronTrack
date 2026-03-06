@@ -4,6 +4,7 @@ import { optionalTrimmed } from '../../../common/validation/optional-trimmed';
 
 const MAX_FILTER_VALUE_LENGTH = 120;
 const MAX_SEARCH_LENGTH = 200;
+const MAX_RELATION_IDS = 20;
 
 const optionalQueryBooleanSchema = z
   .preprocess((value) => {
@@ -69,8 +70,11 @@ export const createExerciseSchema = z
     description: z.string().max(4000).optional(),
     exerciseType: exerciseTypeSchema,
     primaryMuscleGroupId: z.string().uuid(),
-    secondaryMuscleGroupIds: z.array(z.string().uuid()).default([]),
-    equipmentIds: z.array(z.string().uuid()).default([]),
+    secondaryMuscleGroupIds: z
+      .array(z.string().uuid())
+      .max(MAX_RELATION_IDS)
+      .default([]),
+    equipmentIds: z.array(z.string().uuid()).max(MAX_RELATION_IDS).default([]),
     defaultSets: z.number().int().positive().optional(),
     repMin: z.number().int().positive().optional(),
     repMax: z.number().int().positive().optional(),
@@ -84,8 +88,11 @@ export const updateExerciseSchema = z
     description: z.string().max(4000).optional(),
     exerciseType: exerciseTypeSchema.optional(),
     primaryMuscleGroupId: z.string().uuid().optional(),
-    secondaryMuscleGroupIds: z.array(z.string().uuid()).optional(),
-    equipmentIds: z.array(z.string().uuid()).optional(),
+    secondaryMuscleGroupIds: z
+      .array(z.string().uuid())
+      .max(MAX_RELATION_IDS)
+      .optional(),
+    equipmentIds: z.array(z.string().uuid()).max(MAX_RELATION_IDS).optional(),
     defaultSets: z.number().int().positive().optional(),
     repMin: z.number().int().positive().optional(),
     repMax: z.number().int().positive().optional(),

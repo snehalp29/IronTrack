@@ -21,7 +21,7 @@ describe('CompletionService', () => {
       .mockReturnValueOnce('count-completed');
     (prismaMock.$transaction as jest.Mock).mockResolvedValue([0, 0]);
 
-    await expect(service.calculate('session-1')).resolves.toEqual({
+    await expect(service.calculate('session-1', 'user-1')).resolves.toEqual({
       totalSets: 0,
       completedSets: 0,
       completionPercent: 0,
@@ -39,7 +39,7 @@ describe('CompletionService', () => {
       .mockReturnValueOnce('count-completed');
     (prismaMock.$transaction as jest.Mock).mockResolvedValue([8, 6]);
 
-    await expect(service.calculate('session-2')).resolves.toEqual({
+    await expect(service.calculate('session-2', 'user-1')).resolves.toEqual({
       totalSets: 8,
       completedSets: 6,
       completionPercent: 75,
@@ -53,7 +53,7 @@ describe('CompletionService', () => {
       .mockReturnValueOnce('count-completed');
     (prismaMock.$transaction as jest.Mock).mockResolvedValue([5, 5]);
 
-    await expect(service.calculate('session-3')).resolves.toEqual({
+    await expect(service.calculate('session-3', 'user-1')).resolves.toEqual({
       totalSets: 5,
       completedSets: 5,
       completionPercent: 100,
@@ -67,7 +67,7 @@ describe('CompletionService', () => {
       .mockReturnValueOnce('count-completed');
     (prismaMock.$transaction as jest.Mock).mockResolvedValue([3, 1]);
 
-    await expect(service.calculate('session-4')).resolves.toEqual({
+    await expect(service.calculate('session-4', 'user-1')).resolves.toEqual({
       totalSets: 3,
       completedSets: 1,
       completionPercent: 33.33,
@@ -81,7 +81,7 @@ describe('CompletionService', () => {
       .mockReturnValueOnce('count-completed');
     (prismaMock.$transaction as jest.Mock).mockResolvedValue([2, 1]);
 
-    await service.calculate('session-5');
+    await service.calculate('session-5', 'user-1');
 
     expect(prismaMock.set.count).toHaveBeenNthCalledWith(1, {
       where: {
@@ -90,6 +90,7 @@ describe('CompletionService', () => {
           sessionId: 'session-5',
           deletedAt: null,
           session: {
+            userId: 'user-1',
             deletedAt: null,
           },
         },
@@ -103,6 +104,7 @@ describe('CompletionService', () => {
           sessionId: 'session-5',
           deletedAt: null,
           session: {
+            userId: 'user-1',
             deletedAt: null,
           },
         },

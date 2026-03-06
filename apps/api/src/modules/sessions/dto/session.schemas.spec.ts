@@ -140,6 +140,30 @@ describe('session set schemas', () => {
     expect(result.success).toBe(true);
   });
 
+  it('requires payload when weight, reps, or durationSeconds are patched', () => {
+    expect(
+      updateSetSchema.safeParse({
+        weight: 50,
+      }).success,
+    ).toBe(false);
+    expect(
+      updateSetSchema.safeParse({
+        reps: 8,
+      }).success,
+    ).toBe(false);
+    expect(
+      updateSetSchema.safeParse({
+        durationSeconds: 45,
+      }).success,
+    ).toBe(false);
+    expect(
+      updateSetSchema.safeParse({
+        weight: 50,
+        payload: { weight: 50 },
+      }).success,
+    ).toBe(true);
+  });
+
   it('rejects future completedAt timestamps on create and update', () => {
     const futureCompletedAt = new Date(Date.now() + 60_000).toISOString();
 

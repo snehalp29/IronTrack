@@ -53,17 +53,20 @@ describe('ProgressService', () => {
     expect(prismaMock.set.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
+          completedAt: {
+            gte: new Date('2024-01-01T00:00:00.000Z'),
+            lt: new Date('2024-01-08T00:00:00.000Z'),
+          },
           sessionExercise: {
             deletedAt: null,
             session: {
               userId: 'user-1',
               deletedAt: null,
-              startedAt: {
-                gte: new Date('2024-01-01T00:00:00.000Z'),
-                lt: new Date('2024-01-08T00:00:00.000Z'),
-              },
             },
           },
+        }),
+        select: expect.not.objectContaining({
+          durationSeconds: true,
         }),
       }),
     );
@@ -189,15 +192,15 @@ describe('ProgressService', () => {
     expect(prismaMock.set.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
+          completedAt: {
+            gte: new Date('2024-03-04T00:00:00.000Z'),
+            lt: new Date('2024-03-11T00:00:00.000Z'),
+          },
           sessionExercise: {
             deletedAt: null,
             session: {
               userId: 'user-1',
               deletedAt: null,
-              startedAt: {
-                gte: new Date('2024-03-04T00:00:00.000Z'),
-                lt: new Date('2024-03-11T00:00:00.000Z'),
-              },
             },
           },
         }),
@@ -217,15 +220,15 @@ describe('ProgressService', () => {
     expect(prismaMock.set.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
+          completedAt: {
+            gte: new Date('2024-03-11T00:00:00.000Z'),
+            lt: new Date('2024-03-18T00:00:00.000Z'),
+          },
           sessionExercise: {
             deletedAt: null,
             session: {
               userId: 'user-1',
               deletedAt: null,
-              startedAt: {
-                gte: new Date('2024-03-11T00:00:00.000Z'),
-                lt: new Date('2024-03-18T00:00:00.000Z'),
-              },
             },
           },
         }),
@@ -272,5 +275,17 @@ describe('ProgressService', () => {
     await service.weekly('user-1', '2024-01-08');
 
     expect(prismaMock.muscleGroup.count).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes the cached total muscle count after the ttl expires', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2024-01-01T00:00:00.000Z'));
+    (prismaMock.set.findMany as jest.Mock).mockResolvedValue([]);
+    (prismaMock.muscleGroup.count as jest.Mock).mockResolvedValue(6);
+
+    await service.weekly('user-1', '2024-01-01');
+    jest.advanceTimersByTime(5 * 60 * 1000 + 1);
+    await service.weekly('user-1', '2024-01-08');
+
+    expect(prismaMock.muscleGroup.count).toHaveBeenCalledTimes(2);
   });
 });

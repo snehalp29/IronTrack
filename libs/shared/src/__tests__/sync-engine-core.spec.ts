@@ -61,7 +61,7 @@ describe('sync engine core', () => {
       new Date('2026-03-02T10:00:00.000Z'),
     );
 
-    expect(result).toEqual({ synced: 3, conflicts: 0 });
+    expect(result).toEqual({ synced: 3, conflicts: 0, dropped: 0 });
     expect(applyRemote).toHaveBeenNthCalledWith(1, {
       entityType: 'session',
       localId: 'session-local-1',
@@ -129,7 +129,7 @@ describe('sync engine core', () => {
       new Date('2026-03-02T10:00:00.000Z'),
     );
 
-    expect(result).toEqual({ synced: 1, conflicts: 1 });
+    expect(result).toEqual({ synced: 1, conflicts: 1, dropped: 0 });
     expect(applyRemote).toHaveBeenCalledTimes(2);
     expect(db.runSync).toHaveBeenCalledWith(
       'UPDATE sync_queue SET next_attempt_at = ? WHERE id = ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?)',
@@ -168,7 +168,7 @@ describe('sync engine core', () => {
       new Date('2026-03-02T10:00:00.000Z'),
     );
 
-    expect(result).toEqual({ synced: 0, conflicts: 0 });
+    expect(result).toEqual({ synced: 0, conflicts: 0, dropped: 0 });
   });
 
   it('counts conflicts when status is provided under error.response.status', async () => {
@@ -194,7 +194,7 @@ describe('sync engine core', () => {
       new Date('2026-03-02T10:00:00.000Z'),
     );
 
-    expect(result).toEqual({ synced: 0, conflicts: 1 });
+    expect(result).toEqual({ synced: 0, conflicts: 1, dropped: 0 });
   });
 
   it('does not count conflicts for non-object thrown values', async () => {
@@ -218,7 +218,7 @@ describe('sync engine core', () => {
       new Date('2026-03-02T10:00:00.000Z'),
     );
 
-    expect(result).toEqual({ synced: 0, conflicts: 0 });
+    expect(result).toEqual({ synced: 0, conflicts: 0, dropped: 0 });
   });
 
   it('passes operation and local id to remote applier when replaying', async () => {
@@ -347,7 +347,7 @@ describe('sync engine core', () => {
       new Date('2026-03-02T10:00:00.000Z'),
     );
 
-    expect(result).toEqual({ synced: 0, conflicts: 0 });
+    expect(result).toEqual({ synced: 0, conflicts: 0, dropped: 0 });
     expect(applyRemote).not.toHaveBeenCalled();
     expect(db.runSync).not.toHaveBeenCalledWith(
       'DELETE FROM sync_queue WHERE id = ?',
@@ -384,7 +384,7 @@ describe('sync engine core', () => {
         { claimLeaseMs: 90_000, retryDelayMs: 45_000 },
       );
 
-      expect(result).toEqual({ synced: 0, conflicts: 0 });
+      expect(result).toEqual({ synced: 0, conflicts: 0, dropped: 0 });
       expect(db.runSync).toHaveBeenCalledWith(
         'UPDATE sync_queue SET next_attempt_at = ? WHERE id = ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?)',
         ['2026-03-02T10:01:30.001Z', 5, '2026-03-02T10:00:00.000Z'],
@@ -446,6 +446,9 @@ describe('sync engine core', () => {
 
   it('drops poison-pill items once they exceed the max attempt threshold', async () => {
     const restoreCrypto = mockCryptoRandom(0);
+    const consoleErrorSpy = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
     const db: SyncQueueDb = {
       getAllSync: vi.fn((query: string) => {
         if (query === DUE_SYNC_QUEUE_QUERY) {
@@ -473,7 +476,7 @@ describe('sync engine core', () => {
         new Date('2026-03-02T10:00:00.000Z'),
       );
 
-      expect(result).toEqual({ synced: 0, conflicts: 0 });
+      expect(result).toEqual({ synced: 0, conflicts: 0, dropped: 1 });
       expect(db.runSync).toHaveBeenCalledWith(
         'DELETE FROM sync_queue WHERE id = ?',
         [88],
@@ -482,7 +485,16 @@ describe('sync engine core', () => {
         'UPDATE sync_queue SET attempts = attempts + 1, next_attempt_at = ? WHERE id = ?',
         [expect.any(String), 88],
       );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        'Dropping exhausted sync queue item',
+        expect.objectContaining({
+          entityType: 'session',
+          localId: 'local-88',
+          operation: 'UPDATE',
+        }),
+      );
     } finally {
+      consoleErrorSpy.mockRestore();
       restoreCrypto();
     }
   });

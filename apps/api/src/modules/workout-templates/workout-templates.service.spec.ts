@@ -706,6 +706,25 @@ describe('WorkoutTemplatesService', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
+  it('treats owner double-delete as a successful idempotent delete', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.workoutTemplate.findFirst as jest.Mock)
+      .mockResolvedValueOnce({
+        id: 'template-1',
+      })
+      .mockResolvedValueOnce({
+        id: 'template-1',
+        deletedAt: new Date('2026-03-06T00:00:00.000Z'),
+      });
+    (prismaMock.workoutTemplate.updateMany as jest.Mock).mockResolvedValue({
+      count: 0,
+    });
+
+    await expect(service.softDelete('user-1', 'template-1')).resolves.toEqual({
+      success: true,
+    });
+  });
+
   it('reorders templates in a transaction', async () => {
     const { service, prismaMock } = createService();
     (prismaMock.workoutTemplate.count as jest.Mock).mockResolvedValue(1);

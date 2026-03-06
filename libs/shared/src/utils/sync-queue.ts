@@ -1,6 +1,7 @@
 export interface SyncResult {
   synced: number;
   conflicts: number;
+  dropped: number;
 }
 
 export type SyncOperation = 'CREATE' | 'UPDATE' | 'DELETE';
@@ -117,6 +118,7 @@ export async function replaySyncQueueWithDb(
 
   let synced = 0;
   let conflicts = 0;
+  let dropped = 0;
 
   for (const item of items) {
     const claimUntilIso = new Date(
@@ -151,6 +153,12 @@ export async function replaySyncQueueWithDb(
       const nextAttempts = (item.attempts ?? 0) + 1;
       if (nextAttempts >= maxAttempts) {
         db.runSync('DELETE FROM sync_queue WHERE id = ?', [item.id]);
+        dropped += 1;
+        console.error('Dropping exhausted sync queue item', {
+          entityType: item.entity_type,
+          localId: item.local_id,
+          operation: item.operation,
+        });
         continue;
       }
 
@@ -161,7 +169,7 @@ export async function replaySyncQueueWithDb(
     }
   }
 
-  return { synced, conflicts };
+  return { synced, conflicts, dropped };
 }
 
 function getRetryJitterMs(): number {

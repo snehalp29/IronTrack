@@ -116,6 +116,41 @@ describe('exercise schemas', () => {
     });
   });
 
+  it('rejects overly large secondary muscle and equipment relation arrays', () => {
+    const tooManyIds = Array.from(
+      { length: 21 },
+      (_, index) =>
+        `11111111-1111-4111-8111-${String(index).padStart(12, '0').slice(-12)}`,
+    );
+
+    expect(() =>
+      createExerciseSchema.parse({
+        name: 'Back Squat',
+        exerciseType: 'WEIGHT_REPS',
+        primaryMuscleGroupId: '11111111-1111-4111-8111-111111111111',
+        secondaryMuscleGroupIds: tooManyIds,
+      }),
+    ).toThrow();
+    expect(() =>
+      createExerciseSchema.parse({
+        name: 'Back Squat',
+        exerciseType: 'WEIGHT_REPS',
+        primaryMuscleGroupId: '11111111-1111-4111-8111-111111111111',
+        equipmentIds: tooManyIds,
+      }),
+    ).toThrow();
+    expect(() =>
+      updateExerciseSchema.parse({
+        secondaryMuscleGroupIds: tooManyIds,
+      }),
+    ).toThrow();
+    expect(() =>
+      updateExerciseSchema.parse({
+        equipmentIds: tooManyIds,
+      }),
+    ).toThrow();
+  });
+
   it('rejects rep ranges where repMin is greater than repMax', () => {
     const invalidCreate = createExerciseSchema.safeParse({
       name: 'Back Squat',

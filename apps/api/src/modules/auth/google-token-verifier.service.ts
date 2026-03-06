@@ -1,4 +1,8 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadGatewayException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createPublicKey, verify } from 'node:crypto';
 import { z } from 'zod';
@@ -6,6 +10,7 @@ import { z } from 'zod';
 const GOOGLE_JWKS_URL = 'https://www.googleapis.com/oauth2/v3/certs';
 const DEFAULT_JWKS_CACHE_TTL_SECONDS = 300;
 const GOOGLE_JWKS_REQUEST_TIMEOUT_MS = 5000;
+const GOOGLE_TOKEN_CLOCK_SKEW_TOLERANCE_MS = 60_000;
 const VALID_ISSUERS = new Set([
   'accounts.google.com',
   'https://accounts.google.com',
@@ -78,7 +83,10 @@ export class GoogleTokenVerifierService {
 
       payload = parsedPayload.data;
     } catch (error) {
-      if (error instanceof UnauthorizedException) {
+      if (
+        error instanceof UnauthorizedException ||
+        error instanceof BadGatewayException
+      ) {
         throw error;
       }
 
@@ -94,7 +102,8 @@ export class GoogleTokenVerifierService {
     const authorizedParty = payload.azp;
     const issuer = payload.iss;
     const emailVerified = normalizeEmailVerified(payload.email_verified);
-    const notExpired = payload.exp * 1000 > Date.now();
+    const notExpired =
+      payload.exp * 1000 + GOOGLE_TOKEN_CLOCK_SKEW_TOLERANCE_MS > Date.now();
 
     if (
       !emailVerified ||
@@ -210,9 +219,9 @@ export class GoogleTokenVerifierService {
     }
 
     if (!response.ok) {
-      throw new UnauthorizedException({
-        code: 'INVALID_GOOGLE_TOKEN',
-        message: 'Google ID token is invalid',
+      throw new BadGatewayException({
+        code: 'GOOGLE_JWKS_UNAVAILABLE',
+        message: 'Unable to fetch Google signing keys',
       });
     }
 

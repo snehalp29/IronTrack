@@ -1,3 +1,5 @@
+import { HTTP_CODE_METADATA } from '@nestjs/common/constants';
+
 import { SessionsController } from './sessions.controller';
 import type { SessionsService } from './sessions.service';
 
@@ -87,6 +89,15 @@ describe('SessionsController', () => {
     expect(sessionsServiceMock.finishSession).toHaveBeenCalledWith('u1', 's1');
   });
 
+  it('marks finish as an HTTP 200 action', () => {
+    expect(
+      Reflect.getMetadata(
+        HTTP_CODE_METADATA,
+        SessionsController.prototype.finish,
+      ),
+    ).toBe(200);
+  });
+
   it('delegates list', async () => {
     const query = { page: 1, pageSize: 20 };
     (sessionsServiceMock.listSessions as jest.Mock).mockResolvedValue({
@@ -104,13 +115,22 @@ describe('SessionsController', () => {
       success: true,
     });
 
-    await expect(controller.remove({ sub: 'u1' }, 's1')).resolves.toEqual({
-      success: true,
-    });
+    await expect(
+      controller.remove({ sub: 'u1' }, 's1'),
+    ).resolves.toBeUndefined();
     expect(sessionsServiceMock.softDeleteSession).toHaveBeenCalledWith(
       'u1',
       's1',
     );
+  });
+
+  it('marks remove as an HTTP 204 action', () => {
+    expect(
+      Reflect.getMetadata(
+        HTTP_CODE_METADATA,
+        SessionsController.prototype.remove,
+      ),
+    ).toBe(204);
   });
 
   it('delegates addExercise', async () => {
