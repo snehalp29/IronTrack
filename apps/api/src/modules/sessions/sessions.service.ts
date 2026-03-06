@@ -197,6 +197,17 @@ export class SessionsService {
       Math.round((finishedAt.getTime() - existing.startedAt.getTime()) / 1000),
     );
 
+    const totalVolume = await this.volumeService.cacheSessionVolume(sessionId);
+    const newPrs = await this.prDetectionService.detectForSession(
+      userId,
+      sessionId,
+    );
+    await this.streakService.onSessionFinished(
+      userId,
+      finishedAt,
+      existing.user?.timezone ?? 'UTC',
+    );
+    const completion = await this.completionService.calculate(sessionId);
     const session = await this.prisma.workoutSession.update({
       where: { id: sessionId },
       data: {
@@ -207,18 +218,6 @@ export class SessionsService {
         version: { increment: 1 },
       },
     });
-
-    const totalVolume = await this.volumeService.cacheSessionVolume(session.id);
-    const newPrs = await this.prDetectionService.detectForSession(
-      userId,
-      session.id,
-    );
-    await this.streakService.onSessionFinished(
-      userId,
-      finishedAt,
-      existing.user?.timezone ?? 'UTC',
-    );
-    const completion = await this.completionService.calculate(session.id);
 
     return {
       ...session,
@@ -307,6 +306,27 @@ export class SessionsService {
       this.throwSessionNotFound();
     }
 
+    const sessionExercises = await this.prisma.sessionExercise.findMany({
+      where: {
+        sessionId,
+        deletedAt: null,
+      },
+      select: {
+        exerciseTemplateId: true,
+      },
+    });
+    const exerciseTemplateIds = Array.from(
+      new Set(sessionExercises.map((row) => row.exerciseTemplateId)),
+    );
+    await Promise.all(
+      exerciseTemplateIds.map((exerciseTemplateId) =>
+        this.prDetectionService.recalculateForExercise(
+          userId,
+          exerciseTemplateId,
+        ),
+      ),
+    );
+
     return { success: true };
   }
 
@@ -343,7 +363,10 @@ export class SessionsService {
         id: sessionExerciseId,
         sessionId,
         deletedAt: null,
-        session: { userId },
+        session: {
+          userId,
+          deletedAt: null,
+        },
       },
     });
 
@@ -371,11 +394,40 @@ export class SessionsService {
     sessionId: string,
     sessionExerciseId: string,
   ) {
+    const target = await this.prisma.sessionExercise.findFirst({
+      where: {
+        id: sessionExerciseId,
+        sessionId,
+        deletedAt: null,
+        session: {
+          userId,
+          deletedAt: null,
+        },
+      },
+      select: {
+        id: true,
+        exerciseTemplateId: true,
+        session: {
+          select: {
+            id: true,
+            status: true,
+          },
+        },
+      },
+    });
+
+    if (!target) {
+      this.throwSessionExerciseNotFound();
+    }
+
     const updated = await this.prisma.sessionExercise.updateMany({
       where: {
         id: sessionExerciseId,
         sessionId,
-        session: { userId },
+        session: {
+          userId,
+          deletedAt: null,
+        },
         deletedAt: null,
       },
       data: {
@@ -387,6 +439,14 @@ export class SessionsService {
       this.throwSessionExerciseNotFound();
     }
 
+    await this.prDetectionService.recalculateForExercise(
+      userId,
+      target.exerciseTemplateId,
+    );
+    if (target.session.status === 'FINISHED') {
+      await this.volumeService.cacheSessionVolume(target.session.id);
+    }
+
     return { success: true };
   }
 
@@ -396,8 +456,21 @@ export class SessionsService {
     input: ReorderSessionExercisesDto,
   ) {
     await this.assertSessionOwnership(userId, sessionId);
+    const exerciseIds = input.items.map((item) => item.id);
+    const existingCount = await this.prisma.sessionExercise.count({
+      where: {
+        id: {
+          in: exerciseIds,
+        },
+        sessionId,
+        deletedAt: null,
+      },
+    });
+    if (existingCount !== exerciseIds.length) {
+      this.throwSessionExerciseNotFound();
+    }
 
-    const results = await this.prisma.$transaction(
+    await this.prisma.$transaction(
       input.items.map((item) =>
         this.prisma.sessionExercise.updateMany({
           where: {
@@ -412,10 +485,6 @@ export class SessionsService {
       ),
     );
 
-    if (results.some((result) => result.count === 0)) {
-      this.throwSessionExerciseNotFound();
-    }
-
     return { success: true };
   }
 
@@ -428,8 +497,15 @@ export class SessionsService {
       where: {
         id: input.fromExerciseId,
         sessionId,
-        session: { userId },
+        session: {
+          userId,
+          deletedAt: null,
+        },
         deletedAt: null,
+      },
+      select: {
+        id: true,
+        exerciseTemplateId: true,
       },
     });
 
@@ -442,13 +518,27 @@ export class SessionsService {
       input.toExerciseTemplateId,
     );
 
-    return this.prisma.sessionExercise.update({
+    const updated = await this.prisma.sessionExercise.update({
       where: { id: exercise.id },
       data: {
         exerciseTemplateId: input.toExerciseTemplateId,
         version: { increment: 1 },
       },
     });
+
+    const affectedExerciseTemplateIds = Array.from(
+      new Set([exercise.exerciseTemplateId, input.toExerciseTemplateId]),
+    );
+    await Promise.all(
+      affectedExerciseTemplateIds.map((exerciseTemplateId) =>
+        this.prDetectionService.recalculateForExercise(
+          userId,
+          exerciseTemplateId,
+        ),
+      ),
+    );
+
+    return updated;
   }
 
   async createSet(
@@ -486,7 +576,10 @@ export class SessionsService {
         sessionExerciseId,
         deletedAt: null,
         sessionExercise: {
-          session: { userId },
+          session: {
+            userId,
+            deletedAt: null,
+          },
         },
       },
       include: {
@@ -544,10 +637,12 @@ export class SessionsService {
       },
     });
 
-    await this.prDetectionService.recalculateForExercise(
-      userId,
-      existing.sessionExercise.exerciseTemplateId,
-    );
+    if (isPrAffectingSetUpdate(input)) {
+      await this.prDetectionService.recalculateForExercise(
+        userId,
+        existing.sessionExercise.exerciseTemplateId,
+      );
+    }
 
     if (existing.sessionExercise.session.status === 'FINISHED') {
       await this.volumeService.cacheSessionVolume(
@@ -565,7 +660,10 @@ export class SessionsService {
         sessionExerciseId,
         deletedAt: null,
         sessionExercise: {
-          session: { userId },
+          session: {
+            userId,
+            deletedAt: null,
+          },
         },
       },
       include: {
@@ -614,6 +712,7 @@ export class SessionsService {
         sessionExercise: {
           session: {
             userId,
+            deletedAt: null,
           },
         },
       },
@@ -670,20 +769,15 @@ export class SessionsService {
       sessionExerciseId,
     );
 
-    const results = [];
-    let shouldRecalculatePrs = false;
-    for (const set of input.sets) {
-      const created = await this.createSetInternal(
-        userId,
-        sessionExerciseId,
-        set,
-        sessionExercise,
-      );
-      results.push(created.item);
-      if (created.wasCreated && created.item.isCompleted) {
-        shouldRecalculatePrs = true;
-      }
-    }
+    const createdSets = await Promise.all(
+      input.sets.map((set) =>
+        this.createSetInternal(userId, sessionExerciseId, set, sessionExercise),
+      ),
+    );
+    const results = createdSets.map((createdSet) => createdSet.item);
+    const shouldRecalculatePrs = createdSets.some(
+      (createdSet) => createdSet.wasCreated && createdSet.item.isCompleted,
+    );
 
     if (shouldRecalculatePrs) {
       await this.prDetectionService.recalculateForExercise(
@@ -811,7 +905,10 @@ export class SessionsService {
         where: {
           id: sessionExerciseId,
           deletedAt: null,
-          session: { userId },
+          session: {
+            userId,
+            deletedAt: null,
+          },
         },
         select: {
           id: true,
@@ -847,39 +944,66 @@ export class SessionsService {
       }
     }
 
-    const created = await this.prisma.set.create({
-      data: {
-        sessionExerciseId,
-        orderIndex: input.orderIndex,
-        type: input.type,
-        payload: input.payload as Prisma.InputJsonValue,
-        isCompleted: input.isCompleted ?? Boolean(input.completedAt),
-        completedAt: input.completedAt
-          ? new Date(input.completedAt)
-          : input.isCompleted
-            ? new Date()
-            : null,
-        idempotencyKey: input.idempotencyKey,
-        weight: input.weight,
-        reps: input.reps,
-        durationSeconds: input.durationSeconds,
-        rpe: input.rpe,
-      },
-      include: {
-        sessionExercise: {
-          select: {
-            exerciseTemplateId: true,
-            session: {
-              select: {
-                id: true,
-                userId: true,
-                status: true,
+    let created;
+    try {
+      created = await this.prisma.set.create({
+        data: {
+          sessionExerciseId,
+          orderIndex: input.orderIndex,
+          type: input.type,
+          payload: input.payload as Prisma.InputJsonValue,
+          isCompleted: input.isCompleted ?? Boolean(input.completedAt),
+          completedAt: input.completedAt
+            ? new Date(input.completedAt)
+            : input.isCompleted
+              ? new Date()
+              : null,
+          idempotencyKey: input.idempotencyKey,
+          weight: input.weight,
+          reps: input.reps,
+          durationSeconds: input.durationSeconds,
+          rpe: input.rpe,
+        },
+        include: {
+          sessionExercise: {
+            select: {
+              exerciseTemplateId: true,
+              session: {
+                select: {
+                  id: true,
+                  userId: true,
+                  status: true,
+                },
               },
             },
           },
         },
-      },
-    });
+      });
+    } catch (error) {
+      if (
+        input.idempotencyKey &&
+        isSetIdempotencyUniqueConstraintError(error)
+      ) {
+        const existing = await this.prisma.set.findFirst({
+          where: {
+            sessionExerciseId,
+            idempotencyKey: input.idempotencyKey,
+          },
+        });
+
+        if (existing) {
+          return {
+            item: existing,
+            wasCreated: false,
+            exerciseTemplateId: sessionExercise.exerciseTemplateId,
+            sessionId: sessionExercise.session.id,
+            sessionStatus: sessionExercise.session.status,
+          };
+        }
+      }
+
+      throw error;
+    }
 
     return {
       item: created,
@@ -966,4 +1090,52 @@ export class SessionsService {
       message: 'Exercise not found or inaccessible',
     });
   }
+}
+
+function isPrAffectingSetUpdate(input: UpdateSetDto): boolean {
+  return (
+    input.weight !== undefined ||
+    input.reps !== undefined ||
+    input.durationSeconds !== undefined ||
+    input.isCompleted !== undefined ||
+    input.completedAt !== undefined
+  );
+}
+
+function isSetIdempotencyUniqueConstraintError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+
+  const maybeError = error as {
+    code?: unknown;
+    meta?: {
+      target?: unknown;
+    };
+  };
+
+  if (maybeError.code !== 'P2002') {
+    return false;
+  }
+
+  const target = maybeError.meta?.target;
+  if (Array.isArray(target)) {
+    const lowered = target
+      .filter((entry): entry is string => typeof entry === 'string')
+      .map((entry) => entry.toLowerCase());
+    return (
+      lowered.includes('sessionexerciseid') &&
+      lowered.includes('idempotencykey')
+    );
+  }
+
+  if (typeof target === 'string') {
+    const normalized = target.toLowerCase();
+    return (
+      normalized.includes('sessionexerciseid') &&
+      normalized.includes('idempotencykey')
+    );
+  }
+
+  return false;
 }

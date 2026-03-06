@@ -67,6 +67,17 @@ describe('ChecklistService', () => {
 
   it('upserts completed checklist item and records streak check', async () => {
     const { service, prismaMock, streakServiceMock } = createService();
+    (prismaMock.checklistItem.upsert as jest.Mock).mockResolvedValue({
+      id: 'item-1',
+      userId: 'user-1',
+      date: new Date('2024-01-10T00:00:00.000Z'),
+      type: 'WORKOUT',
+      isCompleted: true,
+      completedAt: new Date('2024-01-10T10:00:00.000Z'),
+      user: {
+        timezone: 'America/New_York',
+      },
+    });
 
     await expect(
       service.upsert('user-1', {
@@ -74,10 +85,23 @@ describe('ChecklistService', () => {
         type: 'WORKOUT',
         isCompleted: true,
       }),
-    ).resolves.toEqual({ id: 'item-1' });
+    ).resolves.toEqual(expect.objectContaining({ id: 'item-1' }));
 
     expect(prismaMock.checklistItem.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
+        select: {
+          id: true,
+          userId: true,
+          date: true,
+          type: true,
+          isCompleted: true,
+          completedAt: true,
+          user: {
+            select: {
+              timezone: true,
+            },
+          },
+        },
         where: {
           userId_date_type: {
             userId: 'user-1',
@@ -101,6 +125,7 @@ describe('ChecklistService', () => {
     expect(streakServiceMock.onChecklistCompleted).toHaveBeenCalledWith(
       'user-1',
       '2024-01-10',
+      'America/New_York',
     );
   });
 
@@ -126,5 +151,30 @@ describe('ChecklistService', () => {
       }),
     );
     expect(streakServiceMock.onChecklistCompleted).not.toHaveBeenCalled();
+  });
+
+  it('forwards undefined timezone when checklist upsert has no related user timezone', async () => {
+    const { service, prismaMock, streakServiceMock } = createService();
+    (prismaMock.checklistItem.upsert as jest.Mock).mockResolvedValue({
+      id: 'item-1',
+      userId: 'user-1',
+      date: new Date('2024-01-10T00:00:00.000Z'),
+      type: 'WORKOUT',
+      isCompleted: true,
+      completedAt: new Date('2024-01-10T10:00:00.000Z'),
+      user: null,
+    });
+
+    await service.upsert('user-1', {
+      date: '2024-01-10',
+      type: 'WORKOUT',
+      isCompleted: true,
+    });
+
+    expect(streakServiceMock.onChecklistCompleted).toHaveBeenCalledWith(
+      'user-1',
+      '2024-01-10',
+      undefined,
+    );
   });
 });

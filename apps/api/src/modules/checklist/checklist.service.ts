@@ -28,6 +28,19 @@ export class ChecklistService {
     const dateValue = new Date(`${input.date}T00:00:00.000Z`);
 
     const item = await this.prisma.checklistItem.upsert({
+      select: {
+        id: true,
+        userId: true,
+        date: true,
+        type: true,
+        isCompleted: true,
+        completedAt: true,
+        user: {
+          select: {
+            timezone: true,
+          },
+        },
+      },
       where: {
         userId_date_type: {
           userId,
@@ -49,10 +62,16 @@ export class ChecklistService {
     });
 
     if (input.isCompleted) {
-      await this.streakService.onChecklistCompleted(userId, input.date);
+      await this.streakService.onChecklistCompleted(
+        userId,
+        input.date,
+        item.user?.timezone ?? undefined,
+      );
     }
 
-    return item;
+    const { user, ...checklistItem } = item;
+    void user;
+    return checklistItem;
   }
 
   async getWeek(userId: string, query: ChecklistWeekQueryDto) {
