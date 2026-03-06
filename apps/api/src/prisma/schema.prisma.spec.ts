@@ -20,6 +20,13 @@ describe('Prisma schema hardening', () => {
     ),
     'utf8',
   );
+  const nativeStringTypesMigration = readFileSync(
+    join(
+      __dirname,
+      '../../prisma/migrations/202603060006_prisma_native_string_types/migration.sql',
+    ),
+    'utf8',
+  );
 
   it('uses bounded database types for user emails and refresh token hashes', () => {
     expect(prismaSchema).toContain(
@@ -55,6 +62,46 @@ describe('Prisma schema hardening', () => {
     );
     expect(sessionConstraintsMigration).toContain(
       'WHERE status = \'IN_PROGRESS\' AND "deletedAt" IS NULL',
+    );
+  });
+
+  it('uses explicit Prisma native types for remaining bounded string columns', () => {
+    expect(prismaSchema).toContain(
+      'passwordHash   String         @db.VarChar(255)',
+    );
+    expect(prismaSchema).toContain(
+      'name           String?        @db.VarChar(120)',
+    );
+    expect(prismaSchema).toContain(
+      'timezone       String?        @default("UTC") @db.VarChar(120)',
+    );
+    expect(prismaSchema).toContain(
+      'googleId       String?        @unique @db.VarChar(255)',
+    );
+    expect(prismaSchema).toContain(
+      'name      String   @unique @db.VarChar(120)',
+    );
+    expect(prismaSchema).toContain('url                String        @db.Text');
+    expect(prismaSchema).toContain(
+      'title              String?       @db.VarChar(255)',
+    );
+    expect(prismaSchema).toContain(
+      'supersetGroupKey   String?   @db.VarChar(64)',
+    );
+    expect(prismaSchema).toContain(
+      'idempotencyKey    String?      @db.VarChar(128)',
+    );
+  });
+
+  it('adds migration coverage for the newly typed Prisma string columns', () => {
+    expect(nativeStringTypesMigration).toContain(
+      'ALTER TABLE "User"\nALTER COLUMN "passwordHash" TYPE VARCHAR(255);',
+    );
+    expect(nativeStringTypesMigration).toContain(
+      'ALTER TABLE "WorkoutTemplateExercise"\nALTER COLUMN "supersetGroupKey" TYPE VARCHAR(64);',
+    );
+    expect(nativeStringTypesMigration).toContain(
+      'ALTER TABLE "Set"\nALTER COLUMN "idempotencyKey" TYPE VARCHAR(128);',
     );
   });
 });

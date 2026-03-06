@@ -51,6 +51,51 @@ describe('session set schemas', () => {
     ).toBe(false);
   });
 
+  it('rejects oversized superset group keys and idempotency keys', () => {
+    const oversizedSupersetGroupKey = 'g'.repeat(65);
+    const oversizedIdempotencyKey = 'i'.repeat(129);
+
+    expect(
+      startSessionSchema.safeParse({
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            supersetGroupKey: oversizedSupersetGroupKey,
+          },
+        ],
+      }).success,
+    ).toBe(false);
+
+    expect(
+      addSessionExerciseSchema.safeParse({
+        exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+        orderIndex: 0,
+        supersetGroupKey: oversizedSupersetGroupKey,
+      }).success,
+    ).toBe(false);
+
+    expect(
+      updateSessionExerciseSchema.safeParse({
+        supersetGroupKey: oversizedSupersetGroupKey,
+      }).success,
+    ).toBe(false);
+
+    expect(
+      createSetSchema.safeParse({
+        orderIndex: 0,
+        type: 'WEIGHT_REPS',
+        payload: {},
+        idempotencyKey: oversizedIdempotencyKey,
+      }).success,
+    ).toBe(false);
+
+    expect(
+      updateSetSchema.safeParse({
+        idempotencyKey: oversizedIdempotencyKey,
+      }).success,
+    ).toBe(false);
+  });
+
   it('rejects payloads that mix a workout template with inline exercises', () => {
     const result = startSessionSchema.safeParse({
       workoutTemplateId: '11111111-1111-4111-8111-111111111111',

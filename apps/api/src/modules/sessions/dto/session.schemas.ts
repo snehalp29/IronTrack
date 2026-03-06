@@ -6,14 +6,18 @@ const MAX_INLINE_SESSION_EXERCISES = 200;
 const MAX_BATCH_SET_COUNT = 100;
 const MAX_SESSION_LIST_RANGE_DAYS = 366;
 const MAX_SESSION_EXERCISE_NOTES_LENGTH = 4000;
+const MAX_SUPERSET_GROUP_KEY_LENGTH = 64;
+const MAX_IDEMPOTENCY_KEY_LENGTH = 128;
 const MAX_SET_PAYLOAD_SERIALIZED_LENGTH = 4000;
 const MAX_SET_PAYLOAD_DEPTH = 32;
 const MAX_SET_PAYLOAD_ARRAY_LENGTH = 100;
 
-const optionalSupersetGroupKeySchema = optionalTrimmed(z.string());
+const optionalSupersetGroupKeySchema = optionalTrimmed(
+  z.string().max(MAX_SUPERSET_GROUP_KEY_LENGTH),
+);
 
 const optionalNullableSupersetGroupKeySchema = optionalTrimmed(
-  z.string().nullable(),
+  z.string().max(MAX_SUPERSET_GROUP_KEY_LENGTH).nullable(),
 );
 
 type JsonValue =
@@ -192,7 +196,7 @@ const baseCreateSetSchema = z.object({
   payload: setPayloadSchema,
   isCompleted: z.boolean().optional(),
   completedAt: z.string().datetime().optional(),
-  idempotencyKey: z.string().min(6).optional(),
+  idempotencyKey: z.string().min(6).max(MAX_IDEMPOTENCY_KEY_LENGTH).optional(),
   weight: z.number().finite().nonnegative().optional(),
   reps: z.number().int().positive().optional(),
   durationSeconds: z.number().int().positive().optional(),

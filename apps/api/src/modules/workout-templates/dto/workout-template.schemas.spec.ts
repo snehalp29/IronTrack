@@ -154,6 +154,35 @@ describe('workout-template schemas', () => {
     ).toBe('group-1');
   });
 
+  it('rejects oversized superset group keys', () => {
+    const oversizedSupersetGroupKey = 'g'.repeat(65);
+
+    expect(() =>
+      createWorkoutTemplateSchema.parse({
+        name: 'Push Day',
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            orderIndex: 0,
+            supersetGroupKey: oversizedSupersetGroupKey,
+          },
+        ],
+      }),
+    ).toThrow();
+
+    expect(() =>
+      updateWorkoutTemplateSchema.parse({
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            orderIndex: 0,
+            supersetGroupKey: oversizedSupersetGroupKey,
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
   it('validates reorder payload', () => {
     expect(
       reorderWorkoutTemplateSchema.parse({

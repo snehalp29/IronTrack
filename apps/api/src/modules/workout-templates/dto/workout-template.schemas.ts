@@ -3,8 +3,11 @@ import { z } from 'zod';
 import { optionalTrimmed } from '../../../common/validation/optional-trimmed';
 
 const MAX_TEMPLATE_EXERCISES = 200;
+const MAX_SUPERSET_GROUP_KEY_LENGTH = 64;
 
-const optionalSupersetGroupKeySchema = optionalTrimmed(z.string());
+const optionalSupersetGroupKeySchema = optionalTrimmed(
+  z.string().max(MAX_SUPERSET_GROUP_KEY_LENGTH),
+);
 const addDuplicateOrderIndexIssue = (
   exercises: Array<{ orderIndex: number }>,
   ctx: z.RefinementCtx,

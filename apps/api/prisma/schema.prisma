@@ -72,13 +72,13 @@ enum AuthProvider {
 model User {
   id             String         @id @default(uuid()) @db.Uuid
   email          String         @unique @db.VarChar(320)
-  passwordHash   String
-  name           String?
-  avatarUrl      String?
-  timezone       String?        @default("UTC")
+  passwordHash   String         @db.VarChar(255)
+  name           String?        @db.VarChar(120)
+  avatarUrl      String?        @db.Text
+  timezone       String?        @default("UTC") @db.VarChar(120)
   unitPreference UnitPreference @default(METRIC)
   authProvider   AuthProvider   @default(LOCAL)
-  googleId       String?        @unique
+  googleId       String?        @unique @db.VarChar(255)
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   deletedAt      DateTime?
@@ -114,9 +114,9 @@ model RefreshToken {
 
 model MuscleGroup {
   id        String   @id @default(uuid()) @db.Uuid
-  name      String   @unique
-  imageUrl  String?
-  iconUrl   String?
+  name      String   @unique @db.VarChar(120)
+  imageUrl  String?  @db.Text
+  iconUrl   String?  @db.Text
   sortOrder Int?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -130,8 +130,8 @@ model MuscleGroup {
 
 model Equipment {
   id        String   @id @default(uuid()) @db.Uuid
-  name      String   @unique
-  iconUrl   String?
+  name      String   @unique @db.VarChar(120)
+  iconUrl   String?  @db.Text
   sortOrder Int?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -206,9 +206,9 @@ model ExerciseVideo {
   id                 String        @id @default(uuid()) @db.Uuid
   exerciseTemplateId String        @db.Uuid
   provider           VideoProvider
-  url                String
-  title              String?
-  thumbnailUrl       String?
+  url                String        @db.Text
+  title              String?       @db.VarChar(255)
+  thumbnailUrl       String?       @db.Text
   isPrimary          Boolean       @default(false)
   sortOrder          Int           @default(0)
   createdAt          DateTime      @default(now())
@@ -248,7 +248,7 @@ model WorkoutTemplateExercise {
   defaultSets        Int?
   repMin             Int?
   repMax             Int?
-  supersetGroupKey   String?
+  supersetGroupKey   String?  @db.VarChar(64)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -296,7 +296,7 @@ model SessionExercise {
   sessionId          String    @db.Uuid
   exerciseTemplateId String    @db.Uuid
   orderIndex         Int
-  supersetGroupKey   String?
+  supersetGroupKey   String?   @db.VarChar(64)
   notes              String?   @db.Text
   version            Int       @default(1)
   deletedAt          DateTime?
@@ -321,7 +321,7 @@ model Set {
   payload           Json
   isCompleted       Boolean      @default(false)
   completedAt       DateTime?
-  idempotencyKey    String?
+  idempotencyKey    String?      @db.VarChar(128)
 
   // Denormalized columns for SQL aggregation (D3)
   weight          Float?
