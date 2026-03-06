@@ -743,6 +743,9 @@ describe('SessionsService', () => {
         }),
       }),
     );
+    const rollbackCall = (prismaMock.workoutSession.updateMany as jest.Mock)
+      .mock.calls[1]?.[0];
+    expect(rollbackCall?.where?.finishedAt).toBeUndefined();
   });
 
   it('runs finish side effects only once when concurrent finish requests race', async () => {

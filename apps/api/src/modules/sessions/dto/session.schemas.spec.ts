@@ -124,6 +124,24 @@ describe('session set schemas', () => {
     expect(result.success).toBe(false);
   });
 
+  it('rejects deeply nested set payloads before recursive parsing can blow the stack', () => {
+    const nestedPayload: Record<string, unknown> = {};
+    let cursor: Record<string, unknown> = nestedPayload;
+    for (let index = 0; index < 40; index += 1) {
+      const next: Record<string, unknown> = {};
+      cursor.child = next;
+      cursor = next;
+    }
+
+    const result = createSetSchema.safeParse({
+      orderIndex: 0,
+      type: 'WEIGHT_REPS',
+      payload: nestedPayload,
+    });
+
+    expect(result.success).toBe(false);
+  });
+
   it('rejects reorder payloads with no items', () => {
     const result = reorderSessionExercisesSchema.safeParse({
       items: [],

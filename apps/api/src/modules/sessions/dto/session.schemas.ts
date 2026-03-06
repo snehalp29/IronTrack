@@ -6,6 +6,8 @@ const MAX_INLINE_SESSION_EXERCISES = 200;
 const MAX_BATCH_SET_COUNT = 100;
 const MAX_SESSION_LIST_RANGE_DAYS = 366;
 const MAX_SET_PAYLOAD_SERIALIZED_LENGTH = 4000;
+const MAX_SET_PAYLOAD_DEPTH = 32;
+const MAX_SET_PAYLOAD_ARRAY_LENGTH = 100;
 
 const optionalSupersetGroupKeySchema = optionalTrimmed(z.string());
 
@@ -21,27 +23,18 @@ type JsonValue =
   | JsonValue[]
   | { [key: string]: JsonValue };
 
-const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
-  z.union([
-    z.string(),
-    z.number().finite(),
-    z.boolean(),
-    z.null(),
-    z.array(jsonValueSchema).max(100),
-    z.record(z.string(), jsonValueSchema),
-  ]),
-);
-
 const setPayloadSchema = z
-  .record(z.string(), jsonValueSchema)
+  .unknown()
   .superRefine((payload, ctx) => {
-    if (JSON.stringify(payload).length > MAX_SET_PAYLOAD_SERIALIZED_LENGTH) {
+    const validationError = validateSetPayload(payload);
+    if (validationError) {
       ctx.addIssue({
         code: 'custom',
-        message: `payload must serialize to at most ${MAX_SET_PAYLOAD_SERIALIZED_LENGTH} characters`,
+        message: validationError,
       });
     }
-  });
+  })
+  .transform((payload) => payload as Record<string, JsonValue>);
 
 export const startSessionSchema = z
   .object({
@@ -228,3 +221,87 @@ export type CreateSetDto = z.infer<typeof createSetSchema>;
 export type UpdateSetDto = z.infer<typeof updateSetSchema>;
 export type ToggleSetCompletionDto = z.infer<typeof toggleSetCompletionSchema>;
 export type BatchCreateSetsDto = z.infer<typeof batchCreateSetsSchema>;
+
+function validateSetPayload(payload: unknown): string | undefined {
+  if (!isJsonObject(payload)) {
+    return 'payload must be a JSON object';
+  }
+
+  const seenObjects = new WeakSet<object>();
+  const stack: Array<{ value: unknown; depth: number }> = [
+    { value: payload, depth: 1 },
+  ];
+
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) {
+      continue;
+    }
+
+    if (current.depth > MAX_SET_PAYLOAD_DEPTH) {
+      return `payload nesting must not exceed ${MAX_SET_PAYLOAD_DEPTH} levels`;
+    }
+
+    const { value } = current;
+    if (value === null) {
+      continue;
+    }
+
+    if (
+      typeof value === 'string' ||
+      typeof value === 'boolean' ||
+      value === null
+    ) {
+      continue;
+    }
+
+    if (typeof value === 'number') {
+      if (Number.isFinite(value)) {
+        continue;
+      }
+
+      return 'payload numbers must be finite';
+    }
+
+    if (Array.isArray(value)) {
+      if (value.length > MAX_SET_PAYLOAD_ARRAY_LENGTH) {
+        return `payload arrays must not exceed ${MAX_SET_PAYLOAD_ARRAY_LENGTH} items`;
+      }
+
+      for (const item of value) {
+        stack.push({ value: item, depth: current.depth + 1 });
+      }
+      continue;
+    }
+
+    if (isJsonObject(value)) {
+      if (seenObjects.has(value)) {
+        return 'payload must not contain circular references';
+      }
+      seenObjects.add(value);
+
+      for (const nestedValue of Object.values(value)) {
+        stack.push({ value: nestedValue, depth: current.depth + 1 });
+      }
+      continue;
+    }
+
+    return 'payload must contain only JSON-safe values';
+  }
+
+  try {
+    if (JSON.stringify(payload).length > MAX_SET_PAYLOAD_SERIALIZED_LENGTH) {
+      return `payload must serialize to at most ${MAX_SET_PAYLOAD_SERIALIZED_LENGTH} characters`;
+    }
+  } catch {
+    return 'payload must not contain circular references';
+  }
+
+  return undefined;
+}
+
+function isJsonObject(
+  value: unknown,
+): value is Record<string, JsonValue | unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}

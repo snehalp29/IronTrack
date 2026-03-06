@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -93,33 +94,51 @@ export class WorkoutTemplatesService {
       input.exercises.map((exercise) => exercise.exerciseTemplateId),
     );
 
-    const orderIndex =
-      input.orderIndex ??
-      (await this.prisma.workoutTemplate.count({
-        where: { userId, deletedAt: null },
-      }));
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await this.prisma.$transaction(
+          async (tx) => {
+            const orderIndex =
+              input.orderIndex ?? (await this.getNextOrderIndex(tx, userId));
 
-    return this.prisma.workoutTemplate.create({
-      data: {
-        userId,
-        name,
-        description: input.description,
-        orderIndex,
-        exercises: {
-          create: input.exercises.map((exercise) => ({
-            exerciseTemplateId: exercise.exerciseTemplateId,
-            orderIndex: exercise.orderIndex,
-            defaultSets: exercise.defaultSets,
-            repMin: exercise.repMin,
-            repMax: exercise.repMax,
-            supersetGroupKey: exercise.supersetGroupKey,
-          })),
-        },
-      },
-      include: {
-        exercises: true,
-      },
-    });
+            return tx.workoutTemplate.create({
+              data: {
+                userId,
+                name,
+                description: input.description,
+                orderIndex,
+                exercises: {
+                  create: input.exercises.map((exercise) => ({
+                    exerciseTemplateId: exercise.exerciseTemplateId,
+                    orderIndex: exercise.orderIndex,
+                    defaultSets: exercise.defaultSets,
+                    repMin: exercise.repMin,
+                    repMax: exercise.repMax,
+                    supersetGroupKey: exercise.supersetGroupKey,
+                  })),
+                },
+              },
+              include: {
+                exercises: true,
+              },
+            });
+          },
+          {
+            isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+          },
+        );
+      } catch (error) {
+        if (
+          !isSerializableTransactionConflict(error) ||
+          attempt === 2 ||
+          input.orderIndex !== undefined
+        ) {
+          throw error;
+        }
+      }
+    }
+
+    throw new Error('Failed to create template');
   }
 
   async update(
@@ -184,6 +203,11 @@ export class WorkoutTemplatesService {
           id: templateId,
           userId,
           deletedAt: null,
+        },
+        include: {
+          exercises: {
+            orderBy: { orderIndex: 'asc' },
+          },
         },
       });
 
@@ -274,6 +298,19 @@ export class WorkoutTemplatesService {
     }
   }
 
+  private async getNextOrderIndex(
+    tx: Prisma.TransactionClient,
+    userId: string,
+  ) {
+    const lastTemplate = await tx.workoutTemplate.findFirst({
+      where: { userId, deletedAt: null },
+      orderBy: [{ orderIndex: 'desc' }, { createdAt: 'desc' }],
+      select: { orderIndex: true },
+    });
+
+    return (lastTemplate?.orderIndex ?? -1) + 1;
+  }
+
   private async assertExerciseTemplatesAccessible(
     userId: string,
     exerciseTemplateIds: string[],
@@ -324,4 +361,12 @@ function normalizeTemplateNameOrThrow(name: string): string {
   }
 
   return normalized;
+}
+
+function isSerializableTransactionConflict(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+
+  return (error as { code?: unknown }).code === 'P2034';
 }

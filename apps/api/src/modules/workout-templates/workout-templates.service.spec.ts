@@ -15,6 +15,7 @@ describe('WorkoutTemplatesService', () => {
         createMany: jest.fn(async () => ({ count: 1 })),
       },
       workoutTemplate: {
+        create: jest.fn(async () => ({ id: 'template-1' })),
         updateMany: jest.fn(async () => ({ count: 1 })),
         findFirst: jest.fn(async () => ({ id: 'template-1' })),
       },
@@ -156,9 +157,11 @@ describe('WorkoutTemplatesService', () => {
   });
 
   it('creates template and auto-assigns order index when omitted', async () => {
-    const { service, prismaMock } = createService();
-    (prismaMock.workoutTemplate.count as jest.Mock).mockResolvedValue(3);
-    (prismaMock.workoutTemplate.create as jest.Mock).mockResolvedValue({
+    const { service, prismaMock, tx } = createService();
+    (tx.workoutTemplate.findFirst as jest.Mock).mockResolvedValue({
+      orderIndex: 2,
+    });
+    (tx.workoutTemplate.create as jest.Mock).mockResolvedValue({
       id: 't1',
     });
 
@@ -174,8 +177,8 @@ describe('WorkoutTemplatesService', () => {
       }),
     ).resolves.toEqual({ id: 't1' });
 
-    expect(prismaMock.workoutTemplate.count).toHaveBeenCalled();
-    expect(prismaMock.workoutTemplate.create).toHaveBeenCalledWith(
+    expect(prismaMock.workoutTemplate.count).not.toHaveBeenCalled();
+    expect(tx.workoutTemplate.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           orderIndex: 3,
@@ -184,9 +187,45 @@ describe('WorkoutTemplatesService', () => {
     );
   });
 
+  it('derives default orderIndex from the highest active template order inside the transaction', async () => {
+    const { service, prismaMock, tx } = createService();
+    (tx.workoutTemplate.findFirst as jest.Mock).mockResolvedValue({
+      orderIndex: 7,
+    });
+    (tx.workoutTemplate.create as jest.Mock).mockResolvedValue({
+      id: 't-serializable',
+    });
+
+    await expect(
+      service.create('user-1', {
+        name: 'Leg Day',
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            orderIndex: 0,
+          },
+        ],
+      }),
+    ).resolves.toEqual({ id: 't-serializable' });
+
+    expect(prismaMock.workoutTemplate.count).not.toHaveBeenCalled();
+    expect(tx.workoutTemplate.findFirst).toHaveBeenCalledWith({
+      where: { userId: 'user-1', deletedAt: null },
+      orderBy: [{ orderIndex: 'desc' }, { createdAt: 'desc' }],
+      select: { orderIndex: true },
+    });
+    expect(tx.workoutTemplate.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          orderIndex: 8,
+        }),
+      }),
+    );
+  });
+
   it('creates template with explicit order index', async () => {
-    const { service, prismaMock } = createService();
-    (prismaMock.workoutTemplate.create as jest.Mock).mockResolvedValue({
+    const { service, prismaMock, tx } = createService();
+    (tx.workoutTemplate.create as jest.Mock).mockResolvedValue({
       id: 't1',
     });
 
@@ -202,7 +241,8 @@ describe('WorkoutTemplatesService', () => {
     });
 
     expect(prismaMock.workoutTemplate.count).not.toHaveBeenCalled();
-    expect(prismaMock.workoutTemplate.create).toHaveBeenCalledWith(
+    expect(tx.workoutTemplate.findFirst).not.toHaveBeenCalled();
+    expect(tx.workoutTemplate.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ orderIndex: 8 }),
       }),
@@ -210,8 +250,8 @@ describe('WorkoutTemplatesService', () => {
   });
 
   it('trims template names before create persistence', async () => {
-    const { service, prismaMock } = createService();
-    (prismaMock.workoutTemplate.create as jest.Mock).mockResolvedValue({
+    const { service, tx } = createService();
+    (tx.workoutTemplate.create as jest.Mock).mockResolvedValue({
       id: 't1',
     });
 
@@ -225,7 +265,7 @@ describe('WorkoutTemplatesService', () => {
       ],
     });
 
-    expect(prismaMock.workoutTemplate.create).toHaveBeenCalledWith(
+    expect(tx.workoutTemplate.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           name: 'Push Day',
@@ -349,6 +389,50 @@ describe('WorkoutTemplatesService', () => {
     });
     expect(tx.workoutTemplate.findFirst).toHaveBeenCalledWith({
       where: { id: 'template-1', userId: 'user-1', deletedAt: null },
+      include: {
+        exercises: {
+          orderBy: { orderIndex: 'asc' },
+        },
+      },
+    });
+  });
+
+  it('returns refreshed template exercises after update', async () => {
+    const { service, prismaMock, tx } = createService();
+    (prismaMock.workoutTemplate.findFirst as jest.Mock).mockResolvedValue({
+      id: 'template-1',
+    });
+    (tx.workoutTemplate.findFirst as jest.Mock).mockResolvedValue({
+      id: 'template-1',
+      exercises: [
+        {
+          id: 'exercise-row-1',
+          orderIndex: 0,
+        },
+      ],
+    });
+
+    await expect(
+      service.update('user-1', 'template-1', {
+        description: 'Refreshed',
+      }),
+    ).resolves.toEqual({
+      id: 'template-1',
+      exercises: [
+        {
+          id: 'exercise-row-1',
+          orderIndex: 0,
+        },
+      ],
+    });
+
+    expect(tx.workoutTemplate.findFirst).toHaveBeenCalledWith({
+      where: { id: 'template-1', userId: 'user-1', deletedAt: null },
+      include: {
+        exercises: {
+          orderBy: { orderIndex: 'asc' },
+        },
+      },
     });
   });
 

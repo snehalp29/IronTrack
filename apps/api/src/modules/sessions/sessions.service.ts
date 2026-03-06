@@ -336,7 +336,6 @@ export class SessionsService {
           userId,
           deletedAt: null,
           status: 'FINISHED',
-          finishedAt,
         },
         data: {
           status: 'IN_PROGRESS',
