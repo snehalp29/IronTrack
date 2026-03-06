@@ -199,4 +199,37 @@ describe('workout-template schemas', () => {
       }),
     ).toThrow();
   });
+
+  it('rejects duplicate exercise order indexes in create and update payloads', () => {
+    expect(() =>
+      createWorkoutTemplateSchema.parse({
+        name: 'Upper Body',
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            orderIndex: 0,
+          },
+          {
+            exerciseTemplateId: '22222222-2222-4222-8222-222222222222',
+            orderIndex: 0,
+          },
+        ],
+      }),
+    ).toThrow();
+
+    expect(() =>
+      updateWorkoutTemplateSchema.parse({
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            orderIndex: 1,
+          },
+          {
+            exerciseTemplateId: '22222222-2222-4222-8222-222222222222',
+            orderIndex: 1,
+          },
+        ],
+      }),
+    ).toThrow();
+  });
 });

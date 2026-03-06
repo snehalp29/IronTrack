@@ -60,6 +60,23 @@ describe('auth schemas', () => {
     ).toBe(false);
   });
 
+  it('rejects emails longer than 320 characters', () => {
+    const longEmail = `${'a'.repeat(310)}@example.com`;
+
+    expect(
+      registerSchema.safeParse({
+        email: longEmail,
+        password: 'password123',
+      }).success,
+    ).toBe(false);
+    expect(
+      loginSchema.safeParse({
+        email: longEmail,
+        password: 'password123',
+      }).success,
+    ).toBe(false);
+  });
+
   it('accepts an optional refresh token body for cookie-backed flows', () => {
     expect(
       refreshSchema.safeParse({

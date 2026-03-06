@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { PrType } from '@prisma/client';
+import { PrType, Prisma } from '@prisma/client';
 
 import { estimateOneRm } from '../common/utils/one-rm';
 import { PrismaService } from '../prisma/prisma.service';
@@ -12,6 +12,8 @@ interface ExerciseSetInput {
   reps: number | null;
   completedAt: Date | null;
 }
+
+type PrDetectionClient = PrismaService | Prisma.TransactionClient;
 
 @Injectable()
 export class PrDetectionService {
@@ -156,8 +158,12 @@ export class PrDetectionService {
     return createdPrs;
   }
 
-  async recalculateForExercise(userId: string, exerciseTemplateId: string) {
-    const allSets = await this.prisma.set.findMany({
+  async recalculateForExercise(
+    userId: string,
+    exerciseTemplateId: string,
+    client: PrDetectionClient = this.prisma,
+  ) {
+    const allSets = await client.set.findMany({
       where: {
         deletedAt: null,
         isCompleted: true,
@@ -191,10 +197,7 @@ export class PrDetectionService {
         sessionId: set.sessionExercise.sessionId,
       })),
     );
-    const operations: Array<
-      | ReturnType<typeof this.prisma.pRRecord.upsert>
-      | ReturnType<typeof this.prisma.pRRecord.deleteMany>
-    > = [];
+    const operations: Prisma.PrismaPromise<unknown>[] = [];
     const nullPrTypes: PrType[] = [];
 
     for (const prType of [
@@ -210,7 +213,7 @@ export class PrDetectionService {
       }
 
       operations.push(
-        this.prisma.pRRecord.upsert({
+        client.pRRecord.upsert({
           where: {
             userId_exerciseTemplateId_prType: {
               userId,
@@ -239,7 +242,7 @@ export class PrDetectionService {
 
     if (nullPrTypes.length > 0) {
       operations.push(
-        this.prisma.pRRecord.deleteMany({
+        client.pRRecord.deleteMany({
           where: {
             userId,
             exerciseTemplateId,
@@ -249,7 +252,14 @@ export class PrDetectionService {
       );
     }
 
-    await this.prisma.$transaction(operations);
+    if (client === this.prisma) {
+      await this.prisma.$transaction(operations);
+      return;
+    }
+
+    for (const operation of operations) {
+      await operation;
+    }
   }
 
   private calculateCandidates(sets: ExerciseSetInput[]) {

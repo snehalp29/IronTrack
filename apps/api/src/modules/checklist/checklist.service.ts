@@ -26,27 +26,15 @@ export class ChecklistService {
 
   async upsert(userId: string, input: UpsertChecklistDto) {
     const dateValue = new Date(`${input.date}T00:00:00.000Z`);
-    const existing = await this.prisma.checklistItem.findUnique({
-      where: {
+    const item = await this.prisma.$transaction(async (tx) => {
+      const itemWhere = {
         userId_date_type: {
           userId,
           date: dateValue,
           type: input.type,
         },
-      },
-      select: {
-        isCompleted: true,
-        completedAt: true,
-      },
-    });
-    const completedAt = input.isCompleted
-      ? existing?.isCompleted
-        ? (existing.completedAt ?? new Date())
-        : new Date()
-      : null;
-
-    const item = await this.prisma.checklistItem.upsert({
-      select: {
+      };
+      const itemSelect = {
         id: true,
         userId: true,
         date: true,
@@ -58,26 +46,62 @@ export class ChecklistService {
             timezone: true,
           },
         },
-      },
-      where: {
-        userId_date_type: {
+      } as const;
+
+      if (!input.isCompleted) {
+        return tx.checklistItem.upsert({
+          select: itemSelect,
+          where: itemWhere,
+          update: {
+            isCompleted: false,
+            completedAt: null,
+          },
+          create: {
+            userId,
+            date: dateValue,
+            type: input.type,
+            isCompleted: false,
+            completedAt: null,
+          },
+        });
+      }
+
+      const completedAt = new Date();
+      await tx.checklistItem.upsert({
+        select: itemSelect,
+        where: itemWhere,
+        update: {
+          isCompleted: true,
+        },
+        create: {
           userId,
           date: dateValue,
           type: input.type,
+          isCompleted: true,
+          completedAt,
         },
-      },
-      update: {
-        isCompleted: input.isCompleted,
-        completedAt,
-      },
-      create: {
-        userId,
-        date: dateValue,
-        type: input.type,
-        isCompleted: input.isCompleted,
-        completedAt,
-      },
+      });
+      await tx.checklistItem.updateMany({
+        where: {
+          userId,
+          date: dateValue,
+          type: input.type,
+          completedAt: null,
+        },
+        data: {
+          completedAt,
+        },
+      });
+
+      return tx.checklistItem.findUnique({
+        where: itemWhere,
+        select: itemSelect,
+      });
     });
+
+    if (!item) {
+      throw new Error('Checklist item upsert failed unexpectedly');
+    }
 
     if (input.isCompleted) {
       await this.streakService.onChecklistCompleted(

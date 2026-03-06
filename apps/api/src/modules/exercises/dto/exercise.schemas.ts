@@ -1,5 +1,10 @@
 import { z } from 'zod';
 
+import { optionalTrimmed } from '../../../common/validation/optional-trimmed';
+
+const MAX_FILTER_VALUE_LENGTH = 120;
+const MAX_SEARCH_LENGTH = 200;
+
 const optionalQueryBooleanSchema = z
   .preprocess((value) => {
     if (typeof value === 'string') {
@@ -18,8 +23,8 @@ const optionalQueryBooleanSchema = z
 export const listExercisesQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),
-  muscleGroup: z.string().optional(),
-  equipment: z.string().optional(),
+  muscleGroup: optionalTrimmed(z.string().max(MAX_FILTER_VALUE_LENGTH)),
+  equipment: optionalTrimmed(z.string().max(MAX_FILTER_VALUE_LENGTH)),
   type: z
     .enum([
       'WEIGHT_REPS',
@@ -29,7 +34,7 @@ export const listExercisesQuerySchema = z.object({
       'BODYWEIGHT_PLUS_WEIGHT',
     ])
     .optional(),
-  search: z.string().optional(),
+  search: optionalTrimmed(z.string().max(MAX_SEARCH_LENGTH)),
   isGlobal: optionalQueryBooleanSchema,
 });
 

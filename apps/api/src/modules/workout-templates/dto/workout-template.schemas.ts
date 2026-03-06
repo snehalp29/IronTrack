@@ -5,6 +5,24 @@ import { optionalTrimmed } from '../../../common/validation/optional-trimmed';
 const MAX_TEMPLATE_EXERCISES = 200;
 
 const optionalSupersetGroupKeySchema = optionalTrimmed(z.string());
+const addDuplicateOrderIndexIssue = (
+  exercises: Array<{ orderIndex: number }>,
+  ctx: z.RefinementCtx,
+) => {
+  const seenOrderIndexes = new Set<number>();
+
+  for (const [index, exercise] of exercises.entries()) {
+    if (seenOrderIndexes.has(exercise.orderIndex)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: [index, 'orderIndex'],
+        message: 'Duplicate orderIndex in template exercises payload',
+      });
+    }
+
+    seenOrderIndexes.add(exercise.orderIndex);
+  }
+};
 
 const templateExerciseSchema = z
   .object({
@@ -33,7 +51,11 @@ export const createWorkoutTemplateSchema = z.object({
   name: z.string().min(2).max(120),
   description: z.string().max(4000).optional(),
   orderIndex: z.number().int().nonnegative().optional(),
-  exercises: z.array(templateExerciseSchema).min(1).max(MAX_TEMPLATE_EXERCISES),
+  exercises: z
+    .array(templateExerciseSchema)
+    .min(1)
+    .max(MAX_TEMPLATE_EXERCISES)
+    .superRefine(addDuplicateOrderIndexIssue),
 });
 
 export const updateWorkoutTemplateSchema = z.object({
@@ -43,6 +65,7 @@ export const updateWorkoutTemplateSchema = z.object({
   exercises: z
     .array(templateExerciseSchema)
     .max(MAX_TEMPLATE_EXERCISES)
+    .superRefine(addDuplicateOrderIndexIssue)
     .optional(),
 });
 

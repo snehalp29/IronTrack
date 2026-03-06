@@ -5,6 +5,7 @@ import { optionalTrimmed } from '../../../common/validation/optional-trimmed';
 const MAX_INLINE_SESSION_EXERCISES = 200;
 const MAX_BATCH_SET_COUNT = 100;
 const MAX_SESSION_LIST_RANGE_DAYS = 366;
+const MAX_SESSION_EXERCISE_NOTES_LENGTH = 4000;
 const MAX_SET_PAYLOAD_SERIALIZED_LENGTH = 4000;
 const MAX_SET_PAYLOAD_DEPTH = 32;
 const MAX_SET_PAYLOAD_ARRAY_LENGTH = 100;
@@ -45,7 +46,7 @@ export const startSessionSchema = z
         z.object({
           exerciseTemplateId: z.string().uuid(),
           orderIndex: z.number().int().nonnegative().optional(),
-          notes: z.string().optional(),
+          notes: z.string().max(MAX_SESSION_EXERCISE_NOTES_LENGTH).optional(),
           supersetGroupKey: optionalSupersetGroupKeySchema,
         }),
       )
@@ -108,12 +109,12 @@ export const listSessionsQuerySchema = z
 export const addSessionExerciseSchema = z.object({
   exerciseTemplateId: z.string().uuid(),
   orderIndex: z.number().int().nonnegative(),
-  notes: z.string().optional(),
+  notes: z.string().max(MAX_SESSION_EXERCISE_NOTES_LENGTH).optional(),
   supersetGroupKey: optionalSupersetGroupKeySchema,
 });
 
 export const updateSessionExerciseSchema = z.object({
-  notes: z.string().optional(),
+  notes: z.string().max(MAX_SESSION_EXERCISE_NOTES_LENGTH).optional(),
   supersetGroupKey: optionalNullableSupersetGroupKeySchema,
   orderIndex: z.number().int().nonnegative().optional(),
   version: z.number().int().positive().optional(),
@@ -207,6 +208,17 @@ const validateSetCompletionConsistency = (
       code: 'custom',
       message: 'isCompleted must be true when completedAt is provided',
       path: ['isCompleted'],
+    });
+  }
+
+  if (
+    value.completedAt !== undefined &&
+    new Date(value.completedAt).getTime() > Date.now()
+  ) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'completedAt must not be in the future',
+      path: ['completedAt'],
     });
   }
 };

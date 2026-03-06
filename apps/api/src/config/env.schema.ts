@@ -126,6 +126,7 @@ const corsOriginsSchema = z
   .refine((origins) => origins.filter(Boolean).every(isValidCorsOrigin), {
     message: CORS_INVALID_ORIGIN_MESSAGE,
   });
+const DEFAULT_CORS_ORIGINS = corsOriginsSchema.parse(DEFAULT_CORS_ORIGINS_RAW);
 
 export const envSchema = z
   .object({
@@ -153,10 +154,10 @@ export const envSchema = z
       trimStringOrUndefined,
       z.string().url().default('http://localhost:5000'),
     ),
-    CORS_ORIGINS: z.preprocess((value) => {
-      const normalized = trimStringOrUndefined(value);
-      return normalized === undefined ? DEFAULT_CORS_ORIGINS_RAW : normalized;
-    }, corsOriginsSchema),
+    CORS_ORIGINS: z.preprocess(
+      trimStringOrUndefined,
+      corsOriginsSchema.optional(),
+    ),
   })
   .superRefine((env, ctx) => {
     const accessExpirySeconds = durationToSeconds(env.JWT_ACCESS_EXPIRY);
@@ -216,6 +217,14 @@ export const envSchema = z
           message: 'GOOGLE_CALLBACK_URL is required when NODE_ENV=production',
         });
       }
+    }
+
+    if (env.NODE_ENV === 'production' && env.CORS_ORIGINS === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['CORS_ORIGINS'],
+        message: 'CORS_ORIGINS is required when NODE_ENV=production',
+      });
     }
 
     const mlServiceProtocol =
@@ -281,7 +290,11 @@ export const envSchema = z
         });
       }
     }
-  });
+  })
+  .transform((env) => ({
+    ...env,
+    CORS_ORIGINS: env.CORS_ORIGINS ?? DEFAULT_CORS_ORIGINS,
+  }));
 
 export type Env = z.infer<typeof envSchema>;
 
@@ -295,13 +308,6 @@ export function validateEnv(config: Record<string, unknown>): Env {
       })
       .join(', ');
     throw new Error(`Invalid environment configuration: ${details}`);
-  }
-
-  const rawCorsOrigins = trimStringOrUndefined(config.CORS_ORIGINS);
-  if (parsed.data.NODE_ENV === 'production' && rawCorsOrigins === undefined) {
-    throw new Error(
-      'Invalid environment configuration: CORS_ORIGINS: CORS_ORIGINS is required when NODE_ENV=production',
-    );
   }
 
   return parsed.data;

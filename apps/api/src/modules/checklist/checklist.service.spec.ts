@@ -14,9 +14,15 @@ describe('ChecklistService', () => {
       checklistItem: {
         findMany: jest.fn(async () => []),
         findUnique: jest.fn(async () => null),
+        updateMany: jest.fn(async () => ({ count: 0 })),
         upsert: jest.fn(async () => ({ id: 'item-1' })),
       },
+      $transaction: jest.fn(),
     } as unknown as PrismaService;
+    (prismaMock.$transaction as jest.Mock).mockImplementation(
+      async (callback: (client: PrismaService) => Promise<unknown>) =>
+        callback(prismaMock as PrismaService),
+    );
 
     const streakServiceMock = {
       onChecklistCompleted: jest.fn(async () => undefined),
@@ -68,8 +74,18 @@ describe('ChecklistService', () => {
 
   it('upserts completed checklist item and records streak check', async () => {
     const { service, prismaMock, streakServiceMock } = createService();
-    (prismaMock.checklistItem.findUnique as jest.Mock).mockResolvedValue(null);
     (prismaMock.checklistItem.upsert as jest.Mock).mockResolvedValue({
+      id: 'item-1',
+      userId: 'user-1',
+      date: new Date('2024-01-10T00:00:00.000Z'),
+      type: 'WORKOUT',
+      isCompleted: true,
+      completedAt: new Date('2024-01-10T10:00:00.000Z'),
+      user: {
+        timezone: 'America/New_York',
+      },
+    });
+    (prismaMock.checklistItem.findUnique as jest.Mock).mockResolvedValue({
       id: 'item-1',
       userId: 'user-1',
       date: new Date('2024-01-10T00:00:00.000Z'),
@@ -113,7 +129,6 @@ describe('ChecklistService', () => {
         },
         update: {
           isCompleted: true,
-          completedAt: expect.any(Date),
         },
         create: {
           userId: 'user-1',
@@ -158,8 +173,16 @@ describe('ChecklistService', () => {
 
   it('forwards undefined timezone when checklist upsert has no related user timezone', async () => {
     const { service, prismaMock, streakServiceMock } = createService();
-    (prismaMock.checklistItem.findUnique as jest.Mock).mockResolvedValue(null);
     (prismaMock.checklistItem.upsert as jest.Mock).mockResolvedValue({
+      id: 'item-1',
+      userId: 'user-1',
+      date: new Date('2024-01-10T00:00:00.000Z'),
+      type: 'WORKOUT',
+      isCompleted: true,
+      completedAt: new Date('2024-01-10T10:00:00.000Z'),
+      user: null,
+    });
+    (prismaMock.checklistItem.findUnique as jest.Mock).mockResolvedValue({
       id: 'item-1',
       userId: 'user-1',
       date: new Date('2024-01-10T00:00:00.000Z'),
@@ -185,12 +208,18 @@ describe('ChecklistService', () => {
   it('preserves completedAt when an already completed checklist item is re-saved', async () => {
     const { service, prismaMock } = createService();
     const existingCompletedAt = new Date('2024-01-10T10:00:00.000Z');
-    (prismaMock.checklistItem.findUnique as jest.Mock).mockResolvedValue({
+    (prismaMock.checklistItem.upsert as jest.Mock).mockResolvedValue({
       id: 'item-1',
+      userId: 'user-1',
+      date: new Date('2024-01-10T00:00:00.000Z'),
+      type: 'WORKOUT',
       isCompleted: true,
       completedAt: existingCompletedAt,
+      user: {
+        timezone: 'UTC',
+      },
     });
-    (prismaMock.checklistItem.upsert as jest.Mock).mockResolvedValue({
+    (prismaMock.checklistItem.findUnique as jest.Mock).mockResolvedValue({
       id: 'item-1',
       userId: 'user-1',
       date: new Date('2024-01-10T00:00:00.000Z'),
@@ -208,26 +237,23 @@ describe('ChecklistService', () => {
       isCompleted: true,
     });
 
-    expect(prismaMock.checklistItem.findUnique).toHaveBeenCalledWith({
-      where: {
-        userId_date_type: {
-          userId: 'user-1',
-          date: new Date('2024-01-10T00:00:00.000Z'),
-          type: 'WORKOUT',
-        },
-      },
-      select: {
-        isCompleted: true,
-        completedAt: true,
-      },
-    });
     expect(prismaMock.checklistItem.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         update: {
           isCompleted: true,
-          completedAt: existingCompletedAt,
         },
       }),
     );
+    expect(prismaMock.checklistItem.updateMany).toHaveBeenCalledWith({
+      where: {
+        userId: 'user-1',
+        date: new Date('2024-01-10T00:00:00.000Z'),
+        type: 'WORKOUT',
+        completedAt: null,
+      },
+      data: {
+        completedAt: expect.any(Date),
+      },
+    });
   });
 });

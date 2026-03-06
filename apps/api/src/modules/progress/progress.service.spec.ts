@@ -7,10 +7,11 @@ describe('ProgressService', () => {
     muscleGroup: { count: jest.fn() },
   } as unknown as PrismaService;
 
-  const service = new ProgressService(prismaMock);
+  let service: ProgressService;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    service = new ProgressService(prismaMock);
   });
 
   afterEach(() => {
@@ -237,5 +238,15 @@ describe('ProgressService', () => {
     await expect(service.weekly('user-1', 'not-a-date')).rejects.toThrow(
       'Invalid startDate',
     );
+  });
+
+  it('caches total muscle count across weekly requests', async () => {
+    (prismaMock.set.findMany as jest.Mock).mockResolvedValue([]);
+    (prismaMock.muscleGroup.count as jest.Mock).mockResolvedValue(6);
+
+    await service.weekly('user-1', '2024-01-01');
+    await service.weekly('user-1', '2024-01-08');
+
+    expect(prismaMock.muscleGroup.count).toHaveBeenCalledTimes(1);
   });
 });

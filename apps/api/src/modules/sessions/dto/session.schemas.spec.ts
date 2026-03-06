@@ -24,6 +24,33 @@ describe('session set schemas', () => {
     expect(result.success).toBe(true);
   });
 
+  it('rejects oversized session-exercise notes across start/add/update payloads', () => {
+    expect(
+      startSessionSchema.safeParse({
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            notes: 'x'.repeat(4001),
+          },
+        ],
+      }).success,
+    ).toBe(false);
+
+    expect(
+      addSessionExerciseSchema.safeParse({
+        exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+        orderIndex: 0,
+        notes: 'x'.repeat(4001),
+      }).success,
+    ).toBe(false);
+
+    expect(
+      updateSessionExerciseSchema.safeParse({
+        notes: 'x'.repeat(4001),
+      }).success,
+    ).toBe(false);
+  });
+
   it('rejects payloads that mix a workout template with inline exercises', () => {
     const result = startSessionSchema.safeParse({
       workoutTemplateId: '11111111-1111-4111-8111-111111111111',
@@ -111,6 +138,27 @@ describe('session set schemas', () => {
     });
 
     expect(result.success).toBe(true);
+  });
+
+  it('rejects future completedAt timestamps on create and update', () => {
+    const futureCompletedAt = new Date(Date.now() + 60_000).toISOString();
+
+    expect(
+      createSetSchema.safeParse({
+        orderIndex: 0,
+        type: 'WEIGHT_REPS',
+        payload: {},
+        isCompleted: true,
+        completedAt: futureCompletedAt,
+      }).success,
+    ).toBe(false);
+
+    expect(
+      updateSetSchema.safeParse({
+        isCompleted: true,
+        completedAt: futureCompletedAt,
+      }).success,
+    ).toBe(false);
   });
 
   it('rejects oversized set payloads', () => {

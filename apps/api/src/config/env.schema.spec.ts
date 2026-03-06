@@ -1,5 +1,6 @@
 import {
   durationToSeconds,
+  envSchema,
   isValidCorsOrigin,
   validateEnv,
 } from './env.schema';
@@ -259,6 +260,30 @@ describe('validateEnv', () => {
     ).toThrow(
       /Invalid environment configuration: CORS_ORIGINS: CORS_ORIGINS is required when NODE_ENV=production/,
     );
+  });
+
+  it('reports missing production CORS_ORIGINS from the Zod schema itself', () => {
+    const result = envSchema.safeParse(
+      createBaseConfig({
+        NODE_ENV: 'production',
+        GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
+        GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
+        GOOGLE_CALLBACK_URL: VALID_GOOGLE_CALLBACK_URL,
+        ML_SERVICE_URL: 'https://ml.example.com',
+      }),
+    );
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            path: ['CORS_ORIGINS'],
+            message: 'CORS_ORIGINS is required when NODE_ENV=production',
+          }),
+        ]),
+      );
+    }
   });
 
   it('rejects blank CORS_ORIGINS in production', () => {
@@ -1269,6 +1294,7 @@ describe('validateEnv', () => {
       validateEnv(
         createBaseConfig({
           NODE_ENV: 'production',
+          CORS_ORIGINS: VALID_PRODUCTION_CORS_ORIGIN,
           GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
           GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
           GOOGLE_CALLBACK_URL: VALID_GOOGLE_CALLBACK_URL,
@@ -1285,6 +1311,7 @@ describe('validateEnv', () => {
       validateEnv(
         createBaseConfig({
           NODE_ENV: 'production',
+          CORS_ORIGINS: VALID_PRODUCTION_CORS_ORIGIN,
           GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
           GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
           GOOGLE_CALLBACK_URL: VALID_GOOGLE_CALLBACK_URL,
@@ -1315,6 +1342,7 @@ describe('validateEnv', () => {
       validateEnv(
         createBaseConfig({
           NODE_ENV: 'production',
+          CORS_ORIGINS: VALID_PRODUCTION_CORS_ORIGIN,
           GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
           GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
           GOOGLE_CALLBACK_URL: VALID_GOOGLE_CALLBACK_URL,
@@ -1331,6 +1359,7 @@ describe('validateEnv', () => {
       validateEnv(
         createBaseConfig({
           NODE_ENV: 'production',
+          CORS_ORIGINS: VALID_PRODUCTION_CORS_ORIGIN,
           GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
           GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
           GOOGLE_CALLBACK_URL: 'http://api.example.com/auth/google/callback',
@@ -1347,6 +1376,7 @@ describe('validateEnv', () => {
       validateEnv(
         createBaseConfig({
           NODE_ENV: 'production',
+          CORS_ORIGINS: VALID_PRODUCTION_CORS_ORIGIN,
           GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
           GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
           GOOGLE_CALLBACK_URL: 'HTTP://api.example.com/auth/google/callback',
@@ -1363,6 +1393,7 @@ describe('validateEnv', () => {
       validateEnv(
         createBaseConfig({
           NODE_ENV: 'production',
+          CORS_ORIGINS: VALID_PRODUCTION_CORS_ORIGIN,
           GOOGLE_CLIENT_ID: VALID_GOOGLE_CLIENT_ID,
           GOOGLE_CLIENT_SECRET: VALID_GOOGLE_CLIENT_SECRET,
           GOOGLE_CALLBACK_URL: 'ftp://api.example.com/auth/google/callback',

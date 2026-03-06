@@ -14,6 +14,54 @@ describe('exercise schemas', () => {
     });
   });
 
+  it('trims list query filters and treats blank strings as missing', () => {
+    expect(
+      listExercisesQuerySchema.parse({
+        muscleGroup: '  Chest  ',
+        equipment: '  Barbell  ',
+        search: '  bench press  ',
+      }),
+    ).toEqual({
+      page: 1,
+      pageSize: 20,
+      muscleGroup: 'Chest',
+      equipment: 'Barbell',
+      search: 'bench press',
+    });
+
+    expect(
+      listExercisesQuerySchema.parse({
+        muscleGroup: '   ',
+        equipment: '\n\t',
+        search: '',
+      }),
+    ).toEqual({
+      page: 1,
+      pageSize: 20,
+      muscleGroup: undefined,
+      equipment: undefined,
+      search: undefined,
+    });
+  });
+
+  it('rejects overly long list query filters and search strings', () => {
+    expect(() =>
+      listExercisesQuerySchema.parse({
+        muscleGroup: 'm'.repeat(121),
+      }),
+    ).toThrow();
+    expect(() =>
+      listExercisesQuerySchema.parse({
+        equipment: 'e'.repeat(121),
+      }),
+    ).toThrow();
+    expect(() =>
+      listExercisesQuerySchema.parse({
+        search: 's'.repeat(201),
+      }),
+    ).toThrow();
+  });
+
   it('parses boolean query strings for isGlobal explicitly', () => {
     expect(listExercisesQuerySchema.parse({ isGlobal: 'false' }).isGlobal).toBe(
       false,

@@ -7,6 +7,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
 export class ProgressService {
+  private totalMuscleCountPromise: Promise<number> | undefined;
+
   constructor(private readonly prisma: PrismaService) {}
 
   async weekly(userId: string, startDate?: string) {
@@ -87,7 +89,7 @@ export class ProgressService {
       }
     }
 
-    const totalMuscles = await this.prisma.muscleGroup.count();
+    const totalMuscles = await this.getTotalMuscles();
     const coveragePercent = totalMuscles
       ? (coveredMuscleIds.size / totalMuscles) * 100
       : 0;
@@ -117,5 +119,18 @@ export class ProgressService {
     }
 
     return startOfWeek(new Date(`${startDate}T00:00:00.000Z`));
+  }
+
+  private getTotalMuscles() {
+    if (!this.totalMuscleCountPromise) {
+      this.totalMuscleCountPromise = this.prisma.muscleGroup
+        .count()
+        .catch((error: unknown) => {
+          this.totalMuscleCountPromise = undefined;
+          throw error;
+        });
+    }
+
+    return this.totalMuscleCountPromise;
   }
 }

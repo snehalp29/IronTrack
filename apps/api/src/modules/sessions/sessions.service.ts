@@ -372,7 +372,6 @@ export class SessionsService {
   }
 
   async listSessions(userId: string, query: ListSessionsQuery) {
-    assertSessionListDateRange(query);
     const skip = (query.page - 1) * query.pageSize;
     const where = {
       userId,
@@ -421,7 +420,7 @@ export class SessionsService {
     sessionId: string,
     input: ApplySessionSupersetDto,
   ) {
-    const selectedExerciseIds = Array.from(new Set(input.exerciseIds));
+    const selectedExerciseIds = input.exerciseIds;
 
     await this.prisma.$transaction(async (tx) => {
       const session = await tx.workoutSession.findFirst({
@@ -523,41 +522,43 @@ export class SessionsService {
   }
 
   async softDeleteSession(userId: string, sessionId: string) {
-    const updated = await this.prisma.workoutSession.updateMany({
-      where: {
-        id: sessionId,
-        userId,
-        deletedAt: null,
-      },
-      data: {
-        deletedAt: new Date(),
-      },
-    });
+    await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.workoutSession.updateMany({
+        where: {
+          id: sessionId,
+          userId,
+          deletedAt: null,
+        },
+        data: {
+          deletedAt: new Date(),
+        },
+      });
 
-    if (!updated.count) {
-      this.throwSessionNotFound();
-    }
+      if (!updated.count) {
+        this.throwSessionNotFound();
+      }
 
-    const sessionExercises = await this.prisma.sessionExercise.findMany({
-      where: {
-        sessionId,
-        deletedAt: null,
-      },
-      select: {
-        exerciseTemplateId: true,
-      },
-    });
-    const exerciseTemplateIds = Array.from(
-      new Set(sessionExercises.map((row) => row.exerciseTemplateId)),
-    );
-    await Promise.all(
-      exerciseTemplateIds.map((exerciseTemplateId) =>
-        this.prDetectionService.recalculateForExercise(
+      const sessionExercises = await tx.sessionExercise.findMany({
+        where: {
+          sessionId,
+          deletedAt: null,
+        },
+        select: {
+          exerciseTemplateId: true,
+        },
+      });
+      const exerciseTemplateIds = Array.from(
+        new Set(sessionExercises.map((row) => row.exerciseTemplateId)),
+      );
+
+      for (const exerciseTemplateId of exerciseTemplateIds) {
+        await this.prDetectionService.recalculateForExercise(
           userId,
           exerciseTemplateId,
-        ),
-      ),
-    );
+          tx,
+        );
+      }
+    });
 
     return { success: true };
   }
@@ -567,7 +568,9 @@ export class SessionsService {
     sessionId: string,
     input: AddSessionExerciseDto,
   ) {
-    const session = await this.assertSessionOwnership(userId, sessionId);
+    await this.assertSessionOwnership(userId, sessionId, {
+      requireInProgress: true,
+    });
     await this.assertExerciseTemplateAccessible(
       userId,
       input.exerciseTemplateId,
@@ -583,10 +586,6 @@ export class SessionsService {
           supersetGroupKey: input.supersetGroupKey,
         },
       });
-
-      if (session.status === 'FINISHED') {
-        await this.volumeService.cacheSessionVolume(session.id);
-      }
 
       return created;
     } catch (error) {
@@ -614,15 +613,30 @@ export class SessionsService {
           deletedAt: null,
         },
       },
+      select: {
+        id: true,
+        version: true,
+        session: {
+          select: {
+            status: true,
+          },
+        },
+      },
     });
 
     if (!target) {
       this.throwSessionExerciseNotFound();
     }
 
-    if (input.version && target.version !== input.version) {
+    if (target.session?.status === 'FINISHED') {
+      this.throwSessionAlreadyFinished();
+    }
+
+    if (input.version !== undefined && target.version !== input.version) {
       this.throwSessionExerciseVersionConflict();
     }
+
+    const expectedVersion = input.version ?? target.version;
 
     let updated;
     try {
@@ -634,8 +648,9 @@ export class SessionsService {
           session: {
             userId,
             deletedAt: null,
+            status: 'IN_PROGRESS',
           },
-          version: input.version,
+          version: expectedVersion,
         },
         data: {
           notes: input.notes,
@@ -665,11 +680,20 @@ export class SessionsService {
         },
         select: {
           version: true,
+          session: {
+            select: {
+              status: true,
+            },
+          },
         },
       });
 
       if (!current) {
         this.throwSessionExerciseNotFound();
+      }
+
+      if (current.session?.status === 'FINISHED') {
+        this.throwSessionAlreadyFinished();
       }
 
       this.throwSessionExerciseVersionConflict();
@@ -725,6 +749,10 @@ export class SessionsService {
       this.throwSessionExerciseNotFound();
     }
 
+    if (target.session.status === 'FINISHED') {
+      this.throwSessionAlreadyFinished();
+    }
+
     const updated = await this.prisma.sessionExercise.updateMany({
       where: {
         id: sessionExerciseId,
@@ -732,6 +760,7 @@ export class SessionsService {
         session: {
           userId,
           deletedAt: null,
+          status: 'IN_PROGRESS',
         },
         deletedAt: null,
       },
@@ -748,9 +777,6 @@ export class SessionsService {
       userId,
       target.exerciseTemplateId,
     );
-    if (target.session.status === 'FINISHED') {
-      await this.volumeService.cacheSessionVolume(target.session.id);
-    }
 
     return { success: true };
   }
@@ -760,7 +786,9 @@ export class SessionsService {
     sessionId: string,
     input: ReorderSessionExercisesDto,
   ) {
-    await this.assertSessionOwnership(userId, sessionId);
+    await this.assertSessionOwnership(userId, sessionId, {
+      requireInProgress: true,
+    });
     const exerciseIds = input.items.map((item) => item.id);
     const existingCount = await this.prisma.sessionExercise.count({
       where: {
@@ -787,6 +815,7 @@ export class SessionsService {
                 session: {
                   userId,
                   deletedAt: null,
+                  status: 'IN_PROGRESS',
                 },
               },
               data: {
@@ -810,6 +839,7 @@ export class SessionsService {
                 session: {
                   userId,
                   deletedAt: null,
+                  status: 'IN_PROGRESS',
                 },
               },
               data: {
@@ -852,11 +882,20 @@ export class SessionsService {
       select: {
         id: true,
         exerciseTemplateId: true,
+        session: {
+          select: {
+            status: true,
+          },
+        },
       },
     });
 
     if (!exercise) {
       this.throwSessionExerciseNotFound();
+    }
+
+    if (exercise.session?.status === 'FINISHED') {
+      this.throwSessionAlreadyFinished();
     }
 
     await this.assertExerciseTemplateAccessible(
@@ -872,6 +911,7 @@ export class SessionsService {
         session: {
           userId,
           deletedAt: null,
+          status: 'IN_PROGRESS',
         },
       },
       data: {
@@ -931,9 +971,6 @@ export class SessionsService {
         createdSet.exerciseTemplateId,
       );
     }
-    if (createdSet.sessionStatus === 'FINISHED') {
-      await this.volumeService.cacheSessionVolume(createdSet.sessionId);
-    }
 
     return createdSet.item;
   }
@@ -968,6 +1005,10 @@ export class SessionsService {
 
     if (!existing) {
       this.throwSetNotFound();
+    }
+
+    if (existing.sessionExercise.session.status === 'FINISHED') {
+      this.throwSessionAlreadyFinished();
     }
 
     const updateData: SetWriteData = {
@@ -1007,6 +1048,7 @@ export class SessionsService {
             session: {
               userId,
               deletedAt: null,
+              status: 'IN_PROGRESS',
             },
           },
         },
@@ -1031,13 +1073,33 @@ export class SessionsService {
       );
     }
 
-    if (existing.sessionExercise.session.status === 'FINISHED') {
-      await this.volumeService.cacheSessionVolume(
-        existing.sessionExercise.session.id,
-      );
+    const refreshed = await this.prisma.set.findFirst({
+      where: {
+        id: setId,
+        sessionExerciseId,
+        deletedAt: null,
+        sessionExercise: {
+          deletedAt: null,
+          session: {
+            userId,
+            deletedAt: null,
+          },
+        },
+      },
+      include: {
+        sessionExercise: {
+          include: {
+            session: true,
+          },
+        },
+      },
+    });
+
+    if (!refreshed) {
+      this.throwSetNotFound();
     }
 
-    return mergeSetWithUpdateData(existing, updateData);
+    return refreshed;
   }
 
   async deleteSet(userId: string, sessionExerciseId: string, setId: string) {
@@ -1067,6 +1129,10 @@ export class SessionsService {
       this.throwSetNotFound();
     }
 
+    if (existing.sessionExercise.session.status === 'FINISHED') {
+      this.throwSessionAlreadyFinished();
+    }
+
     const updated = await this.prisma.set.updateMany({
       where: {
         id: existing.id,
@@ -1077,6 +1143,7 @@ export class SessionsService {
           session: {
             userId,
             deletedAt: null,
+            status: 'IN_PROGRESS',
           },
         },
       },
@@ -1091,12 +1158,6 @@ export class SessionsService {
       userId,
       existing.sessionExercise.exerciseTemplateId,
     );
-
-    if (existing.sessionExercise.session.status === 'FINISHED') {
-      await this.volumeService.cacheSessionVolume(
-        existing.sessionExercise.session.id,
-      );
-    }
 
     return { success: true };
   }
@@ -1138,6 +1199,10 @@ export class SessionsService {
       this.throwSetNotFound();
     }
 
+    if (existing.sessionExercise.session.status === 'FINISHED') {
+      this.throwSessionAlreadyFinished();
+    }
+
     const completedAt = input.isCompleted
       ? existing.isCompleted
         ? (existing.completedAt ?? new Date())
@@ -1153,6 +1218,7 @@ export class SessionsService {
           session: {
             userId,
             deletedAt: null,
+            status: 'IN_PROGRESS',
           },
         },
       },
@@ -1170,17 +1236,38 @@ export class SessionsService {
       userId,
       existing.sessionExercise.exerciseTemplateId,
     );
-    if (existing.sessionExercise.session.status === 'FINISHED') {
-      await this.volumeService.cacheSessionVolume(
-        existing.sessionExercise.session.id,
-      );
+    const refreshed = await this.prisma.set.findFirst({
+      where: {
+        id: setId,
+        sessionExerciseId,
+        deletedAt: null,
+        sessionExercise: {
+          deletedAt: null,
+          session: {
+            userId,
+            deletedAt: null,
+          },
+        },
+      },
+      include: {
+        sessionExercise: {
+          include: {
+            session: {
+              select: {
+                id: true,
+                status: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!refreshed) {
+      this.throwSetNotFound();
     }
 
-    return {
-      ...existing,
-      isCompleted: input.isCompleted,
-      completedAt,
-    };
+    return refreshed;
   }
 
   async batchCreateSets(
@@ -1194,6 +1281,7 @@ export class SessionsService {
           userId,
           sessionExerciseId,
           tx,
+          { requireInProgress: true },
         );
 
         const created = await Promise.all(
@@ -1225,17 +1313,17 @@ export class SessionsService {
         sessionExercise.exerciseTemplateId,
       );
     }
-    if (sessionExercise.session.status === 'FINISHED') {
-      await this.volumeService.cacheSessionVolume(sessionExercise.session.id);
-    }
-
     return {
       items: results,
       count: results.length,
     };
   }
 
-  private async assertSessionOwnership(userId: string, sessionId: string) {
+  private async assertSessionOwnership(
+    userId: string,
+    sessionId: string,
+    options?: { requireInProgress?: boolean },
+  ) {
     const session = await this.prisma.workoutSession.findFirst({
       where: {
         id: sessionId,
@@ -1250,6 +1338,10 @@ export class SessionsService {
 
     if (!session) {
       this.throwSessionForbidden();
+    }
+
+    if (options?.requireInProgress && session.status === 'FINISHED') {
+      this.throwSessionAlreadyFinished();
     }
 
     return session;
@@ -1304,6 +1396,7 @@ export class SessionsService {
     userId: string,
     sessionExerciseId: string,
     client: SetMutationClient = this.prisma,
+    options?: { requireInProgress?: boolean },
   ) {
     const sessionExercise = await client.sessionExercise.findFirst({
       where: {
@@ -1328,6 +1421,13 @@ export class SessionsService {
 
     if (!sessionExercise) {
       this.throwSessionExerciseForbidden();
+    }
+
+    if (
+      options?.requireInProgress &&
+      sessionExercise.session.status === 'FINISHED'
+    ) {
+      this.throwSessionAlreadyFinished();
     }
 
     return sessionExercise;
@@ -1391,6 +1491,10 @@ export class SessionsService {
           sessionStatus: sessionExercise.session.status,
         };
       }
+    }
+
+    if (sessionExercise.session?.status === 'FINISHED') {
+      this.throwSessionAlreadyFinished();
     }
 
     let created;
@@ -1593,43 +1697,6 @@ function assertUniqueSessionExerciseOrderIndexes(
   }
 }
 
-function assertSessionListDateRange(query: ListSessionsQuery) {
-  if (!query.startDate || !query.endDate) {
-    return;
-  }
-
-  const start = new Date(query.startDate);
-  const end = new Date(query.endDate);
-  if (end < start) {
-    throw new BadRequestException({
-      code: 'SESSION_LIST_DATE_RANGE_INVALID',
-      message: 'endDate must be greater than or equal to startDate',
-    });
-  }
-
-  const rangeMs = end.getTime() - start.getTime();
-  const maxRangeMs = 366 * 24 * 60 * 60 * 1000;
-  if (rangeMs > maxRangeMs) {
-    throw new BadRequestException({
-      code: 'SESSION_LIST_DATE_RANGE_TOO_LARGE',
-      message: 'Date range must not exceed 366 days',
-    });
-  }
-}
-
-type SetReturnMergeData = {
-  orderIndex?: number | null;
-  type?: UpdateSetDto['type'];
-  payload?: unknown;
-  idempotencyKey?: string | null;
-  weight?: number | null;
-  reps?: number | null;
-  durationSeconds?: number | null;
-  rpe?: number | null;
-  isCompleted?: boolean;
-  completedAt?: Date | null;
-};
-
 type SetWriteData = {
   orderIndex?: number;
   type?: UpdateSetDto['type'];
@@ -1642,35 +1709,6 @@ type SetWriteData = {
   isCompleted?: boolean;
   completedAt?: Date | null;
 };
-
-function mergeSetWithUpdateData<T extends Record<string, unknown>>(
-  existing: T,
-  updateData: SetReturnMergeData,
-): T {
-  return {
-    ...existing,
-    orderIndex: pickUpdatedValue(existing.orderIndex, updateData.orderIndex),
-    type: pickUpdatedValue(existing.type, updateData.type),
-    payload: pickUpdatedValue(existing.payload, updateData.payload),
-    idempotencyKey: pickUpdatedValue(
-      existing.idempotencyKey,
-      updateData.idempotencyKey,
-    ),
-    weight: pickUpdatedValue(existing.weight, updateData.weight),
-    reps: pickUpdatedValue(existing.reps, updateData.reps),
-    durationSeconds: pickUpdatedValue(
-      existing.durationSeconds,
-      updateData.durationSeconds,
-    ),
-    rpe: pickUpdatedValue(existing.rpe, updateData.rpe),
-    isCompleted: pickUpdatedValue(existing.isCompleted, updateData.isCompleted),
-    completedAt: pickUpdatedValue(existing.completedAt, updateData.completedAt),
-  } as T;
-}
-
-function pickUpdatedValue<T>(existingValue: T, updatedValue: T | undefined): T {
-  return updatedValue === undefined ? existingValue : updatedValue;
-}
 
 function isSetIdempotencyUniqueConstraintError(error: unknown): boolean {
   return isUniqueConstraintErrorForFields(error, [
