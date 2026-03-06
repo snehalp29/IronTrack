@@ -338,6 +338,7 @@ model Set {
 
   @@unique([sessionExerciseId, orderIndex])
   @@unique([sessionExerciseId, idempotencyKey])
+  @@index([completedAt])
   @@index([sessionExerciseId])
 }
 

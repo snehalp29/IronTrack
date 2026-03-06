@@ -358,6 +358,7 @@ export class SessionsService {
           status: 'IN_PROGRESS',
           finishedAt: null,
           endedReason: existing.endedReason,
+          totalVolume: null,
           durationSeconds: null,
           version: { increment: 1 },
         },

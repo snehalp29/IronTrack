@@ -35,4 +35,13 @@ describe('user schemas', () => {
     expect(() => updateMeSchema.parse({ unitPreference: 'UNKNOWN' })).toThrow();
     expect(() => updateMeSchema.parse({ avatarUrl: 'not-url' })).toThrow();
   });
+
+  it('rejects avatar urls with non-http protocols', () => {
+    expect(() =>
+      updateMeSchema.parse({ avatarUrl: 'javascript:alert(1)' }),
+    ).toThrow();
+    expect(() =>
+      updateMeSchema.parse({ avatarUrl: 'data:text/html;base64,PHNjcmlwdA==' }),
+    ).toThrow();
+  });
 });

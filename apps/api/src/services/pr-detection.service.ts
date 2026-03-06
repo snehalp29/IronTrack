@@ -20,7 +20,30 @@ export class PrDetectionService {
   constructor(private readonly prisma: PrismaService) {}
 
   async detectForSession(userId: string, sessionId: string) {
-    const sessionSets = await this.prisma.set.findMany({
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await this.prisma.$transaction(
+          (tx) => this.detectForSessionInTransaction(userId, sessionId, tx),
+          {
+            isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+          },
+        );
+      } catch (error) {
+        if (!isSerializableTransactionConflict(error) || attempt === 2) {
+          throw error;
+        }
+      }
+    }
+
+    return [];
+  }
+
+  private async detectForSessionInTransaction(
+    userId: string,
+    sessionId: string,
+    client: PrDetectionClient,
+  ) {
+    const sessionSets = await client.set.findMany({
       where: {
         isCompleted: true,
         deletedAt: null,
@@ -83,7 +106,7 @@ export class PrDetectionService {
       return createdPrs;
     }
 
-    const existingPrs = await this.prisma.pRRecord.findMany({
+    const existingPrs = await client.pRRecord.findMany({
       where: {
         userId,
         exerciseTemplateId: { in: exerciseTemplateIds },
@@ -101,7 +124,7 @@ export class PrDetectionService {
         record.value,
       ]),
     );
-    const upserts: Array<ReturnType<typeof this.prisma.pRRecord.upsert>> = [];
+    const upserts: Prisma.PrismaPromise<unknown>[] = [];
 
     for (const [exerciseTemplateId, sets] of grouped.entries()) {
       const candidateMap = this.calculateCandidates(sets);
@@ -115,7 +138,7 @@ export class PrDetectionService {
 
         if (existingValue === undefined || candidate.value > existingValue) {
           upserts.push(
-            this.prisma.pRRecord.upsert({
+            client.pRRecord.upsert({
               where: {
                 userId_exerciseTemplateId_prType: {
                   userId,
@@ -152,7 +175,7 @@ export class PrDetectionService {
     }
 
     if (upserts.length > 0) {
-      await this.prisma.$transaction(upserts);
+      await Promise.all(upserts);
     }
 
     return createdPrs;
@@ -357,4 +380,12 @@ export class PrDetectionService {
   private getPrKey(exerciseTemplateId: string, prType: PrType): string {
     return `${exerciseTemplateId}:${prType}`;
   }
+}
+
+function isSerializableTransactionConflict(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  return (error as { code?: unknown }).code === 'P2034';
 }

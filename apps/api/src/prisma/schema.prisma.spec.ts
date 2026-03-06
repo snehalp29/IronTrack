@@ -34,6 +34,13 @@ describe('Prisma schema hardening', () => {
     ),
     'utf8',
   );
+  const serviceReviewMigration = readFileSync(
+    join(
+      __dirname,
+      '../../prisma/migrations/202603060008_service_review_constraints/migration.sql',
+    ),
+    'utf8',
+  );
 
   it('uses bounded database types for user emails and refresh token hashes', () => {
     expect(prismaSchema).toContain(
@@ -138,6 +145,22 @@ describe('Prisma schema hardening', () => {
     );
     expect(boundedTextContractsMigration).toContain(
       'ALTER TABLE "ExerciseNote"\nALTER COLUMN "note" TYPE VARCHAR(4000);',
+    );
+  });
+
+  it('adds an index for set completion lookups', () => {
+    expect(prismaSchema).toContain('@@index([completedAt])');
+    expect(serviceReviewMigration).toContain(
+      'CREATE INDEX "Set_completedAt_idx" ON "Set"("completedAt");',
+    );
+  });
+
+  it('adds a ghost-exercise check constraint', () => {
+    expect(serviceReviewMigration).toContain(
+      'ExerciseTemplate_owner_or_global_check',
+    );
+    expect(serviceReviewMigration).toContain(
+      'CHECK ("isGlobal" = true OR "ownerUserId" IS NOT NULL)',
     );
   });
 });

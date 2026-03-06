@@ -29,6 +29,22 @@ interface SessionSetFixture {
   };
 }
 
+function configureTransactionMock<T extends { $transaction: jest.Mock }>(
+  prismaMock: T,
+) {
+  prismaMock.$transaction.mockImplementation(
+    async (arg: unknown, _options?: unknown) => {
+      if (Array.isArray(arg)) {
+        return Promise.all(arg as Promise<unknown>[]);
+      }
+      if (typeof arg === 'function') {
+        return (arg as (client: T) => unknown)(prismaMock);
+      }
+      throw new Error('Unsupported transaction shape in test');
+    },
+  );
+}
+
 describe('PrDetectionService', () => {
   it('loads existing PR records in one query and upserts only improved values', async () => {
     const completedAt = new Date('2024-01-01T10:00:00.000Z');
@@ -68,12 +84,15 @@ describe('PrDetectionService', () => {
       set: {
         findMany: jest.fn(async () => sessionSets),
       },
-      $transaction: jest.fn(async () => undefined),
+      $transaction: jest.fn(),
       pRRecord: {
         findMany: jest.fn(async () => existingPrRecords),
         upsert: jest.fn(async () => undefined),
       },
     } as unknown as PrismaService;
+    configureTransactionMock(
+      prismaMock as unknown as { $transaction: jest.Mock },
+    );
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -90,9 +109,12 @@ describe('PrDetectionService', () => {
     );
     expect((prismaMock.pRRecord.upsert as jest.Mock).mock.calls.length).toBe(1);
     expect((prismaMock.$transaction as jest.Mock).mock.calls.length).toBe(1);
-    expect(
-      (prismaMock.$transaction as jest.Mock).mock.calls[0][0],
-    ).toHaveLength(1);
+    expect((prismaMock.$transaction as jest.Mock).mock.calls[0]).toEqual([
+      expect.any(Function),
+      expect.objectContaining({
+        isolationLevel: 'Serializable',
+      }),
+    ]);
     expect(
       (prismaMock.pRRecord.upsert as jest.Mock).mock.calls[0][0],
     ).toMatchObject({
@@ -123,11 +145,15 @@ describe('PrDetectionService', () => {
       set: {
         findMany: jest.fn(async () => []),
       },
+      $transaction: jest.fn(),
       pRRecord: {
         findMany: jest.fn(async () => []),
         upsert: jest.fn(async () => undefined),
       },
     } as unknown as PrismaService;
+    configureTransactionMock(
+      prismaMock as unknown as { $transaction: jest.Mock },
+    );
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -140,6 +166,7 @@ describe('PrDetectionService', () => {
     await expect(
       service.detectForSession('user-1', 'session-1'),
     ).resolves.toEqual([]);
+    expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
     expect(prismaMock.pRRecord.findMany).not.toHaveBeenCalled();
     expect(prismaMock.pRRecord.upsert).not.toHaveBeenCalled();
   });
@@ -149,11 +176,15 @@ describe('PrDetectionService', () => {
       set: {
         findMany: jest.fn(async () => []),
       },
+      $transaction: jest.fn(),
       pRRecord: {
         findMany: jest.fn(async () => []),
         upsert: jest.fn(async () => undefined),
       },
     } as unknown as PrismaService;
+    configureTransactionMock(
+      prismaMock as unknown as { $transaction: jest.Mock },
+    );
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -186,11 +217,15 @@ describe('PrDetectionService', () => {
       set: {
         findMany: jest.fn(async () => []),
       },
+      $transaction: jest.fn(),
       pRRecord: {
         findMany: jest.fn(async () => []),
         upsert: jest.fn(async () => undefined),
       },
     } as unknown as PrismaService;
+    configureTransactionMock(
+      prismaMock as unknown as { $transaction: jest.Mock },
+    );
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -222,12 +257,15 @@ describe('PrDetectionService', () => {
           },
         ]),
       },
-      $transaction: jest.fn(async () => undefined),
+      $transaction: jest.fn(),
       pRRecord: {
         findMany: jest.fn(async () => []),
         upsert: jest.fn(async () => undefined),
       },
     } as unknown as PrismaService;
+    configureTransactionMock(
+      prismaMock as unknown as { $transaction: jest.Mock },
+    );
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -241,7 +279,7 @@ describe('PrDetectionService', () => {
       service.detectForSession('user-1', 'session-1'),
     ).resolves.toEqual([]);
     expect(prismaMock.pRRecord.upsert).not.toHaveBeenCalled();
-    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
   });
 
   it('creates a PR when no existing value exists for that exercise/type', async () => {
@@ -257,12 +295,15 @@ describe('PrDetectionService', () => {
           },
         ]),
       },
-      $transaction: jest.fn(async () => undefined),
+      $transaction: jest.fn(),
       pRRecord: {
         findMany: jest.fn(async () => []),
         upsert: jest.fn(async () => undefined),
       },
     } as unknown as PrismaService;
+    configureTransactionMock(
+      prismaMock as unknown as { $transaction: jest.Mock },
+    );
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -312,7 +353,7 @@ describe('PrDetectionService', () => {
           },
         ]),
       },
-      $transaction: jest.fn(async () => undefined),
+      $transaction: jest.fn(),
       pRRecord: {
         findMany: jest.fn(async () => [
           {
@@ -339,6 +380,9 @@ describe('PrDetectionService', () => {
         upsert: jest.fn(async () => undefined),
       },
     } as unknown as PrismaService;
+    configureTransactionMock(
+      prismaMock as unknown as { $transaction: jest.Mock },
+    );
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -397,12 +441,15 @@ describe('PrDetectionService', () => {
           },
         ]),
       },
-      $transaction: jest.fn(async () => undefined),
+      $transaction: jest.fn(),
       pRRecord: {
         findMany: jest.fn(async () => []),
         upsert: jest.fn(async () => undefined),
       },
     } as unknown as PrismaService;
+    configureTransactionMock(
+      prismaMock as unknown as { $transaction: jest.Mock },
+    );
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -438,12 +485,15 @@ describe('PrDetectionService', () => {
           },
         ]),
       },
-      $transaction: jest.fn(async () => undefined),
+      $transaction: jest.fn(),
       pRRecord: {
         findMany: jest.fn(async () => []),
         upsert: jest.fn(async () => undefined),
       },
     } as unknown as PrismaService;
+    configureTransactionMock(
+      prismaMock as unknown as { $transaction: jest.Mock },
+    );
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -457,7 +507,7 @@ describe('PrDetectionService', () => {
       service.detectForSession('user-1', 'session-1'),
     ).resolves.toEqual([]);
     expect(prismaMock.pRRecord.upsert).not.toHaveBeenCalled();
-    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
   });
 
   it('uses shared estimateOneRm utility when evaluating 1RM candidates', async () => {
@@ -476,12 +526,15 @@ describe('PrDetectionService', () => {
           },
         ]),
       },
-      $transaction: jest.fn(async () => undefined),
+      $transaction: jest.fn(),
       pRRecord: {
         findMany: jest.fn(async () => []),
         upsert: jest.fn(async () => undefined),
       },
     } as unknown as PrismaService;
+    configureTransactionMock(
+      prismaMock as unknown as { $transaction: jest.Mock },
+    );
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -494,6 +547,84 @@ describe('PrDetectionService', () => {
     await service.detectForSession('user-1', 'session-1');
 
     expect(estimateSpy).toHaveBeenCalledWith(100, 5);
+  });
+
+  it('runs detectForSession inside a serializable transaction and retries serialization conflicts', async () => {
+    const completedAt = new Date('2024-01-01T10:00:00.000Z');
+    const sessionSets: SessionSetFixture[] = [
+      {
+        id: 'set-1',
+        weight: 100,
+        reps: 5,
+        completedAt,
+        sessionExercise: { exerciseTemplateId: 'exercise-1' },
+      },
+    ];
+    const prismaMock = {
+      set: {
+        findMany: jest.fn(async () => sessionSets),
+      },
+      pRRecord: {
+        findMany: jest.fn(async () => []),
+        upsert: jest.fn(async () => undefined),
+      },
+      $transaction: jest.fn(),
+    } as unknown as PrismaService;
+    const serializationFailure = Object.assign(
+      new Error('serialization failure'),
+      {
+        code: 'P2034',
+      },
+    );
+    (prismaMock.$transaction as jest.Mock)
+      .mockRejectedValueOnce(serializationFailure)
+      .mockImplementationOnce(
+        async (
+          callback: (client: typeof prismaMock) => Promise<DetectedPr[]>,
+          options?: { isolationLevel?: string },
+        ) => {
+          expect(options).toEqual(
+            expect.objectContaining({
+              isolationLevel: 'Serializable',
+            }),
+          );
+          return callback(prismaMock);
+        },
+      );
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        PrDetectionService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(PrDetectionService);
+    const result = await service.detectForSession('user-1', 'session-1');
+
+    expect(prismaMock.$transaction).toHaveBeenCalledTimes(2);
+    expect(result).toEqual([
+      {
+        exerciseTemplateId: 'exercise-1',
+        prType: PrType.MAX_WEIGHT,
+        value: 100,
+      },
+      {
+        exerciseTemplateId: 'exercise-1',
+        prType: PrType.MAX_REPS,
+        value: 5,
+      },
+      {
+        exerciseTemplateId: 'exercise-1',
+        prType: PrType.MAX_VOLUME,
+        value: 500,
+      },
+      {
+        exerciseTemplateId: 'exercise-1',
+        prType: PrType.MAX_1RM_EST,
+        value: expect.any(Number),
+      },
+    ]);
   });
 
   it('recalculates and upserts current PRs for one exercise', async () => {

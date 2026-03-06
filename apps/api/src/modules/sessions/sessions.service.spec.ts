@@ -775,6 +775,43 @@ describe('SessionsService', () => {
     expect(rollbackCall?.where?.finishedAt).toBeUndefined();
   });
 
+  it('clears cached totalVolume when finish rollback runs after PR detection fails', async () => {
+    const { service, prismaMock, volumeMock, prDetectionMock } =
+      createService();
+    (prismaMock.workoutSession.findFirst as jest.Mock).mockResolvedValue({
+      id: 'session-1',
+      userId: 'user-1',
+      startedAt: new Date(Date.now() - 2000),
+      status: 'IN_PROGRESS',
+      endedReason: null,
+      user: {
+        timezone: 'UTC',
+      },
+    });
+    (prismaMock.workoutSession.updateMany as jest.Mock)
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 1 });
+    (volumeMock.cacheSessionVolume as jest.Mock).mockResolvedValue(900);
+    (prDetectionMock.detectForSession as jest.Mock).mockRejectedValue(
+      new Error('pr detection failed'),
+    );
+
+    await expect(service.finishSession('user-1', 'session-1')).rejects.toThrow(
+      'pr detection failed',
+    );
+
+    expect(prismaMock.workoutSession.updateMany).toHaveBeenCalledTimes(2);
+    expect(prismaMock.workoutSession.updateMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'IN_PROGRESS',
+          totalVolume: null,
+        }),
+      }),
+    );
+  });
+
   it('runs finish side effects only once when concurrent finish requests race', async () => {
     const {
       service,

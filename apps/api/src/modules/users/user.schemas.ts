@@ -6,7 +6,14 @@ export const updateMeSchema = z.object({
   name: optionalTrimmed(z.string().min(1).max(120)),
   timezone: optionalTrimmed(z.string().min(1).max(120)),
   unitPreference: z.enum(['METRIC', 'IMPERIAL']).optional(),
-  avatarUrl: optionalTrimmed(z.string().url()),
+  avatarUrl: optionalTrimmed(
+    z
+      .string()
+      .url()
+      .refine((value) => /^https?:\/\//i.test(value), {
+        message: 'avatarUrl must use http or https',
+      }),
+  ),
 });
 
 export type UpdateMeDto = z.infer<typeof updateMeSchema>;
