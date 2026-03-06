@@ -15,6 +15,7 @@ jest.mock('bcryptjs', () => {
   return {
     ...actual,
     compare: jest.fn(actual.compare),
+    hash: jest.fn(actual.hash),
   };
 });
 
@@ -55,6 +56,10 @@ describe('AuthService', () => {
       avatarUrl?: string;
       googleId?: string;
     };
+  };
+  type UserUpdateArgs = {
+    where: { id: string };
+    data: Partial<UserRecord>;
   };
   type UserUpsertArgs = {
     where: { email: string };
@@ -130,15 +135,24 @@ describe('AuthService', () => {
           id: randomUUID(),
           email: data.email,
           passwordHash: data.passwordHash,
-          authProvider: 'LOCAL' as const,
+          authProvider: (data.authProvider ?? 'LOCAL') as 'LOCAL' | 'GOOGLE',
           deletedAt: null,
           timezone: data.timezone,
           unitPreference: data.unitPreference,
           name: data.name,
           avatarUrl: data.avatarUrl,
+          googleId: data.googleId,
         };
         users.push(user);
         return user;
+      }),
+      update: jest.fn(async ({ where, data }: UserUpdateArgs) => {
+        const existing = users.find((user) => user.id === where.id);
+        if (!existing) {
+          throw new Error('User not found');
+        }
+        Object.assign(existing, data);
+        return existing;
       }),
       upsert: jest.fn(async ({ where, update, create }: UserUpsertArgs) => {
         const existing = users.find((user) => user.email === where.email);
@@ -237,6 +251,9 @@ describe('AuthService', () => {
     jest.clearAllMocks();
     if (jest.isMockFunction(bcryptjs.compare)) {
       (bcryptjs.compare as unknown as jest.Mock).mockClear();
+    }
+    if (jest.isMockFunction(bcryptjs.hash)) {
+      (bcryptjs.hash as unknown as jest.Mock).mockClear();
     }
     users.length = 0;
     refreshTokens.length = 0;
@@ -395,15 +412,17 @@ describe('AuthService', () => {
     expect(googleTokenVerifierMock.verifyIdToken).toHaveBeenCalledWith(
       'valid-google-id-token-1234567890',
     );
-    expect(prismaMock.user.upsert).toHaveBeenCalledWith(
+    expect(prismaMock.user.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { email: 'verified@irontrack.local' },
-        update: expect.objectContaining({
+        data: expect.objectContaining({
+          email: 'verified@irontrack.local',
           googleId: 'google-user-id-123',
           authProvider: 'GOOGLE',
+          timezone: 'UTC',
         }),
       }),
     );
+    expect(prismaMock.user.update).not.toHaveBeenCalled();
   });
 
   it('rejects google login for accounts registered with password auth', async () => {
@@ -424,7 +443,176 @@ describe('AuthService', () => {
         code: 'EMAIL_REGISTERED_WITH_PASSWORD',
       },
     });
-    expect(prismaMock.user.upsert).not.toHaveBeenCalled();
+    expect(prismaMock.user.create).not.toHaveBeenCalled();
+    expect(prismaMock.user.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects google login when create races with concurrent LOCAL account creation', async () => {
+    (prismaMock.user.findFirst as jest.Mock)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: randomUUID(),
+        email: 'verified@irontrack.local',
+        passwordHash: 'hash',
+        authProvider: 'LOCAL',
+        deletedAt: null,
+      });
+    (prismaMock.user.create as jest.Mock).mockRejectedValueOnce(
+      Object.assign(new Error('Unique constraint failed'), {
+        code: 'P2002',
+        meta: { target: ['email'] },
+      }),
+    );
+
+    await expect(
+      authService.googleLogin({
+        idToken: 'valid-google-id-token-1234567890',
+      }),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'EMAIL_REGISTERED_WITH_PASSWORD',
+      },
+    });
+  });
+
+  it('rejects google login when updated account no longer has GOOGLE provider', async () => {
+    const googleUserId = randomUUID();
+    users.push({
+      id: googleUserId,
+      email: 'verified@irontrack.local',
+      passwordHash: await hash('existing-password-hash-source', 12),
+      authProvider: 'GOOGLE',
+      deletedAt: null,
+      googleId: 'google-user-id-123',
+    });
+    (prismaMock.user.update as jest.Mock).mockResolvedValueOnce({
+      id: googleUserId,
+      email: 'verified@irontrack.local',
+      passwordHash: 'hash',
+      authProvider: 'LOCAL',
+      deletedAt: null,
+      googleId: 'google-user-id-123',
+    });
+
+    await expect(
+      authService.googleLogin({
+        idToken: 'valid-google-id-token-1234567890',
+      }),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'EMAIL_REGISTERED_WITH_PASSWORD',
+      },
+    });
+  });
+
+  it('rethrows non-email create uniqueness errors during google login', async () => {
+    const nonEmailUniqueViolation = Object.assign(
+      new Error('Unique constraint failed'),
+      {
+        code: 'P2002',
+        meta: { target: ['googleId'] },
+      },
+    );
+    (prismaMock.user.findFirst as jest.Mock).mockResolvedValueOnce(null);
+    (prismaMock.user.create as jest.Mock).mockRejectedValueOnce(
+      nonEmailUniqueViolation,
+    );
+
+    await expect(
+      authService.googleLogin({
+        idToken: 'valid-google-id-token-1234567890',
+      }),
+    ).rejects.toBe(nonEmailUniqueViolation);
+  });
+
+  it('rethrows create conflict when concurrent user cannot be loaded', async () => {
+    const emailUniqueViolation = Object.assign(
+      new Error('Unique constraint failed'),
+      {
+        code: 'P2002',
+        meta: { target: ['email'] },
+      },
+    );
+    (prismaMock.user.findFirst as jest.Mock)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+    (prismaMock.user.create as jest.Mock).mockRejectedValueOnce(
+      emailUniqueViolation,
+    );
+
+    await expect(
+      authService.googleLogin({
+        idToken: 'valid-google-id-token-1234567890',
+      }),
+    ).rejects.toBe(emailUniqueViolation);
+  });
+
+  it('rejects google login when concurrent account is soft-deleted', async () => {
+    (prismaMock.user.findFirst as jest.Mock)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: randomUUID(),
+        email: 'verified@irontrack.local',
+        passwordHash: 'hash',
+        authProvider: 'GOOGLE',
+        deletedAt: new Date('2026-03-05T00:00:00.000Z'),
+      });
+    (prismaMock.user.create as jest.Mock).mockRejectedValueOnce(
+      Object.assign(new Error('Unique constraint failed'), {
+        code: 'P2002',
+        meta: { target: ['email'] },
+      }),
+    );
+
+    await expect(
+      authService.googleLogin({
+        idToken: 'valid-google-id-token-1234567890',
+      }),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'USER_DISABLED',
+      },
+    });
+  });
+
+  it('recovers google login by updating concurrent GOOGLE account after email race', async () => {
+    const concurrentGoogleId = randomUUID();
+    const concurrentGoogleUser = {
+      id: concurrentGoogleId,
+      email: 'verified@irontrack.local',
+      passwordHash: 'hash',
+      authProvider: 'GOOGLE' as const,
+      deletedAt: null,
+      googleId: 'stale-google-id',
+      name: 'Old Name',
+      avatarUrl: 'https://example.com/old.png',
+    };
+    users.push(concurrentGoogleUser);
+    (prismaMock.user.findFirst as jest.Mock)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(concurrentGoogleUser);
+    (prismaMock.user.create as jest.Mock).mockRejectedValueOnce(
+      Object.assign(new Error('Unique constraint failed'), {
+        code: 'P2002',
+        meta: { target: ['email'] },
+      }),
+    );
+
+    const tokens = await authService.googleLogin({
+      idToken: 'valid-google-id-token-1234567890',
+    });
+
+    expect(tokens.accessToken).toBeTruthy();
+    expect(tokens.refreshToken).toBeTruthy();
+    expect(prismaMock.user.update).toHaveBeenCalledWith({
+      where: { id: concurrentGoogleId },
+      data: {
+        authProvider: 'GOOGLE',
+        googleId: 'google-user-id-123',
+        name: 'Verified User',
+        avatarUrl: 'https://example.com/avatar.png',
+      },
+    });
   });
 
   it('applies UTC timezone when creating google-auth users', async () => {
@@ -432,9 +620,9 @@ describe('AuthService', () => {
       idToken: 'valid-google-id-token-1234567890',
     });
 
-    expect(prismaMock.user.upsert).toHaveBeenCalledWith(
+    expect(prismaMock.user.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        create: expect.objectContaining({
+        data: expect.objectContaining({
           timezone: 'UTC',
         }),
       }),
@@ -446,15 +634,34 @@ describe('AuthService', () => {
       idToken: 'valid-google-id-token-1234567890',
     });
 
-    const upsertArgs = (prismaMock.user.upsert as jest.Mock).mock
-      .calls[0]?.[0] as UserUpsertArgs | undefined;
-    const createPasswordHash = upsertArgs?.create.passwordHash;
+    const createArgs = (prismaMock.user.create as jest.Mock).mock
+      .calls[0]?.[0] as UserCreateArgs | undefined;
+    const createPasswordHash = createArgs?.data.passwordHash;
 
     expect(typeof createPasswordHash).toBe('string');
     expect(
       await bcryptjs.compare('google-user-id-123', createPasswordHash!),
     ).toBe(false);
     expect(bcryptjs.getRounds(createPasswordHash!)).toBe(12);
+  });
+
+  it('does not compute a new password hash for returning GOOGLE users', async () => {
+    users.push({
+      id: randomUUID(),
+      email: 'verified@irontrack.local',
+      passwordHash: await hash('existing-password-hash-source', 12),
+      authProvider: 'GOOGLE',
+      deletedAt: null,
+      googleId: 'google-user-id-123',
+    });
+    const hashMock = bcryptjs.hash as unknown as jest.Mock;
+    hashMock.mockClear();
+
+    await authService.googleLogin({
+      idToken: 'valid-google-id-token-1234567890',
+    });
+
+    expect(hashMock).not.toHaveBeenCalled();
   });
 
   it('google login requires idToken', async () => {
@@ -477,7 +684,8 @@ describe('AuthService', () => {
         idToken: 'invalid-google-id-token-1234567890',
       }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
-    expect(prismaMock.user.upsert).not.toHaveBeenCalled();
+    expect(prismaMock.user.create).not.toHaveBeenCalled();
+    expect(prismaMock.user.update).not.toHaveBeenCalled();
   });
 
   it('rejects registration when email is already taken', async () => {
@@ -885,13 +1093,14 @@ describe('AuthService', () => {
         idToken: 'valid-google-id-token-1234567890',
       }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
-    expect(prismaMock.user.upsert).not.toHaveBeenCalled();
+    expect(prismaMock.user.create).not.toHaveBeenCalled();
+    expect(prismaMock.user.update).not.toHaveBeenCalled();
   });
 
   it('rejects google login when account becomes soft-deleted before token issuance', async () => {
     const userId = randomUUID();
     (prismaMock.user.findFirst as jest.Mock).mockResolvedValueOnce(null);
-    (prismaMock.user.upsert as jest.Mock).mockResolvedValueOnce({
+    (prismaMock.user.create as jest.Mock).mockResolvedValueOnce({
       id: userId,
       email: 'verified@irontrack.local',
       passwordHash: 'hash',

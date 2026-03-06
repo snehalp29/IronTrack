@@ -531,3 +531,120 @@ Verified against current `auth.service.ts`, `auth.service.spec.ts`, and Prisma s
 | 16  | `RefreshToken.tokenHash` lacks `@@unique` constraint            | ✅ Fixed | `schema.prisma` now uses `@@unique([tokenHash])`; migration `202603050003_refresh_token_hash_unique` drops the old non-unique index and creates a unique index.                                                                        |
 | 17  | Google create path hashes deterministic `googleId` with cost 10 | ✅ Fixed | Google-user `passwordHash` now uses `hash(randomUUID(), 12)` so it is non-deterministic and aligned with LOCAL hashing cost. Test asserts it does not match `googleId` and uses 12 rounds.                                             |
 | 18  | `register` pre-check includes soft-deleted accounts             | ✅ Fixed | Register pre-check now queries active users only (`findFirst` with `deletedAt: null`) to align boundary behavior with login checks. Note: full email reuse remains constrained by DB-level `User.email @unique` policy.                |
+
+---
+
+## New Findings — 2026-03-05 (Pass 8)
+
+### P2 — Should Fix
+
+#### 19. `googleLogin` LOCAL-provider pre-check has the same TOCTOU race as finding #11 (`auth.service.ts:167–201`)
+
+```ts
+// Step 1 — read
+const existingUser = await this.prisma.user.findFirst({ where: { email } });
+if (existingUser?.authProvider === AuthProvider.LOCAL) throw EMAIL_REGISTERED_WITH_PASSWORD;
+
+// ← concurrent register() can insert a LOCAL user here (~50–100ms bcrypt window)
+
+// Step 2 — write
+const user = await this.prisma.user.upsert({
+  update: { authProvider: AuthProvider.GOOGLE, ... }, // ← overwrites the new LOCAL account
+  ...
+});
+// no authProvider check on the returned `user`
+```
+
+If no user exists at step 1, neither guard fires. A concurrent `register` call for the same email can complete (including bcrypt, ~50–100ms) and insert a LOCAL user before step 2. The `upsert` then matches on email and runs its `update` branch, silently setting `authProvider: GOOGLE` on the freshly-created LOCAL account. The post-upsert guard (L203) only checks `deletedAt`, not `authProvider`, so tokens are issued for the now-GOOGLE account.
+
+This is structurally identical to finding #11 (soft-delete race), which was resolved by adding a post-upsert `deletedAt` guard.
+
+**Fix:** Add a matching post-upsert `authProvider` guard immediately after the `upsert`:
+
+```ts
+if (user.authProvider !== AuthProvider.GOOGLE) {
+  throw new UnauthorizedException({
+    code: 'EMAIL_REGISTERED_WITH_PASSWORD',
+    message:
+      'This email is registered with a password. Please log in with your password.',
+  });
+}
+```
+
+Add a test simulating the race (mock `findFirst` returning `null`, mock `upsert` returning a user with `authProvider: LOCAL`).
+
+---
+
+### P3 — Nice to Have
+
+#### 20. `googleLogin` computes `await hash(randomUUID(), 12)` even for returning users (`auth.service.ts:194`)
+
+```ts
+const user = await this.prisma.user.upsert({
+  update: { ... },          // ← existing GOOGLE users take this branch
+  create: {
+    passwordHash: await hash(randomUUID(), 12), // ← evaluated before upsert runs
+    ...
+  },
+});
+```
+
+JavaScript evaluates all arguments before calling a function. `hash(randomUUID(), 12)` is awaited as part of building the `create` payload object, so the full bcrypt cost-12 operation (~100ms) runs on every call to `googleLogin` — including for the majority case of a returning GOOGLE user who will trigger only the `update` branch. The generated hash is then discarded.
+
+**Fix:** Restructure to compute the hash only on the create path:
+
+```ts
+const existingGoogleUser = await this.prisma.user.findFirst({
+  where: { email: identity.email, authProvider: AuthProvider.GOOGLE },
+});
+const user = existingGoogleUser
+  ? await this.prisma.user.update({ where: { id: existingGoogleUser.id }, data: { ... } })
+  : await this.prisma.user.create({
+      data: { ..., passwordHash: await hash(randomUUID(), 12) },
+    });
+```
+
+Or use a pre-computed sentinel: `hash('google-sentinel', 1)` (low cost is fine since this value is never compared).
+
+---
+
+#### 21. `DUMMY_PASSWORD_HASH` computed with `hashSync` at module scope (`auth.service.ts:22`)
+
+```ts
+const DUMMY_PASSWORD_HASH = hashSync(randomUUID(), 12); // ← top-level, synchronous
+```
+
+`hashSync` with cost 12 blocks the Node.js event loop for ~100ms every time this module is first imported. In production this is a one-time startup cost; in test suites that repeatedly re-import or re-compile modules it adds up across runs.
+
+**Fix:** Compute asynchronously in `OnModuleInit` and store on the instance:
+
+```ts
+export class AuthService implements OnModuleInit {
+  private dummyPasswordHash!: string;
+
+  async onModuleInit() {
+    this.dummyPasswordHash = await hash(randomUUID(), 12);
+  }
+}
+```
+
+This moves the ~100ms cost off the synchronous import path onto NestJS's async bootstrap sequence, where it is naturally expected.
+
+---
+
+## Verification Pass 9 — 2026-03-05
+
+Verified against current `auth.service.ts`, `auth.service.spec.ts`, and `auth.e2e-spec.ts`.
+
+| #   | Finding                                                            | Status   | Notes                                                                                                                                                                                                                                    |
+| --- | ------------------------------------------------------------------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 19  | `googleLogin` LOCAL-provider pre-check still has TOCTOU race       | ✅ Fixed | Replaced `upsert` with explicit `update` (existing GOOGLE user) vs `create` (new user) flow, plus create-time email-race recovery that re-reads the concurrent row and rejects LOCAL/deleted outcomes before token issuance.             |
+| 20  | `googleLogin` always computes bcrypt hash even for returning users | ✅ Fixed | Hashing now happens only inside create path (`createOrRecoverGoogleUser`), so returning GOOGLE users only hit `user.update` with no new hash computation. Added test: `does not compute a new password hash for returning GOOGLE users`. |
+| 21  | `DUMMY_PASSWORD_HASH` uses module-scope `hashSync`                 | ✅ Fixed | Replaced synchronous runtime hash with a precomputed bcrypt hash constant, eliminating startup/event-loop blocking at module import time.                                                                                                |
+
+Validation:
+
+- `pnpm --filter @irontrack/api test -- --runTestsByPath src/modules/auth/auth.service.spec.ts` ✅
+- `pnpm --filter @irontrack/api test:e2e -- --runTestsByPath test/auth.e2e-spec.ts` ✅
+- `pnpm --filter @irontrack/api typecheck` ✅
+- `pnpm --filter @irontrack/api test:cov` ✅ (`100/100/100`)

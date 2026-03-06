@@ -49,6 +49,10 @@ describe('AuthController (e2e)', () => {
     update: Partial<UserRecord>;
     create: UserCreateArgs['data'];
   };
+  type UserUpdateArgs = {
+    where: { id: string };
+    data: Partial<UserRecord>;
+  };
   type RefreshTokenCreateArgs = {
     data: {
       userId: string;
@@ -130,11 +134,20 @@ describe('AuthController (e2e)', () => {
           deletedAt: null,
           timezone: data.timezone,
           unitPreference: data.unitPreference,
+          googleId: data.googleId,
           name: data.name,
           avatarUrl: data.avatarUrl,
         };
         users.push(created);
         return created;
+      }),
+      update: jest.fn(async ({ where, data }: UserUpdateArgs) => {
+        const existing = users.find((user) => user.id === where.id);
+        if (!existing) {
+          throw new Error('User not found');
+        }
+        Object.assign(existing, data);
+        return existing;
       }),
       upsert: jest.fn(async ({ where, update, create }: UserUpsertArgs) => {
         const existing = users.find((user) => user.email === where.email);
@@ -326,11 +339,12 @@ describe('AuthController (e2e)', () => {
     expect(googleTokenVerifierMock.verifyIdToken).toHaveBeenCalledWith(
       'valid-google-id-token-1234567890',
     );
-    expect(prismaMock.user.upsert).toHaveBeenCalledWith(
+    expect(prismaMock.user.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { email: 'google-user@irontrack.local' },
-        update: expect.objectContaining({
+        data: expect.objectContaining({
+          email: 'google-user@irontrack.local',
           googleId: 'google-sub-123',
+          authProvider: 'GOOGLE',
         }),
       }),
     );

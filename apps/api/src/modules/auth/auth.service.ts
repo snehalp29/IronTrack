@@ -6,7 +6,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { AuthProvider, User } from '@prisma/client';
-import { compare, hash, hashSync } from 'bcryptjs';
+import { compare, hash } from 'bcryptjs';
 import { createHash, randomUUID } from 'node:crypto';
 
 import { durationToSeconds } from '../../config/env.schema';
@@ -19,7 +19,8 @@ import {
 } from './dto/auth.schemas';
 import { GoogleTokenVerifierService } from './google-token-verifier.service';
 
-const DUMMY_PASSWORD_HASH = hashSync(randomUUID(), 12);
+const DUMMY_PASSWORD_HASH =
+  '$2b$12$o4a0s8.zU7lP/9H3mymGUO6xIktAo9FSTmhCANwd3GugF0FrZ//2y';
 
 export interface AuthTokens {
   accessToken: string;
@@ -168,46 +169,80 @@ export class AuthService {
       where: { email: identity.email },
     });
     if (existingUser?.deletedAt) {
-      throw new UnauthorizedException({
-        code: 'USER_DISABLED',
-        message: 'User account is disabled',
-      });
+      this.throwUserDisabled();
     }
     if (existingUser?.authProvider === AuthProvider.LOCAL) {
-      throw new UnauthorizedException({
-        code: 'EMAIL_REGISTERED_WITH_PASSWORD',
-        message:
-          'This email is registered with a password. Please log in with your password.',
-      });
+      this.throwEmailRegisteredWithPassword();
     }
 
-    const user = await this.prisma.user.upsert({
-      where: { email: identity.email },
-      update: {
-        authProvider: AuthProvider.GOOGLE,
-        googleId: identity.googleId,
-        name: identity.name,
-        avatarUrl: identity.avatarUrl,
-      },
-      create: {
-        email: identity.email,
-        passwordHash: await hash(randomUUID(), 12),
-        authProvider: AuthProvider.GOOGLE,
-        timezone: 'UTC',
-        googleId: identity.googleId,
-        name: identity.name,
-        avatarUrl: identity.avatarUrl,
-      },
-    });
+    const user = existingUser
+      ? await this.prisma.user.update({
+          where: { id: existingUser.id },
+          data: {
+            authProvider: AuthProvider.GOOGLE,
+            googleId: identity.googleId,
+            name: identity.name,
+            avatarUrl: identity.avatarUrl,
+          },
+        })
+      : await this.createOrRecoverGoogleUser(identity);
 
     if (user.deletedAt !== null) {
-      throw new UnauthorizedException({
-        code: 'USER_DISABLED',
-        message: 'User account is disabled',
-      });
+      this.throwUserDisabled();
+    }
+    if (user.authProvider !== AuthProvider.GOOGLE) {
+      this.throwEmailRegisteredWithPassword();
     }
 
     return this.issueTokens(user.id, user.email);
+  }
+
+  private async createOrRecoverGoogleUser(identity: {
+    email: string;
+    googleId: string;
+    name?: string;
+    avatarUrl?: string;
+  }) {
+    try {
+      return await this.prisma.user.create({
+        data: {
+          email: identity.email,
+          passwordHash: await hash(randomUUID(), 12),
+          authProvider: AuthProvider.GOOGLE,
+          timezone: 'UTC',
+          googleId: identity.googleId,
+          name: identity.name,
+          avatarUrl: identity.avatarUrl,
+        },
+      });
+    } catch (error) {
+      if (!isEmailUniqueConstraintError(error)) {
+        throw error;
+      }
+
+      const concurrentUser = await this.prisma.user.findFirst({
+        where: { email: identity.email },
+      });
+      if (!concurrentUser) {
+        throw error;
+      }
+      if (concurrentUser.deletedAt !== null) {
+        this.throwUserDisabled();
+      }
+      if (concurrentUser.authProvider === AuthProvider.LOCAL) {
+        this.throwEmailRegisteredWithPassword();
+      }
+
+      return this.prisma.user.update({
+        where: { id: concurrentUser.id },
+        data: {
+          authProvider: AuthProvider.GOOGLE,
+          googleId: identity.googleId,
+          name: identity.name,
+          avatarUrl: identity.avatarUrl,
+        },
+      });
+    }
   }
 
   private async issueTokens(
@@ -259,6 +294,21 @@ export class AuthService {
     throw new BadRequestException({
       code: 'EMAIL_TAKEN',
       message: 'Email already in use',
+    });
+  }
+
+  private throwEmailRegisteredWithPassword(): never {
+    throw new UnauthorizedException({
+      code: 'EMAIL_REGISTERED_WITH_PASSWORD',
+      message:
+        'This email is registered with a password. Please log in with your password.',
+    });
+  }
+
+  private throwUserDisabled(): never {
+    throw new UnauthorizedException({
+      code: 'USER_DISABLED',
+      message: 'User account is disabled',
     });
   }
 
