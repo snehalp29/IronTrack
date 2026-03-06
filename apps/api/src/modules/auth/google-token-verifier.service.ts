@@ -27,6 +27,7 @@ const googleJwksSchema = z.object({
 });
 const googleTokenClaimsSchema = z.object({
   aud: z.union([z.string().trim().min(1), z.array(z.string().trim().min(1))]),
+  azp: z.string().trim().min(1).optional(),
   email: z.string().trim().email(),
   email_verified: z.union([z.boolean(), z.string().trim()]),
   exp: z.number().int().positive(),
@@ -90,6 +91,7 @@ export class GoogleTokenVerifierService {
     const email = payload.email.toLowerCase();
     const googleId = payload.sub;
     const audience = payload.aud;
+    const authorizedParty = payload.azp;
     const issuer = payload.iss;
     const emailVerified = normalizeEmailVerified(payload.email_verified);
     const notExpired = payload.exp * 1000 > Date.now();
@@ -97,6 +99,7 @@ export class GoogleTokenVerifierService {
     if (
       !emailVerified ||
       !hasAudience(audience, clientId) ||
+      !hasValidAuthorizedParty(audience, authorizedParty, clientId) ||
       !VALID_ISSUERS.has(issuer) ||
       !notExpired
     ) {
@@ -276,6 +279,18 @@ function hasAudience(audience: string | string[], clientId: string): boolean {
   return Array.isArray(audience)
     ? audience.includes(clientId)
     : audience === clientId;
+}
+
+function hasValidAuthorizedParty(
+  audience: string | string[],
+  authorizedParty: string | undefined,
+  clientId: string,
+): boolean {
+  if (!Array.isArray(audience)) {
+    return true;
+  }
+
+  return authorizedParty === clientId;
 }
 
 function parseCacheMaxAgeSeconds(

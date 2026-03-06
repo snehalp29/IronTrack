@@ -298,6 +298,26 @@ describe('SessionsService', () => {
     );
   });
 
+  it('rejects payloads that mix a workout template with inline exercises', async () => {
+    const { service, prismaMock } = createService();
+
+    await expect(
+      service.startSession('user-1', {
+        workoutTemplateId: 'template-1',
+        notes: 'mixed payload',
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            orderIndex: 0,
+          },
+        ],
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(prismaMock.workoutTemplate.findFirst).not.toHaveBeenCalled();
+    expect(prismaMock.workoutSession.create).not.toHaveBeenCalled();
+  });
+
   it('uses inline exercise index when orderIndex is omitted', async () => {
     const { service, prismaMock } = createService();
     (prismaMock.workoutSession.create as jest.Mock).mockResolvedValue({

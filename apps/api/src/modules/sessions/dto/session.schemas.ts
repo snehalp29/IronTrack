@@ -43,21 +43,32 @@ const setPayloadSchema = z
     }
   });
 
-export const startSessionSchema = z.object({
-  workoutTemplateId: z.string().uuid().optional(),
-  notes: z.string().max(4000).optional(),
-  exercises: z
-    .array(
-      z.object({
-        exerciseTemplateId: z.string().uuid(),
-        orderIndex: z.number().int().nonnegative().optional(),
-        notes: z.string().optional(),
-        supersetGroupKey: optionalSupersetGroupKeySchema,
-      }),
-    )
-    .max(MAX_INLINE_SESSION_EXERCISES)
-    .default([]),
-});
+export const startSessionSchema = z
+  .object({
+    workoutTemplateId: z.string().uuid().optional(),
+    notes: z.string().max(4000).optional(),
+    exercises: z
+      .array(
+        z.object({
+          exerciseTemplateId: z.string().uuid(),
+          orderIndex: z.number().int().nonnegative().optional(),
+          notes: z.string().optional(),
+          supersetGroupKey: optionalSupersetGroupKeySchema,
+        }),
+      )
+      .max(MAX_INLINE_SESSION_EXERCISES)
+      .default([]),
+  })
+  .superRefine((value, ctx) => {
+    if (value.workoutTemplateId && value.exercises.length > 0) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'Provide either workoutTemplateId or inline exercises, but not both',
+        path: ['exercises'],
+      });
+    }
+  });
 
 export const updateSessionSchema = z.object({
   notes: z.string().max(4000).optional(),

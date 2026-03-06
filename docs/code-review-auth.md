@@ -1,7 +1,7 @@
 # Code Review — Auth Module (Compact)
 
 **Branch:** `phase_one`  
-**Date:** 2026-03-05
+**Date:** 2026-03-06
 
 ## Scope
 
@@ -14,9 +14,9 @@
 
 ## Status
 
-- Total findings: **21**
+- Total findings: **22**
 - Open: **0**
-- Fixed: **21**
+- Fixed: **22**
 
 ## Fixed History
 
@@ -24,6 +24,7 @@
 - `#7–#12`: register race handling, auth e2e/query-shape alignment, delete races, and redundant defensive-path cleanup.
 - `#13–#17`: login timing-oracle reduction, provider-migration prevention, unique-error scoping, token-hash uniqueness, and safer Google-user creation.
 - `#18–#21`: soft-delete edge cases, `googleLogin` TOCTOU tightening, unnecessary bcrypt work removal, and startup blocking cleanup.
+- `#22`: Google multi-audience token verification now requires `azp` to match the configured client id.
 
 ## Key Outcomes
 

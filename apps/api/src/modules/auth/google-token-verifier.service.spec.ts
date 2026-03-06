@@ -10,6 +10,7 @@ const ALT_KID = 'google-key-2';
 
 type TokenClaims = {
   aud: string | string[];
+  azp?: string;
   email: string;
   email_verified: boolean | string;
   exp: number;
@@ -150,6 +151,7 @@ describe('GoogleTokenVerifierService', () => {
       service.verifyIdToken(
         createToken({
           aud: ['another-client', CLIENT_ID],
+          azp: CLIENT_ID,
         }),
       ),
     ).resolves.toEqual(
@@ -157,6 +159,25 @@ describe('GoogleTokenVerifierService', () => {
         email: 'verified@irontrack.local',
       }),
     );
+  });
+
+  it('rejects audience arrays whose authorized party does not match the configured client id', async () => {
+    fetchSpy.mockResolvedValue(
+      createJwksResponse({ keys: [createSigningJwk()] }),
+    );
+
+    await expect(
+      service.verifyIdToken(
+        createToken({
+          aud: ['another-client', CLIENT_ID],
+          azp: 'another-client',
+        }),
+      ),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'INVALID_GOOGLE_TOKEN',
+      },
+    });
   });
 
   it('rejects a token with invalid audience', async () => {

@@ -41,6 +41,14 @@ export class SessionsService {
   ) {}
 
   async startSession(userId: string, input: StartSessionDto) {
+    if (input.workoutTemplateId && input.exercises.length > 0) {
+      throw new BadRequestException({
+        code: 'SESSION_START_SOURCE_CONFLICT',
+        message:
+          'Provide either workoutTemplateId or inline exercises, but not both',
+      });
+    }
+
     if (input.workoutTemplateId) {
       await this.assertWorkoutTemplateOwnership(
         userId,

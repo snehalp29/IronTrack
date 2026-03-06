@@ -23,6 +23,20 @@ describe('session set schemas', () => {
     expect(result.success).toBe(true);
   });
 
+  it('rejects payloads that mix a workout template with inline exercises', () => {
+    const result = startSessionSchema.safeParse({
+      workoutTemplateId: '11111111-1111-4111-8111-111111111111',
+      exercises: [
+        {
+          exerciseTemplateId: '22222222-2222-4222-8222-222222222222',
+          orderIndex: 0,
+        },
+      ],
+    });
+
+    expect(result.success).toBe(false);
+  });
+
   it('rejects negative numeric set values on create', () => {
     const result = createSetSchema.safeParse({
       orderIndex: 0,
