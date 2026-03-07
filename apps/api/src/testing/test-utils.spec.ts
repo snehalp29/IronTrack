@@ -10,10 +10,43 @@ describe('testing utilities', () => {
       create: jest.fn(),
       deleteMany: jest.fn(),
     },
+    workoutTemplateExercise: {
+      deleteMany: jest.fn(),
+    },
+    workoutTemplate: {
+      deleteMany: jest.fn(),
+    },
+    exerciseVideo: {
+      deleteMany: jest.fn(),
+    },
+    exerciseTemplateEquipment: {
+      deleteMany: jest.fn(),
+    },
+    exerciseTemplateSecondaryMuscle: {
+      deleteMany: jest.fn(),
+    },
+    exerciseTemplate: {
+      deleteMany: jest.fn(),
+    },
     set: {
       deleteMany: jest.fn(),
     },
     sessionExercise: {
+      deleteMany: jest.fn(),
+    },
+    exerciseNote: {
+      deleteMany: jest.fn(),
+    },
+    sessionNote: {
+      deleteMany: jest.fn(),
+    },
+    pRRecord: {
+      deleteMany: jest.fn(),
+    },
+    userStreak: {
+      deleteMany: jest.fn(),
+    },
+    checklistItem: {
       deleteMany: jest.fn(),
     },
     refreshToken: {
@@ -52,6 +85,25 @@ describe('testing utilities', () => {
     });
   });
 
+  it('uses unique default emails even when multiple users are created in the same millisecond', async () => {
+    jest.spyOn(Date, 'now').mockReturnValue(1_746_000_000_000);
+    (prismaMock.user.create as jest.Mock)
+      .mockResolvedValueOnce({ id: 'u1' })
+      .mockResolvedValueOnce({ id: 'u2' });
+
+    await createTestUser(prismaMock as never);
+    await createTestUser(prismaMock as never);
+
+    const firstCall = (prismaMock.user.create as jest.Mock).mock.calls[0][0]
+      .data.email;
+    const secondCall = (prismaMock.user.create as jest.Mock).mock.calls[1][0]
+      .data.email;
+
+    expect(firstCall).not.toBe(secondCall);
+    expect(firstCall).toContain('@example.com');
+    expect(secondCall).toContain('@example.com');
+  });
+
   it('creates test session with defaults and overrides', async () => {
     (prismaMock.workoutSession.create as jest.Mock).mockResolvedValue({
       id: 's1',
@@ -79,12 +131,45 @@ describe('testing utilities', () => {
   });
 
   it('cleans up user-scoped entities in one transaction', async () => {
+    (
+      prismaMock.workoutTemplateExercise.deleteMany as jest.Mock
+    ).mockReturnValue('delete-workout-template-exercises');
+    (prismaMock.workoutTemplate.deleteMany as jest.Mock).mockReturnValue(
+      'delete-workout-templates',
+    );
+    (prismaMock.exerciseVideo.deleteMany as jest.Mock).mockReturnValue(
+      'delete-exercise-videos',
+    );
+    (
+      prismaMock.exerciseTemplateEquipment.deleteMany as jest.Mock
+    ).mockReturnValue('delete-exercise-template-equipment');
+    (
+      prismaMock.exerciseTemplateSecondaryMuscle.deleteMany as jest.Mock
+    ).mockReturnValue('delete-exercise-template-secondary-muscles');
+    (prismaMock.exerciseTemplate.deleteMany as jest.Mock).mockReturnValue(
+      'delete-exercise-templates',
+    );
     (prismaMock.set.deleteMany as jest.Mock).mockReturnValue('delete-sets');
     (prismaMock.sessionExercise.deleteMany as jest.Mock).mockReturnValue(
       'delete-session-exercises',
     );
     (prismaMock.workoutSession.deleteMany as jest.Mock).mockReturnValue(
       'delete-workout-sessions',
+    );
+    (prismaMock.exerciseNote.deleteMany as jest.Mock).mockReturnValue(
+      'delete-exercise-notes',
+    );
+    (prismaMock.sessionNote.deleteMany as jest.Mock).mockReturnValue(
+      'delete-session-notes',
+    );
+    (prismaMock.pRRecord.deleteMany as jest.Mock).mockReturnValue(
+      'delete-pr-records',
+    );
+    (prismaMock.userStreak.deleteMany as jest.Mock).mockReturnValue(
+      'delete-user-streaks',
+    );
+    (prismaMock.checklistItem.deleteMany as jest.Mock).mockReturnValue(
+      'delete-checklist-items',
     );
     (prismaMock.refreshToken.deleteMany as jest.Mock).mockReturnValue(
       'delete-refresh-tokens',
@@ -95,9 +180,20 @@ describe('testing utilities', () => {
     await cleanup(prismaMock as never, ['u1', 'u2']);
 
     expect(prismaMock.$transaction).toHaveBeenCalledWith([
+      'delete-workout-template-exercises',
+      'delete-workout-templates',
+      'delete-exercise-videos',
+      'delete-exercise-template-equipment',
+      'delete-exercise-template-secondary-muscles',
+      'delete-exercise-templates',
       'delete-sets',
       'delete-session-exercises',
       'delete-workout-sessions',
+      'delete-exercise-notes',
+      'delete-session-notes',
+      'delete-pr-records',
+      'delete-user-streaks',
+      'delete-checklist-items',
       'delete-refresh-tokens',
       'delete-users',
     ]);

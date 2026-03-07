@@ -110,6 +110,16 @@ export class SessionsController {
     );
   }
 
+  @Patch(':sessionId/exercises/superset')
+  async applySuperset(
+    @CurrentUser() user: { sub: string },
+    @Param('sessionId') sessionId: string,
+    @Body(new ZodValidationPipe(applySessionSupersetSchema))
+    body: ApplySessionSupersetDto,
+  ) {
+    return this.sessionsService.applySessionSuperset(user.sub, sessionId, body);
+  }
+
   @Patch(':sessionId/exercises/:id')
   async updateExercise(
     @CurrentUser() user: { sub: string },
@@ -144,15 +154,5 @@ export class SessionsController {
     body: SwapSessionExerciseDto,
   ) {
     return this.sessionsService.swapSessionExercise(user.sub, sessionId, body);
-  }
-
-  @Patch(':sessionId/exercises/superset')
-  async applySuperset(
-    @CurrentUser() user: { sub: string },
-    @Param('sessionId') sessionId: string,
-    @Body(new ZodValidationPipe(applySessionSupersetSchema))
-    body: ApplySessionSupersetDto,
-  ) {
-    return this.sessionsService.applySessionSuperset(user.sub, sessionId, body);
   }
 }

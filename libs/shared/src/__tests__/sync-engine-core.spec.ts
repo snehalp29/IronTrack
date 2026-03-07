@@ -271,6 +271,7 @@ describe('sync engine core', () => {
   });
 
   it('increments attempts and schedules next attempt 30s later on failure', async () => {
+    const restoreCrypto = mockCryptoRandom(0);
     const db: SyncQueueDb = {
       getAllSync: vi.fn().mockReturnValue([
         {
@@ -278,23 +279,28 @@ describe('sync engine core', () => {
           entity_type: 'session',
           local_id: 'local-7',
           operation: 'UPDATE',
-          payload: '{',
+          payload: '{"retry":true}',
         },
       ]),
       runSync: vi.fn(),
     };
+    const applyRemote = vi.fn().mockRejectedValueOnce({ status: 500 });
 
-    const now = new Date('2026-03-02T10:00:00.000Z');
-    await replaySyncQueueWithDb(db, vi.fn(), now);
+    try {
+      const now = new Date('2026-03-02T10:00:00.000Z');
+      await replaySyncQueueWithDb(db, applyRemote, now);
 
-    expect(db.runSync).toHaveBeenCalledWith(
-      'UPDATE sync_queue SET next_attempt_at = ? WHERE id = ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?)',
-      [expect.any(String), 7, '2026-03-02T10:00:00.000Z'],
-    );
-    expect(db.runSync).toHaveBeenCalledWith(
-      'UPDATE sync_queue SET attempts = attempts + 1, next_attempt_at = ? WHERE id = ?',
-      ['2026-03-02T10:00:30.000Z', 7],
-    );
+      expect(db.runSync).toHaveBeenCalledWith(
+        'UPDATE sync_queue SET next_attempt_at = ? WHERE id = ? AND (next_attempt_at IS NULL OR next_attempt_at <= ?)',
+        ['2026-03-02T10:01:00.001Z', 7, '2026-03-02T10:00:00.000Z'],
+      );
+      expect(db.runSync).toHaveBeenCalledWith(
+        'UPDATE sync_queue SET attempts = attempts + 1, next_attempt_at = ? WHERE id = ?',
+        ['2026-03-02T10:00:30.000Z', 7],
+      );
+    } finally {
+      restoreCrypto();
+    }
   });
 
   it('respects custom batch size option when querying due items', async () => {
@@ -496,6 +502,165 @@ describe('sync engine core', () => {
     } finally {
       consoleErrorSpy.mockRestore();
       restoreCrypto();
+    }
+  });
+
+  it('drops malformed JSON payloads immediately instead of retrying them', async () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    const db: SyncQueueDb = {
+      getAllSync: vi.fn((query: string) => {
+        if (query === DUE_SYNC_QUEUE_QUERY) {
+          return [
+            {
+              id: 91,
+              entity_type: 'session',
+              local_id: 'local-91',
+              operation: 'UPDATE',
+              payload: '{"broken":',
+              attempts: 0,
+            },
+          ];
+        }
+        return [{ id: 91 }];
+      }),
+      runSync: vi.fn(),
+    };
+    const applyRemote = vi.fn();
+
+    try {
+      const result = await replaySyncQueueWithDb(
+        db,
+        applyRemote,
+        new Date('2026-03-02T10:00:00.000Z'),
+      );
+
+      expect(result).toEqual({ synced: 0, conflicts: 0, dropped: 1 });
+      expect(applyRemote).not.toHaveBeenCalled();
+      expect(db.runSync).toHaveBeenCalledWith(
+        'DELETE FROM sync_queue WHERE id = ?',
+        [91],
+      );
+      expect(db.runSync).not.toHaveBeenCalledWith(
+        'UPDATE sync_queue SET attempts = attempts + 1, next_attempt_at = ? WHERE id = ?',
+        [expect.any(String), 91],
+      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        'Dropping malformed sync queue item payload',
+        expect.objectContaining({
+          entityType: 'session',
+          localId: 'local-91',
+          operation: 'UPDATE',
+        }),
+      );
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
+  });
+
+  it('drops items when a custom maxAttempts threshold is reached', async () => {
+    const restoreCrypto = mockCryptoRandom(0);
+    const consoleErrorSpy = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    const db: SyncQueueDb = {
+      getAllSync: vi.fn((query: string) => {
+        if (query === DUE_SYNC_QUEUE_QUERY) {
+          return [
+            {
+              id: 92,
+              entity_type: 'session',
+              local_id: 'local-92',
+              operation: 'UPDATE',
+              payload: '{"name":"retry-me"}',
+              attempts: 2,
+            },
+          ];
+        }
+        return [{ id: 92 }];
+      }),
+      runSync: vi.fn(),
+    };
+    const applyRemote = vi.fn().mockRejectedValueOnce({ status: 500 });
+
+    try {
+      const result = await replaySyncQueueWithDb(
+        db,
+        applyRemote,
+        new Date('2026-03-02T10:00:00.000Z'),
+        { maxAttempts: 3 },
+      );
+
+      expect(result).toEqual({ synced: 0, conflicts: 0, dropped: 1 });
+      expect(db.runSync).toHaveBeenCalledWith(
+        'DELETE FROM sync_queue WHERE id = ?',
+        [92],
+      );
+      expect(db.runSync).not.toHaveBeenCalledWith(
+        'UPDATE sync_queue SET attempts = attempts + 1, next_attempt_at = ? WHERE id = ?',
+        [expect.any(String), 92],
+      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        'Dropping exhausted sync queue item',
+        expect.objectContaining({
+          entityType: 'session',
+          localId: 'local-92',
+          operation: 'UPDATE',
+        }),
+      );
+    } finally {
+      consoleErrorSpy.mockRestore();
+      restoreCrypto();
+    }
+  });
+
+  it('counts an exhausted conflict as a drop instead of double-counting it', async () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    const db: SyncQueueDb = {
+      getAllSync: vi.fn((query: string) => {
+        if (query === DUE_SYNC_QUEUE_QUERY) {
+          return [
+            {
+              id: 93,
+              entity_type: 'session',
+              local_id: 'local-93',
+              operation: 'UPDATE',
+              payload: '{"name":"conflict"}',
+              attempts: 9,
+            },
+          ];
+        }
+        return [{ id: 93 }];
+      }),
+      runSync: vi.fn(),
+    };
+    const applyRemote = vi.fn().mockRejectedValueOnce({ status: 409 });
+
+    try {
+      const result = await replaySyncQueueWithDb(
+        db,
+        applyRemote,
+        new Date('2026-03-02T10:00:00.000Z'),
+      );
+
+      expect(result).toEqual({ synced: 0, conflicts: 0, dropped: 1 });
+      expect(db.runSync).toHaveBeenCalledWith(
+        'DELETE FROM sync_queue WHERE id = ?',
+        [93],
+      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        'Dropping exhausted sync queue item',
+        expect.objectContaining({
+          entityType: 'session',
+          localId: 'local-93',
+          operation: 'UPDATE',
+        }),
+      );
+    } finally {
+      consoleErrorSpy.mockRestore();
     }
   });
 });

@@ -261,6 +261,23 @@ describe('Prisma schema hardening', () => {
     );
   });
 
+  it('deduplicates legacy refresh token hashes before creating the unique index', () => {
+    const refreshTokenMigration = readFileSync(
+      join(
+        __dirname,
+        '../../prisma/migrations/202603050003_refresh_token_hash_unique/migration.sql',
+      ),
+      'utf8',
+    );
+
+    expect(refreshTokenMigration).toContain('ROW_NUMBER() OVER');
+    expect(refreshTokenMigration).toContain('PARTITION BY "tokenHash"');
+    expect(refreshTokenMigration).toContain('DELETE FROM "RefreshToken"');
+    expect(refreshTokenMigration).toContain(
+      'CREATE UNIQUE INDEX IF NOT EXISTS "RefreshToken_tokenHash_key"',
+    );
+  });
+
   it('adds migration coverage for backlog URL column bounds and new audit timestamps', () => {
     expect(backlogHardeningMigration).toContain(
       'ALTER TABLE "User"\nALTER COLUMN "avatarUrl" TYPE VARCHAR(2048);',

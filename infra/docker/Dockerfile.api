@@ -1,14 +1,19 @@
 ARG NODE_VERSION=24
 
-FROM node:${NODE_VERSION}-bookworm-slim AS deps
+FROM node:${NODE_VERSION}-bookworm-slim AS base
+RUN apt-get update -y && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
+
+FROM base AS deps
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/api/package.json apps/api/package.json
 COPY libs/shared/package.json libs/shared/package.json
 RUN corepack enable && pnpm install --frozen-lockfile
 
-FROM node:${NODE_VERSION}-bookworm-slim AS build
+FROM base AS build
 WORKDIR /app
+ARG BUILD_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/irontrack?schema=public
+ENV DATABASE_URL=${BUILD_DATABASE_URL}
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/apps/api/node_modules ./apps/api/node_modules
 COPY . .
@@ -17,16 +22,16 @@ RUN pnpm --filter @irontrack/api build
 RUN pnpm --filter @irontrack/api deploy --prod --legacy /prod/api
 RUN pnpm --filter @irontrack/api exec prisma generate --schema /prod/api/prisma/schema.prisma
 
-FROM node:${NODE_VERSION}-bookworm-slim AS runtime
+FROM base AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
-ENV API_PORT=4000
+ENV API_PORT=3000
 ENV API_PREFIX=api/v1
 COPY --from=build --chown=node:node /prod/api/dist ./dist
 COPY --from=build --chown=node:node /prod/api/prisma ./prisma
 COPY --from=build --chown=node:node /prod/api/node_modules ./node_modules
 COPY --from=build --chown=node:node /prod/api/package.json ./package.json
 USER node
-EXPOSE 4000
-HEALTHCHECK --interval=15s --timeout=5s --retries=5 CMD ["node","-e","const http=require('node:http'); const port=Number(process.env.API_PORT ?? '4000'); const prefix=(process.env.API_PREFIX ?? 'api/v1').replace(/^\\/+|\\/+$/g,''); const req=http.get({host:'127.0.0.1', port, path:`/${prefix}/health`}, (res)=>{ process.exit(res.statusCode && res.statusCode >= 200 && res.statusCode < 400 ? 0 : 1); }); req.on('error', ()=>process.exit(1)); req.setTimeout(3000, ()=>{ req.destroy(); process.exit(1); });"]
+EXPOSE 3000
+HEALTHCHECK --interval=15s --timeout=5s --retries=5 CMD ["node","-e","const http=require('node:http'); const port=Number(process.env.API_PORT ?? '3000'); const prefix=(process.env.API_PREFIX ?? 'api/v1').replace(/^\\/+|\\/+$/g,''); const req=http.get({host:'127.0.0.1', port, path:`/${prefix}/health`}, (res)=>{ process.exit(res.statusCode && res.statusCode >= 200 && res.statusCode < 400 ? 0 : 1); }); req.on('error', ()=>process.exit(1)); req.setTimeout(3000, ()=>{ req.destroy(); process.exit(1); });"]
 CMD ["node", "dist/main.js"]

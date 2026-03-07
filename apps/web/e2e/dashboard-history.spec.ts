@@ -17,6 +17,7 @@ test('dashboard renders the server workout streak', async ({ page }) => {
   await expect(
     page.getByText('Current streak: 4 days', { exact: true }),
   ).toBeVisible();
+  await expect(page.getByText('Push Day A', { exact: true })).toBeVisible();
 });
 
 test('history shows only finished sessions and formats the date in the user timezone', async ({

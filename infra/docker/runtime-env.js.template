@@ -1,0 +1,3 @@
+window.__IRONTRACK_ENV__ = Object.freeze({
+  VITE_API_URL: "${VITE_API_URL}",
+});

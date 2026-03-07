@@ -41,3 +41,14 @@ test('allows logout from settings without showing the unsaved changes prompt', a
 
   await expect(page).toHaveURL(/\/login$/);
 });
+
+test('allows account deletion from settings', async ({ page }) => {
+  await seedAuthenticatedSession(page);
+  await mockApi(page);
+  await page.goto('/settings');
+
+  await page.getByRole('button', { name: 'Delete Account' }).click();
+
+  await expect(page).toHaveURL(/\/register$/);
+  await expect(page.getByRole('heading', { name: 'Register' })).toBeVisible();
+});

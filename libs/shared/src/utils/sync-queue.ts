@@ -90,6 +90,10 @@ function getErrorStatus(error: unknown): number | undefined {
     : undefined;
 }
 
+function isJsonParseError(error: unknown): error is SyntaxError {
+  return error instanceof SyntaxError;
+}
+
 export async function replaySyncQueueWithDb(
   db: SyncQueueDb,
   applyRemote: (mutation: SyncQueueMutation) => Promise<void>,
@@ -150,22 +154,25 @@ export async function replaySyncQueueWithDb(
       db.runSync('DELETE FROM sync_queue WHERE id = ?', [item.id]);
       synced += 1;
     } catch (error) {
-      if (getErrorStatus(error) === 409) {
-        conflicts += 1;
+      if (isJsonParseError(error)) {
+        dropSyncQueueItem(
+          db,
+          item,
+          'Dropping malformed sync queue item payload',
+        );
+        dropped += 1;
+        continue;
       }
 
       const nextAttempts = (item.attempts ?? 0) + 1;
-      if (nextAttempts >= maxAttempts) {
-        db.runSync('DELETE FROM sync_queue WHERE id = ?', [item.id]);
+      const isExhausted = nextAttempts >= maxAttempts;
+      if (getErrorStatus(error) === 409 && !isExhausted) {
+        conflicts += 1;
+      }
+
+      if (isExhausted) {
+        dropSyncQueueItem(db, item, 'Dropping exhausted sync queue item');
         dropped += 1;
-        const logger = (
-          globalThis as typeof globalThis & { console?: ConsoleLike }
-        ).console;
-        logger?.error('Dropping exhausted sync queue item', {
-          entityType: item.entity_type,
-          localId: item.local_id,
-          operation: item.operation,
-        });
         continue;
       }
 
@@ -185,4 +192,19 @@ function getRetryJitterMs(): number {
     globalThis as typeof globalThis & { crypto: CryptoLike }
   ).crypto.getRandomValues(buffer);
   return (buffer[0] % 1000) + 1;
+}
+
+function dropSyncQueueItem(
+  db: SyncQueueDb,
+  item: SyncQueueItem,
+  message: string,
+) {
+  db.runSync('DELETE FROM sync_queue WHERE id = ?', [item.id]);
+  const logger = (globalThis as typeof globalThis & { console?: ConsoleLike })
+    .console;
+  logger?.error(message, {
+    entityType: item.entity_type,
+    localId: item.local_id,
+    operation: item.operation,
+  });
 }

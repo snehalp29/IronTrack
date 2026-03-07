@@ -8,9 +8,19 @@ import {
 } from '../auth/auth-session';
 
 const DEFAULT_API_BASE_URL = 'http://localhost:3000/api/v1';
-const API_BASE_URL = resolveApiBaseUrl(import.meta.env.VITE_API_URL);
+const API_BASE_URL = resolveApiBaseUrl(
+  readRuntimeApiBaseUrl() ?? import.meta.env.VITE_API_URL,
+);
 let loginRedirectHandler: ((path: string) => void) | null = null;
 let refreshInFlight: Promise<AuthSession> | null = null;
+
+declare global {
+  interface Window {
+    __IRONTRACK_ENV__?: {
+      VITE_API_URL?: string;
+    };
+  }
+}
 
 interface ApiFetchOptions<T> extends RequestInit {
   schema?: ZodType<T>;
@@ -24,6 +34,14 @@ export function resolveApiBaseUrl(
   return trimmedUrl && trimmedUrl.length > 0
     ? trimmedUrl
     : DEFAULT_API_BASE_URL;
+}
+
+export function readRuntimeApiBaseUrl(): string | undefined {
+  if (typeof window === 'undefined') {
+    return undefined;
+  }
+
+  return window.__IRONTRACK_ENV__?.VITE_API_URL?.trim() || undefined;
 }
 
 export function buildApiUrl(baseUrl: string, path: string): string {

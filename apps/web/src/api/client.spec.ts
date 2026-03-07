@@ -9,6 +9,7 @@ import {
 import {
   apiFetch,
   buildApiUrl,
+  readRuntimeApiBaseUrl,
   refreshAuthSession,
   resolveApiBaseUrl,
   setLoginRedirect,
@@ -45,6 +46,29 @@ describe('resolveApiBaseUrl', () => {
 
   it('falls back to default API URL when env value is whitespace only', () => {
     expect(resolveApiBaseUrl('   \t  ')).toBe('http://localhost:3000/api/v1');
+  });
+});
+
+describe('readRuntimeApiBaseUrl', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('reads the runtime injected API URL when present', () => {
+    vi.stubGlobal('window', {
+      __IRONTRACK_ENV__: {
+        VITE_API_URL: 'https://runtime.irontrack.local/api/v1',
+      },
+    });
+
+    expect(readRuntimeApiBaseUrl()).toBe(
+      'https://runtime.irontrack.local/api/v1',
+    );
+  });
+
+  it('returns undefined when no runtime API URL has been injected', () => {
+    vi.stubGlobal('window', {});
+    expect(readRuntimeApiBaseUrl()).toBeUndefined();
   });
 });
 

@@ -28,7 +28,7 @@ export function createPlaywrightConfig(env: NodeJS.ProcessEnv = process.env) {
     webServer: {
       command: webServerCommand,
       url: WEB_E2E_BASE_URL,
-      reuseExistingServer: !isCi,
+      reuseExistingServer: false,
       timeout: 120_000,
     },
     projects: [

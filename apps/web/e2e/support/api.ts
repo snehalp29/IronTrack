@@ -9,6 +9,15 @@ type WorkoutStreakResponse = {
   lastCompletedDate: string | null;
 };
 
+type CurrentUserResponse = {
+  id: string;
+  email: string;
+  name: string;
+  timezone: string;
+  unitPreference: 'METRIC' | 'IMPERIAL';
+  avatarUrl: string | null;
+};
+
 type SessionHistoryItem = {
   id: string;
   startedAt: string;
@@ -79,6 +88,7 @@ export async function mockApi(
     activeSession: options.activeSession ?? createActiveSession(),
     createdExercise: createExerciseDetail(),
     createdTemplate: createWorkoutTemplate(),
+    currentUser: createCurrentUser(),
     sessions: options.sessions ?? createSessionHistory(),
     workoutStreak: options.workoutStreak ?? createWorkoutStreak(),
     auth: options.auth ?? {},
@@ -96,6 +106,7 @@ async function handleApiRoute(
     activeSession: ActiveSession | null;
     createdExercise: ExerciseDetailResponse;
     createdTemplate: WorkoutTemplateResponse;
+    currentUser: CurrentUserResponse | null;
     sessions: SessionHistoryItem[];
     workoutStreak: WorkoutStreakResponse;
     auth: MockAuthOptions;
@@ -167,14 +178,20 @@ async function handleApiRoute(
   }
 
   if (path === '/api/v1/users/me' && method === 'GET') {
-    await fulfillJson(route, {
-      id: 'user-1',
-      email: 'demo@irontrack.local',
-      name: 'Demo User',
-      timezone: 'America/New_York',
-      unitPreference: 'IMPERIAL',
-      avatarUrl: null,
-    });
+    if (!state.currentUser) {
+      await route.fulfill({
+        status: 404,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          error: {
+            message: 'User not found',
+          },
+        }),
+      });
+      return;
+    }
+
+    await fulfillJson(route, state.currentUser);
     return;
   }
 
@@ -184,29 +201,46 @@ async function handleApiRoute(
       timezone?: string;
       unitPreference?: 'METRIC' | 'IMPERIAL';
     };
-    await fulfillJson(route, {
-      id: 'user-1',
-      email: 'demo@irontrack.local',
-      name: payload.name ?? 'Demo User',
-      timezone: payload.timezone ?? 'America/New_York',
-      unitPreference: payload.unitPreference ?? 'IMPERIAL',
-      avatarUrl: null,
+    state.currentUser = {
+      ...(state.currentUser ?? createCurrentUser()),
+      name: payload.name ?? state.currentUser?.name ?? 'Demo User',
+      timezone: payload.timezone ?? state.currentUser?.timezone ?? 'UTC',
+      unitPreference:
+        payload.unitPreference ??
+        state.currentUser?.unitPreference ??
+        'IMPERIAL',
+    };
+    await fulfillJson(route, state.currentUser);
+    return;
+  }
+
+  if (path === '/api/v1/users/me' && method === 'DELETE') {
+    state.currentUser = null;
+    await route.fulfill({
+      status: 204,
+      body: '',
     });
     return;
   }
 
-  if (path === `/api/v1/checklist?date=${encodeURIComponent(todayDate())}`) {
+  if (url.pathname === '/api/v1/checklist' && method === 'GET') {
+    const requestedDate = url.searchParams.get('date');
+    if (requestedDate !== todayDate(state.currentUser?.timezone ?? 'UTC')) {
+      await fulfillNotFound(route, method, path);
+      return;
+    }
+
     await fulfillJson(route, [
       {
         id: 'check-1',
-        date: `${todayDate()}T00:00:00.000Z`,
+        date: `${todayDate(state.currentUser?.timezone ?? 'UTC')}T00:00:00.000Z`,
         type: 'WORKOUT',
         isCompleted: true,
-        completedAt: `${todayDate()}T10:00:00.000Z`,
+        completedAt: `${todayDate(state.currentUser?.timezone ?? 'UTC')}T10:00:00.000Z`,
       },
       {
         id: 'check-2',
-        date: `${todayDate()}T00:00:00.000Z`,
+        date: `${todayDate(state.currentUser?.timezone ?? 'UTC')}T00:00:00.000Z`,
         type: 'NOTES',
         isCompleted: false,
         completedAt: null,
@@ -216,10 +250,17 @@ async function handleApiRoute(
   }
 
   if (path === '/api/v1/workout-templates' && method === 'GET') {
-    await fulfillJson(route, [
-      createWorkoutTemplate({ id: 'template-1' }),
-      state.createdTemplate,
-    ]);
+    await fulfillJson(route, {
+      items: [
+        createWorkoutTemplate({ id: 'template-1' }),
+        state.createdTemplate,
+      ],
+      pagination: {
+        page: 1,
+        pageSize: 20,
+        total: 2,
+      },
+    });
     return;
   }
 
@@ -612,7 +653,7 @@ export function createActiveSession(options?: {
     startedAt: `${todayDate()}T12:00:00.000Z`,
     durationSeconds: 900,
     totalVolume: 5120,
-    status: 'ACTIVE',
+    status: 'IN_PROGRESS',
     sessionExercises,
   };
 }
@@ -631,8 +672,13 @@ async function fulfillJson(
   });
 }
 
-function todayDate(): string {
-  return new Date().toISOString().slice(0, 10);
+function todayDate(timezone = 'UTC'): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
 }
 
 function createSessionHistory(): SessionHistoryItem[] {
@@ -656,6 +702,17 @@ function createWorkoutStreak(): WorkoutStreakResponse {
     currentStreakDays: 3,
     longestStreakDays: 5,
     lastCompletedDate: todayDate(),
+  };
+}
+
+function createCurrentUser(): CurrentUserResponse {
+  return {
+    id: 'user-1',
+    email: 'demo@irontrack.local',
+    name: 'Demo User',
+    timezone: 'America/New_York',
+    unitPreference: 'IMPERIAL',
+    avatarUrl: null,
   };
 }
 
@@ -850,6 +907,7 @@ async function fulfillNotFound(
   method: string,
   path: string,
 ): Promise<void> {
+  console.error(`Unhandled mocked API route: ${method} ${path}`);
   await route.fulfill({
     status: 404,
     contentType: 'application/json',

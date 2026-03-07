@@ -8,6 +8,44 @@ import { AppModule } from '../src/app.module';
 import { GoogleTokenVerifierService } from '../src/modules/auth/google-token-verifier.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 
+function applySelect<T extends Record<string, unknown>>(
+  record: T | null,
+  select?: Record<string, unknown>,
+): T | Record<string, unknown> | null {
+  if (!record || !select) {
+    return record;
+  }
+
+  const projected: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(select)) {
+    if (!value) {
+      continue;
+    }
+
+    const currentValue = record[key];
+    if (value === true) {
+      projected[key] = currentValue;
+      continue;
+    }
+
+    if (
+      typeof value === 'object' &&
+      value !== null &&
+      'select' in value &&
+      typeof currentValue === 'object' &&
+      currentValue !== null &&
+      !Array.isArray(currentValue)
+    ) {
+      projected[key] = applySelect(
+        currentValue as Record<string, unknown>,
+        (value as { select: Record<string, unknown> }).select,
+      );
+    }
+  }
+
+  return projected;
+}
+
 describe('AuthController (e2e)', () => {
   let app: INestApplication;
 
@@ -32,6 +70,7 @@ describe('AuthController (e2e)', () => {
   };
   type UserFindUniqueArgs = {
     where: { id?: string; email?: string };
+    select?: Record<string, unknown>;
   };
   type UserCreateArgs = {
     data: {
@@ -77,10 +116,52 @@ describe('AuthController (e2e)', () => {
     where: {
       tokenHash?: string;
       id?: string;
+      userId?: string;
       revokedAt: null;
       expiresAt?: { gt: Date };
     };
     data: { revokedAt: Date };
+  };
+  type PrismaMock = {
+    user: {
+      findUnique: jest.Mock;
+      findFirst: jest.Mock;
+      create: jest.Mock;
+      update: jest.Mock;
+      updateMany: jest.Mock;
+      upsert: jest.Mock;
+    };
+    refreshToken: {
+      create: jest.Mock;
+      findFirst: jest.Mock;
+      update: jest.Mock;
+      updateMany: jest.Mock;
+    };
+    exerciseTemplate: {
+      updateMany: jest.Mock;
+    };
+    workoutTemplate: {
+      updateMany: jest.Mock;
+    };
+    workoutSession: {
+      updateMany: jest.Mock;
+    };
+    exerciseNote: {
+      deleteMany: jest.Mock;
+    };
+    pRRecord: {
+      deleteMany: jest.Mock;
+    };
+    userStreak: {
+      deleteMany: jest.Mock;
+    };
+    checklistItem: {
+      deleteMany: jest.Mock;
+    };
+    sessionNote: {
+      deleteMany: jest.Mock;
+    };
+    $transaction: jest.Mock;
   };
 
   const users: UserRecord[] = [];
@@ -97,34 +178,41 @@ describe('AuthController (e2e)', () => {
     >(),
   };
 
-  const prismaMock = {
+  const prismaMock: PrismaMock = {
     user: {
-      findUnique: jest.fn(
-        async ({ where }: UserFindUniqueArgs) =>
-          users.find((user) =>
+      findUnique: jest.fn(async ({ where, select }: UserFindUniqueArgs) =>
+        applySelect(
+          (users.find((user) =>
             where.id ? user.id === where.id : user.email === where.email,
-          ) ?? null,
+          ) ?? null) as Record<string, unknown> | null,
+          select,
+        ),
       ),
       findFirst: jest.fn(
         async ({
           where,
+          select,
         }: {
           where: {
             id?: string;
             email?: string;
             deletedAt?: null;
           };
+          select?: Record<string, unknown>;
         }) =>
-          users.find((user) => {
-            const matchesId = where.id === undefined || user.id === where.id;
-            const matchesEmail =
-              where.email === undefined || user.email === where.email;
-            const userDeletedAt = user.deletedAt ?? null;
-            const matchesDeletedAt =
-              where.deletedAt === undefined ||
-              userDeletedAt === where.deletedAt;
-            return matchesId && matchesEmail && matchesDeletedAt;
-          }) ?? null,
+          applySelect(
+            (users.find((user) => {
+              const matchesId = where.id === undefined || user.id === where.id;
+              const matchesEmail =
+                where.email === undefined || user.email === where.email;
+              const userDeletedAt = user.deletedAt ?? null;
+              const matchesDeletedAt =
+                where.deletedAt === undefined ||
+                userDeletedAt === where.deletedAt;
+              return matchesId && matchesEmail && matchesDeletedAt;
+            }) ?? null) as Record<string, unknown> | null,
+            select,
+          ),
       ),
       create: jest.fn(async ({ data }: UserCreateArgs) => {
         const created = {
@@ -150,6 +238,31 @@ describe('AuthController (e2e)', () => {
         Object.assign(existing, data);
         return existing;
       }),
+      updateMany: jest.fn(
+        async ({
+          where,
+          data,
+        }: {
+          where: {
+            id?: string;
+            deletedAt?: null;
+          };
+          data: Partial<UserRecord>;
+        }) => {
+          let count = 0;
+          for (const user of users) {
+            if (
+              (where.id === undefined || user.id === where.id) &&
+              (where.deletedAt === undefined ||
+                (user.deletedAt ?? null) === where.deletedAt)
+            ) {
+              Object.assign(user, data);
+              count += 1;
+            }
+          }
+          return { count };
+        },
+      ),
       upsert: jest.fn(async ({ where, update, create }: UserUpsertArgs) => {
         const existing = users.find((user) => user.email === where.email);
         if (existing) {
@@ -205,6 +318,7 @@ describe('AuthController (e2e)', () => {
               (where.tokenHash === undefined ||
                 token.tokenHash === where.tokenHash) &&
               (where.id === undefined || token.id === where.id) &&
+              (where.userId === undefined || token.userId === where.userId) &&
               token.revokedAt === where.revokedAt &&
               (where.expiresAt === undefined ||
                 token.expiresAt > where.expiresAt.gt)
@@ -217,30 +331,37 @@ describe('AuthController (e2e)', () => {
         },
       ),
     },
+    exerciseTemplate: {
+      updateMany: jest.fn(async () => ({ count: 0 })),
+    },
+    workoutTemplate: {
+      updateMany: jest.fn(async () => ({ count: 0 })),
+    },
+    workoutSession: {
+      updateMany: jest.fn(async () => ({ count: 0 })),
+    },
+    exerciseNote: {
+      deleteMany: jest.fn(async () => ({ count: 0 })),
+    },
+    pRRecord: {
+      deleteMany: jest.fn(async () => ({ count: 0 })),
+    },
+    userStreak: {
+      deleteMany: jest.fn(async () => ({ count: 0 })),
+    },
+    checklistItem: {
+      deleteMany: jest.fn(async () => ({ count: 0 })),
+    },
+    sessionNote: {
+      deleteMany: jest.fn(async () => ({ count: 0 })),
+    },
+    $transaction: jest.fn(
+      async (callback: (tx: Omit<PrismaMock, '$transaction'>) => unknown) =>
+        callback(prismaMock),
+    ),
   };
 
-  beforeEach(async () => {
-    jest.clearAllMocks();
-    users.length = 0;
-    refreshTokens.length = 0;
-    googleTokenVerifierMock.verifyIdToken.mockReset();
-    googleTokenVerifierMock.verifyIdToken.mockImplementation(
-      async (idToken: string) => {
-        if (idToken !== 'valid-google-id-token-1234567890') {
-          throw new UnauthorizedException({
-            code: 'INVALID_GOOGLE_TOKEN',
-            message: 'Google token is invalid',
-          });
-        }
-
-        return {
-          email: 'google-user@irontrack.local',
-          googleId: 'google-sub-123',
-          name: 'Google User',
-          avatarUrl: 'https://example.com/avatar.png',
-        };
-      },
-    );
+  beforeAll(async () => {
     process.env.NODE_ENV = 'test';
     process.env.DATABASE_URL =
       'postgresql://postgres:postgres@localhost:5432/irontrack_test?schema=public';
@@ -268,10 +389,63 @@ describe('AuthController (e2e)', () => {
     await app.init();
   });
 
-  afterEach(async () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    users.length = 0;
+    refreshTokens.length = 0;
+    googleTokenVerifierMock.verifyIdToken.mockReset();
+    googleTokenVerifierMock.verifyIdToken.mockImplementation(
+      async (idToken: string) => {
+        if (idToken !== 'valid-google-id-token-1234567890') {
+          throw new UnauthorizedException({
+            code: 'INVALID_GOOGLE_TOKEN',
+            message: 'Google token is invalid',
+          });
+        }
+
+        return {
+          email: 'google-user@irontrack.local',
+          googleId: 'google-sub-123',
+          name: 'Google User',
+          avatarUrl: 'https://example.com/avatar.png',
+        };
+      },
+    );
+  });
+
+  afterAll(async () => {
     if (app) {
       await app.close();
     }
+  });
+
+  it('prisma mock helpers respect explicit select projections', async () => {
+    users.push({
+      id: 'user-select-1',
+      email: 'select@example.com',
+      passwordHash: 'hashed-password',
+      authProvider: 'LOCAL',
+      deletedAt: null,
+      timezone: 'UTC',
+      unitPreference: 'METRIC',
+      name: 'Projection User',
+    });
+
+    await expect(
+      prismaMock.user.findFirst({
+        where: {
+          email: 'select@example.com',
+          deletedAt: null,
+        },
+        select: {
+          id: true,
+          email: true,
+        },
+      }),
+    ).resolves.toEqual({
+      id: 'user-select-1',
+      email: 'select@example.com',
+    });
   });
 
   it('logout succeeds without bearer token when refresh token cookie is provided', async () => {
@@ -329,6 +503,68 @@ describe('AuthController (e2e)', () => {
     expect(logoutRes.headers['set-cookie']?.[0]).toContain(
       'irontrack_refresh_token=;',
     );
+  });
+
+  it('rejects a rotated refresh token when it is reused', async () => {
+    await request(app.getHttpServer()).post('/api/v1/auth/register').send({
+      email: 'reuse@example.com',
+      password: 'Str0ngPassword!',
+      name: 'Reuse User',
+    });
+
+    const agent = request.agent(app.getHttpServer());
+    const loginRes = await agent.post('/api/v1/auth/login').send({
+      email: 'reuse@example.com',
+      password: 'Str0ngPassword!',
+    });
+    const firstRefreshCookie =
+      loginRes.headers['set-cookie']?.[0]?.split(';')[0];
+
+    const refreshRes = await agent.post('/api/v1/auth/refresh').send({});
+
+    expect(refreshRes.status).toBe(200);
+    expect(firstRefreshCookie).toBeTruthy();
+
+    const reuseRes = await request(app.getHttpServer())
+      .post('/api/v1/auth/refresh')
+      .set('Cookie', [firstRefreshCookie ?? ''])
+      .send({});
+
+    expect(reuseRes.status).toBe(401);
+  });
+
+  it('returns 401 for protected routes without a bearer token', async () => {
+    const response = await request(app.getHttpServer()).get('/api/v1/users/me');
+
+    expect(response.status).toBe(401);
+  });
+
+  it('soft deletes the current user and revokes refresh tokens on DELETE /api/v1/users/me', async () => {
+    await request(app.getHttpServer()).post('/api/v1/auth/register').send({
+      email: 'delete-me@example.com',
+      password: 'Str0ngPassword!',
+      name: 'Delete Me',
+    });
+
+    const agent = request.agent(app.getHttpServer());
+    const loginRes = await agent.post('/api/v1/auth/login').send({
+      email: 'delete-me@example.com',
+      password: 'Str0ngPassword!',
+    });
+
+    const deleteRes = await agent
+      .delete('/api/v1/users/me')
+      .set('Authorization', `Bearer ${loginRes.body.accessToken}`)
+      .send();
+
+    expect(deleteRes.status).toBe(204);
+    expect(users[0]?.deletedAt).toBeInstanceOf(Date);
+    expect(
+      refreshTokens.every((token) => token.revokedAt instanceof Date),
+    ).toBe(true);
+
+    const refreshRes = await agent.post('/api/v1/auth/refresh').send({});
+    expect(refreshRes.status).toBe(401);
   });
 
   it('google login validates id token and issues tokens', async () => {

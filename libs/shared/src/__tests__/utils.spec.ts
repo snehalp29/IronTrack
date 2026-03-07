@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { UnitPreference } from '../enums';
 import { startOfWeek, toLocalDateString } from '../utils/dates';
-import { estimateOneRm } from '../utils/one-rm';
+import { MAX_ESTIMATE_ONE_RM_REPS, estimateOneRm } from '../utils/one-rm';
 import { formatWeight, kgToLb, lbToKg } from '../utils/units';
 import { calculateSetVolume, calculateTotalVolume } from '../utils/volume';
 
@@ -42,6 +42,15 @@ describe('shared utils', () => {
     expect(estimateOneRm(10, 16)).toBe(0);
   });
 
+  it('exports the supported one rep max estimate rep boundary', () => {
+    expect(MAX_ESTIMATE_ONE_RM_REPS).toBe(15);
+    expect(estimateOneRm(100, MAX_ESTIMATE_ONE_RM_REPS + 1)).toBe(0);
+  });
+
+  it('handles the one-rep boundary without returning zero', () => {
+    expect(estimateOneRm(100, 1)).toBeCloseTo(103.3333, 3);
+  });
+
   it('formats dates and units for weekly charts', () => {
     expect(toLocalDateString(new Date('2026-02-28T12:00:00.000Z'), 'UTC')).toBe(
       '2026-02-28',
@@ -60,5 +69,17 @@ describe('shared utils', () => {
     expect(lbToKg(220.46)).toBeCloseTo(100, 1);
     expect(formatWeight(100, UnitPreference.METRIC)).toBe('100.00 kg');
     expect(formatWeight(100, UnitPreference.IMPERIAL)).toContain('lb');
+  });
+
+  it('formats dates in non-UTC timezones and falls back to UTC for invalid ones', () => {
+    expect(
+      toLocalDateString(
+        new Date('2026-03-01T04:30:00.000Z'),
+        'America/New_York',
+      ),
+    ).toBe('2026-02-28');
+    expect(
+      toLocalDateString(new Date('2026-02-28T12:00:00.000Z'), 'Invalid/Zone'),
+    ).toBe('2026-02-28');
   });
 });
