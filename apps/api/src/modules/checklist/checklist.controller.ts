@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Put, Query } from '@nestjs/common';
+import { Body, Controller, Get, Put, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
@@ -32,8 +33,13 @@ export class ChecklistController {
     @CurrentUser() user: { sub: string },
     @Body(new ZodValidationPipe(upsertChecklistSchema))
     body: UpsertChecklistDto,
+    @Res({ passthrough: true }) response?: Response,
   ) {
-    return this.checklistService.upsert(user.sub, body);
+    const item = await this.checklistService.upsert(user.sub, body);
+    if ((item as { created?: boolean }).created) {
+      response?.status(201);
+    }
+    return item;
   }
 
   @Get('week')

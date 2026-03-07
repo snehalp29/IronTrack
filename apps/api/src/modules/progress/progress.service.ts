@@ -20,7 +20,9 @@ export class ProgressService {
     const start = this.resolveWeekStart(startDate);
     const endExclusive = new Date(start);
     endExclusive.setUTCDate(start.getUTCDate() + 7);
-    const endInclusive = new Date(endExclusive.getTime() - 1);
+    const endInclusive = new Date(start);
+    endInclusive.setUTCDate(start.getUTCDate() + 6);
+    endInclusive.setUTCHours(23, 59, 59, 999);
 
     const sets = await this.prisma.set.findMany({
       where: {

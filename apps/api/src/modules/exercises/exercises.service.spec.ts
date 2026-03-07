@@ -865,6 +865,23 @@ describe('ExercisesService', () => {
     );
   });
 
+  it('clamps oversized history pageSize values in the service layer', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.set.findMany as jest.Mock).mockResolvedValue([]);
+    (prismaMock.set.count as jest.Mock).mockResolvedValue(0);
+
+    await expect(
+      service.history('user-1', 'exercise-1', 1, 500),
+    ).resolves.toEqual({
+      items: [],
+      pagination: { page: 1, pageSize: 100, total: 0 },
+    });
+
+    expect(prismaMock.set.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ skip: 0, take: 100 }),
+    );
+  });
+
   it('upserts exercise note after ownership/access check', async () => {
     const { service, prismaMock } = createService();
     (prismaMock.exerciseTemplate.findFirst as jest.Mock).mockResolvedValue({

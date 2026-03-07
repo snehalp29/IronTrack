@@ -30,6 +30,7 @@ export async function bootstrap() {
   app.enableCors({
     origin: allowedOrigins,
     credentials: true,
+    exposedHeaders: ['x-correlation-id'],
   });
 
   const nodeEnv = configService.getOrThrow<

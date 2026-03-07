@@ -27,10 +27,10 @@ describe('CompletionService', () => {
       completionPercent: 0,
       isIncomplete: false,
     });
-    expect(prismaMock.$transaction).toHaveBeenCalledWith([
-      'count-total',
-      'count-completed',
-    ]);
+    expect(prismaMock.$transaction).toHaveBeenCalledWith(
+      ['count-total', 'count-completed'],
+      expect.any(Object),
+    );
   });
 
   it('returns completion metrics for non-empty sessions', async () => {
@@ -110,5 +110,21 @@ describe('CompletionService', () => {
         },
       },
     });
+  });
+
+  it('runs completion counts at repeatable-read isolation', async () => {
+    (prismaMock.set.count as jest.Mock)
+      .mockReturnValueOnce('count-total')
+      .mockReturnValueOnce('count-completed');
+    (prismaMock.$transaction as jest.Mock).mockResolvedValue([2, 1]);
+
+    await service.calculate('session-6', 'user-1');
+
+    expect(prismaMock.$transaction).toHaveBeenCalledWith(
+      ['count-total', 'count-completed'],
+      expect.objectContaining({
+        isolationLevel: 'RepeatableRead',
+      }),
+    );
   });
 });

@@ -39,6 +39,7 @@ export class ChecklistService {
 
   async upsert(userId: string, input: UpsertChecklistDto) {
     const dateValue = new Date(`${input.date}T00:00:00.000Z`);
+    let created = false;
     const item = await this.prisma.$transaction(async (tx) => {
       const itemWhere = {
         userId_date_type: {
@@ -60,6 +61,11 @@ export class ChecklistService {
           },
         },
       } as const;
+      const existingItem = await tx.checklistItem.findUnique({
+        where: itemWhere,
+        select: { id: true },
+      });
+      created = existingItem == null;
 
       if (!input.isCompleted) {
         return tx.checklistItem.upsert({
@@ -126,6 +132,11 @@ export class ChecklistService {
 
     const { user, ...checklistItem } = item;
     void user;
+    Object.defineProperty(checklistItem, 'created', {
+      value: created,
+      enumerable: false,
+      configurable: true,
+    });
     return checklistItem;
   }
 

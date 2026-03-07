@@ -41,6 +41,13 @@ describe('Prisma schema hardening', () => {
     ),
     'utf8',
   );
+  const backlogHardeningMigration = readFileSync(
+    join(
+      __dirname,
+      '../../prisma/migrations/202603060009_service_backlog_hardening/migration.sql',
+    ),
+    'utf8',
+  );
 
   it('uses bounded database types for user emails and refresh token hashes', () => {
     expect(prismaSchema).toContain(
@@ -95,9 +102,15 @@ describe('Prisma schema hardening', () => {
     expect(prismaSchema).toContain(
       'name      String   @unique @db.VarChar(120)',
     );
-    expect(prismaSchema).toContain('url                String        @db.Text');
+    expect(prismaSchema).toMatch(/avatarUrl\s+String\?\s+@db\.VarChar\(2048\)/);
+    expect(prismaSchema).toMatch(/imageUrl\s+String\?\s+@db\.VarChar\(2048\)/);
+    expect(prismaSchema).toMatch(/iconUrl\s+String\?\s+@db\.VarChar\(2048\)/);
+    expect(prismaSchema).toMatch(/url\s+String\s+@db\.VarChar\(2048\)/);
     expect(prismaSchema).toContain(
       'title              String?       @db.VarChar(255)',
+    );
+    expect(prismaSchema).toMatch(
+      /thumbnailUrl\s+String\?\s+@db\.VarChar\(2048\)/,
     );
     expect(prismaSchema).toContain(
       'supersetGroupKey   String?   @db.VarChar(64)',
@@ -161,6 +174,131 @@ describe('Prisma schema hardening', () => {
     );
     expect(serviceReviewMigration).toContain(
       'CHECK ("isGlobal" = true OR "ownerUserId" IS NOT NULL)',
+    );
+  });
+
+  it('cascades private exercise ownership deletes so the owner/global check stays satisfiable', () => {
+    expect(backlogHardeningMigration).toContain(
+      'ALTER TABLE "ExerciseTemplate" DROP CONSTRAINT "ExerciseTemplate_ownerUserId_fkey";',
+    );
+    expect(backlogHardeningMigration).toContain(
+      'ADD CONSTRAINT "ExerciseTemplate_ownerUserId_fkey"',
+    );
+    expect(backlogHardeningMigration).toContain(
+      'FOREIGN KEY ("ownerUserId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;',
+    );
+  });
+
+  it('adds backlog schema indexes and audit columns for sessions, PRs, streaks, and refresh tokens', () => {
+    expect(prismaSchema).toContain('@@index([expiresAt])');
+    expect(prismaSchema).toContain('@@index([userId, finishedAt])');
+    expect(prismaSchema).toContain('@@index([exerciseTemplateId])');
+    expect(prismaSchema).toMatch(
+      /model PRRecord[\s\S]*createdAt\s+DateTime\s+@default\(now\(\)\)/,
+    );
+    expect(prismaSchema).toMatch(
+      /model PRRecord[\s\S]*updatedAt\s+DateTime\s+@updatedAt/,
+    );
+    expect(prismaSchema).toContain('@@index([userId, achievedAt])');
+    expect(prismaSchema).toContain('@@index([sessionId])');
+    expect(prismaSchema).toContain('@@index([setId])');
+    expect(prismaSchema).toMatch(
+      /model UserStreak[\s\S]*updatedAt\s+DateTime\s+@updatedAt/,
+    );
+    expect(prismaSchema).toMatch(
+      /model ChecklistItem[\s\S]*updatedAt\s+DateTime\s+@updatedAt/,
+    );
+    expect(prismaSchema).toContain('@@index([deletedAt])');
+  });
+
+  it('adds migration coverage for backlog unique indexes and constraint hardening', () => {
+    expect(backlogHardeningMigration).toContain(
+      'WorkoutTemplate_userId_orderIndex_active_key',
+    );
+    expect(backlogHardeningMigration).toContain(
+      'WorkoutTemplate_userId_lower_name_active_key',
+    );
+    expect(backlogHardeningMigration).toContain(
+      'ExerciseVideo_exerciseTemplateId_primary_key',
+    );
+    expect(backlogHardeningMigration).toContain('RefreshToken_expiresAt_idx');
+    expect(backlogHardeningMigration).toContain(
+      'WorkoutSession_userId_finishedAt_idx',
+    );
+    expect(backlogHardeningMigration).toContain(
+      'PRRecord_userId_achievedAt_idx',
+    );
+    expect(backlogHardeningMigration).toContain('PRRecord_sessionId_idx');
+    expect(backlogHardeningMigration).toContain('PRRecord_setId_idx');
+    expect(backlogHardeningMigration).toContain('Set_rpe_range_check');
+    expect(backlogHardeningMigration).toContain(
+      'Set_durationSeconds_nonnegative_check',
+    );
+    expect(backlogHardeningMigration).toContain(
+      'WorkoutSession_totalVolume_nonnegative_check',
+    );
+    expect(backlogHardeningMigration).toContain(
+      'WorkoutTemplate_orderIndex_nonnegative_check',
+    );
+    expect(backlogHardeningMigration).toContain(
+      'PRRecord_value_positive_check',
+    );
+    expect(backlogHardeningMigration).toContain('UserStreak_invariants_check');
+    expect(backlogHardeningMigration).toContain(
+      'WorkoutSession_version_positive_check',
+    );
+    expect(backlogHardeningMigration).toContain(
+      'SessionExercise_version_positive_check',
+    );
+    expect(backlogHardeningMigration).toContain(
+      'WorkoutSession_status_endedReason_check',
+    );
+    expect(backlogHardeningMigration).toContain(
+      'WorkoutSession_finishedAt_after_startedAt_check',
+    );
+    expect(backlogHardeningMigration).toContain(
+      'WorkoutSession_startedAt_not_future_check',
+    );
+  });
+
+  it('adds migration coverage for backlog URL column bounds and new audit timestamps', () => {
+    expect(backlogHardeningMigration).toContain(
+      'ALTER TABLE "User"\nALTER COLUMN "avatarUrl" TYPE VARCHAR(2048);',
+    );
+    expect(backlogHardeningMigration).toContain(
+      'ALTER TABLE "ExerciseVideo"\nALTER COLUMN "url" TYPE VARCHAR(2048);',
+    );
+    expect(backlogHardeningMigration).toContain(
+      'ADD COLUMN "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP',
+    );
+    expect(backlogHardeningMigration).toContain(
+      'ADD COLUMN "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP',
+    );
+  });
+
+  it('adds migration coverage for deleted-row indexes and remaining non-negative constraints', () => {
+    expect(backlogHardeningMigration).toContain('User_deletedAt_idx');
+    expect(backlogHardeningMigration).toContain(
+      'ExerciseTemplate_deletedAt_idx',
+    );
+    expect(backlogHardeningMigration).toContain(
+      'WorkoutTemplate_deletedAt_idx',
+    );
+    expect(backlogHardeningMigration).toContain('WorkoutSession_deletedAt_idx');
+    expect(backlogHardeningMigration).toContain(
+      'SessionExercise_deletedAt_idx',
+    );
+    expect(backlogHardeningMigration).toContain('Set_deletedAt_idx');
+    expect(backlogHardeningMigration).toContain('Set_weight_nonnegative_check');
+    expect(backlogHardeningMigration).toContain('Set_reps_nonnegative_check');
+    expect(backlogHardeningMigration).toContain(
+      'Set_orderIndex_nonnegative_check',
+    );
+    expect(backlogHardeningMigration).toContain(
+      'WorkoutTemplateExercise_orderIndex_nonnegative_check',
+    );
+    expect(backlogHardeningMigration).toContain(
+      'SessionExercise_orderIndex_nonnegative_check',
     );
   });
 });

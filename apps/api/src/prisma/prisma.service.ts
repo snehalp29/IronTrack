@@ -27,9 +27,17 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
       return;
     }
 
-    process.once('beforeExit', async () => {
-      await app.close();
-    });
+    let closePromise: Promise<void> | null = null;
+    const shutdown = async () => {
+      if (!closePromise) {
+        closePromise = app.close();
+      }
+      await closePromise;
+    };
+
+    process.once('beforeExit', shutdown);
+    process.once('SIGINT', shutdown);
+    process.once('SIGTERM', shutdown);
     this.shutdownHookRegistered = true;
   }
 }

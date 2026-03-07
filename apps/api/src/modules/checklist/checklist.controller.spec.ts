@@ -45,6 +45,29 @@ describe('ChecklistController', () => {
     expect(checklistServiceMock.upsert).toHaveBeenCalledWith('user-1', body);
   });
 
+  it('sets 201 Created when checklist upsert creates a new item', async () => {
+    const body = {
+      date: '2024-01-01',
+      type: 'WORKOUT' as const,
+      isCompleted: true,
+    };
+    const createdItem = { id: 'created-item' };
+    Object.defineProperty(createdItem, 'created', {
+      value: true,
+      enumerable: false,
+    });
+    (checklistServiceMock.upsert as jest.Mock).mockResolvedValue(createdItem);
+    const response = {
+      status: jest.fn(),
+    };
+
+    await expect(
+      controller.upsert({ sub: 'user-1' }, body, response as never),
+    ).resolves.toEqual({ id: 'created-item' });
+
+    expect(response.status).toHaveBeenCalledWith(201);
+  });
+
   it('delegates getWeek', async () => {
     const query = { startDate: '2024-01-01' };
     (checklistServiceMock.getWeek as jest.Mock).mockResolvedValue([

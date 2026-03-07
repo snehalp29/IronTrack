@@ -9,6 +9,7 @@ const REQUIRED_CHECKLIST_TYPES = [
   ChecklistType.MOBILITY,
   ChecklistType.NOTES,
 ] as const;
+const MAX_STREAK_WRITE_ATTEMPTS = 3;
 
 @Injectable()
 export class StreakService {
@@ -84,72 +85,76 @@ export class StreakService {
         : this.formatDateInTimezone(forcedDate ?? new Date(), resolvedTimezone);
     const dateValue = new Date(`${localDate}T00:00:00.000Z`);
 
-    const streak = await this.prisma.userStreak.findUnique({
-      where: {
-        userId_streakType: {
-          userId,
-          streakType,
-        },
-      },
-    });
-
-    if (!streak) {
-      try {
-        await this.prisma.userStreak.create({
-          data: {
+    for (let attempt = 0; attempt < MAX_STREAK_WRITE_ATTEMPTS; attempt += 1) {
+      const streak = await this.prisma.userStreak.findUnique({
+        where: {
+          userId_streakType: {
             userId,
             streakType,
-            currentStreakDays: 1,
-            longestStreakDays: 1,
-            lastCompletedDate: dateValue,
           },
-        });
-      } catch (error) {
-        if (!isPrismaUniqueConstraintError(error)) {
-          throw error;
+        },
+      });
+
+      if (!streak) {
+        try {
+          await this.prisma.userStreak.create({
+            data: {
+              userId,
+              streakType,
+              currentStreakDays: 1,
+              longestStreakDays: 1,
+              lastCompletedDate: dateValue,
+            },
+          });
+          return;
+        } catch (error) {
+          if (!isPrismaUniqueConstraintError(error)) {
+            throw error;
+          }
+          continue;
         }
       }
-      return;
-    }
 
-    const previousDateString = streak.lastCompletedDate
-      ? this.formatStoredDate(streak.lastCompletedDate)
-      : null;
+      const previousDateString = streak.lastCompletedDate
+        ? this.formatStoredDate(streak.lastCompletedDate)
+        : null;
 
-    if (previousDateString === localDate) {
-      return;
-    }
+      if (previousDateString === localDate) {
+        return;
+      }
 
-    const dayDelta = previousDateString
-      ? this.daysBetween(previousDateString, localDate)
-      : null;
+      const dayDelta = previousDateString
+        ? this.daysBetween(previousDateString, localDate)
+        : null;
 
-    if (dayDelta !== null && dayDelta < 0) {
-      return;
-    }
+      if (dayDelta !== null && dayDelta < 0) {
+        return;
+      }
 
-    const isConsecutive = dayDelta === 1;
-
-    const currentStreakDays = isConsecutive ? streak.currentStreakDays + 1 : 1;
-    const updateResult = await this.prisma.userStreak.updateMany({
-      where: {
-        id: streak.id,
-        currentStreakDays: streak.currentStreakDays,
-        longestStreakDays: streak.longestStreakDays,
-        lastCompletedDate: streak.lastCompletedDate ?? null,
-      },
-      data: {
-        currentStreakDays,
-        longestStreakDays: Math.max(
-          streak.longestStreakDays,
+      const isConsecutive = dayDelta === 1;
+      const currentStreakDays = isConsecutive
+        ? streak.currentStreakDays + 1
+        : 1;
+      const updateResult = await this.prisma.userStreak.updateMany({
+        where: {
+          id: streak.id,
+          currentStreakDays: streak.currentStreakDays,
+          longestStreakDays: streak.longestStreakDays,
+          lastCompletedDate: streak.lastCompletedDate ?? null,
+        },
+        data: {
           currentStreakDays,
-        ),
-        lastCompletedDate: dateValue,
-      },
-    });
-    if (updateResult.count === 0) {
-      // Another write already updated this streak row.
-      return;
+          longestStreakDays: Math.max(
+            streak.longestStreakDays,
+            currentStreakDays,
+          ),
+          lastCompletedDate: dateValue,
+        },
+      });
+
+      if (updateResult.count > 0) {
+        return;
+      }
     }
   }
 

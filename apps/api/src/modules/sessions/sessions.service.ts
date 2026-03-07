@@ -30,6 +30,8 @@ import {
 } from './dto/session.schemas';
 
 type SetMutationClient = Pick<PrismaService, 'sessionExercise' | 'set'>;
+const MAX_SESSION_EXERCISE_SET_READ = 200;
+const MAX_SET_DURATION_SECONDS = 86_400;
 
 @Injectable()
 export class SessionsService {
@@ -169,6 +171,7 @@ export class SessionsService {
             sets: {
               where: { deletedAt: null },
               orderBy: { orderIndex: 'asc' },
+              take: MAX_SESSION_EXERCISE_SET_READ,
             },
           },
           orderBy: { orderIndex: 'asc' },
@@ -213,6 +216,14 @@ export class SessionsService {
 
     if (existing.version !== input.version) {
       this.throwSessionVersionConflict(existing.version, input.version);
+    }
+
+    if (input.endedReason !== undefined && existing.status === 'IN_PROGRESS') {
+      throw new BadRequestException({
+        code: 'SESSION_ENDED_REASON_NOT_ALLOWED',
+        message:
+          'endedReason cannot be updated while the session is in progress',
+      });
     }
 
     const updated = await this.prisma.workoutSession.updateMany({
@@ -332,7 +343,8 @@ export class SessionsService {
     }
 
     let totalVolume: number;
-    let newPrs: Awaited<ReturnType<PrDetectionService['detectForSession']>>;
+    let newPrs: Awaited<ReturnType<PrDetectionService['detectForSession']>> =
+      [];
     let completion: Awaited<ReturnType<CompletionService['calculate']>>;
     try {
       totalVolume = await this.volumeService.cacheSessionVolume(sessionId);
@@ -347,6 +359,20 @@ export class SessionsService {
       );
       completion = await this.completionService.calculate(sessionId, userId);
     } catch (error) {
+      if (newPrs.length > 0) {
+        const exerciseTemplateIds = Array.from(
+          new Set(newPrs.map((record) => record.exerciseTemplateId)),
+        );
+        await Promise.all(
+          exerciseTemplateIds.map((exerciseTemplateId) =>
+            this.prDetectionService.recalculateForExercise(
+              userId,
+              exerciseTemplateId,
+            ),
+          ),
+        );
+      }
+
       await this.prisma.workoutSession.updateMany({
         where: {
           id: sessionId,
@@ -512,6 +538,7 @@ export class SessionsService {
             sets: {
               where: { deletedAt: null },
               orderBy: { orderIndex: 'asc' },
+              take: MAX_SESSION_EXERCISE_SET_READ,
             },
           },
           orderBy: { orderIndex: 'asc' },
@@ -1037,6 +1064,7 @@ export class SessionsService {
       durationSeconds: input.durationSeconds,
       rpe: input.rpe,
     };
+    assertDurationSecondsWithinLimit(input.durationSeconds);
 
     if (input.isCompleted !== undefined) {
       updateData.isCompleted = input.isCompleted;
@@ -1291,6 +1319,7 @@ export class SessionsService {
     sessionExerciseId: string,
     input: BatchCreateSetsDto,
   ) {
+    assertUniqueBatchSetIdempotencyKeys(input.sets);
     const { sessionExercise, createdSets } = await this.prisma.$transaction(
       async (tx) => {
         const ownedSessionExercise = await this.assertSessionExerciseOwnership(
@@ -1491,6 +1520,8 @@ export class SessionsService {
     if (!sessionExercise) {
       this.throwSessionExerciseNotFound();
     }
+
+    assertDurationSecondsWithinLimit(input.durationSeconds);
 
     if (input.idempotencyKey) {
       const existing = await client.set.findFirst({
@@ -1748,6 +1779,38 @@ type SetWriteData = {
   isCompleted?: boolean;
   completedAt?: Date | null;
 };
+
+function assertDurationSecondsWithinLimit(durationSeconds?: number | null) {
+  if (
+    durationSeconds !== undefined &&
+    durationSeconds !== null &&
+    durationSeconds > MAX_SET_DURATION_SECONDS
+  ) {
+    throw new BadRequestException({
+      code: 'SET_DURATION_TOO_LARGE',
+      message: `durationSeconds must not exceed ${MAX_SET_DURATION_SECONDS}`,
+    });
+  }
+}
+
+function assertUniqueBatchSetIdempotencyKeys(sets: BatchCreateSetsDto['sets']) {
+  const seenKeys = new Set<string>();
+
+  for (const set of sets) {
+    if (!set.idempotencyKey) {
+      continue;
+    }
+
+    if (seenKeys.has(set.idempotencyKey)) {
+      throw new BadRequestException({
+        code: 'DUPLICATE_SET_IDEMPOTENCY_KEY',
+        message: 'Duplicate idempotencyKey in batch payload',
+      });
+    }
+
+    seenKeys.add(set.idempotencyKey);
+  }
+}
 
 function isSetIdempotencyUniqueConstraintError(error: unknown): boolean {
   return isUniqueConstraintErrorForFields(error, [

@@ -13,6 +13,7 @@ import { HealthModule } from './modules/health/health.module';
 import { MlClientModule } from './modules/ml-client/ml-client.module';
 import { ProgressModule } from './modules/progress/progress.module';
 import { SessionsModule } from './modules/sessions/sessions.module';
+import { StreakModule } from './modules/streak/streak.module';
 import { UsersModule } from './modules/users/users.module';
 import { WorkoutTemplatesModule } from './modules/workout-templates/workout-templates.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -39,6 +40,7 @@ import { PrismaModule } from './prisma/prisma.module';
     ChecklistModule,
     CatalogModule,
     ProgressModule,
+    StreakModule,
     MlClientModule,
     HealthModule,
   ],

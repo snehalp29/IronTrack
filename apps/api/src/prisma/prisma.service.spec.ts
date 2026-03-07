@@ -60,7 +60,7 @@ describe('PrismaService', () => {
 
     await service.enableShutdownHooks(app);
     expect(onceSpy).toHaveBeenCalledWith('beforeExit', expect.any(Function));
-    expect(onceSpy).toHaveBeenCalledTimes(1);
+    expect(onceSpy).toHaveBeenCalledTimes(3);
 
     await beforeExitHandler?.();
     expect(app.close).toHaveBeenCalledTimes(1);
@@ -88,9 +88,35 @@ describe('PrismaService', () => {
     await service.enableShutdownHooks(app);
     await service.enableShutdownHooks(app);
 
-    expect(onceSpy).toHaveBeenCalledTimes(1);
+    expect(onceSpy).toHaveBeenCalledTimes(3);
 
     await beforeExitHandler?.();
     expect(app.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('registers SIGINT and SIGTERM shutdown hooks alongside beforeExit', async () => {
+    process.env.DATABASE_URL = 'postgresql://user:pass@localhost:5432/db';
+
+    const service = new PrismaService();
+    const app = {
+      close: jest.fn().mockResolvedValue(undefined),
+    } as unknown as INestApplication;
+
+    const registeredEvents: string[] = [];
+    const onceSpy = jest.spyOn(process, 'once').mockImplementation(((
+      event: string,
+      handler: () => Promise<void>,
+    ) => {
+      registeredEvents.push(event);
+      void handler;
+      return process;
+    }) as never);
+
+    await service.enableShutdownHooks(app);
+
+    expect(registeredEvents).toEqual(
+      expect.arrayContaining(['beforeExit', 'SIGINT', 'SIGTERM']),
+    );
+    expect(onceSpy).toHaveBeenCalledTimes(3);
   });
 });

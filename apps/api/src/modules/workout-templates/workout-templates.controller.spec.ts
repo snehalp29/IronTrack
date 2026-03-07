@@ -1,3 +1,5 @@
+import { HTTP_CODE_METADATA } from '@nestjs/common/constants';
+
 import { WorkoutTemplatesController } from './workout-templates.controller';
 import type { WorkoutTemplatesService } from './workout-templates.service';
 
@@ -128,5 +130,14 @@ describe('WorkoutTemplatesController', () => {
       'u1',
       'w1',
     );
+  });
+
+  it('marks remove as 204 No Content', () => {
+    expect(
+      Reflect.getMetadata(
+        HTTP_CODE_METADATA,
+        WorkoutTemplatesController.prototype.remove,
+      ),
+    ).toBe(204);
   });
 });

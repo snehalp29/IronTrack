@@ -1,3 +1,5 @@
+import { HTTP_CODE_METADATA } from '@nestjs/common/constants';
+
 import { UsersController } from './users.controller';
 import type { UsersService } from './users.service';
 
@@ -46,5 +48,14 @@ describe('UsersController', () => {
       success: true,
     });
     expect(usersServiceMock.deleteMe).toHaveBeenCalledWith('user-1');
+  });
+
+  it('marks deleteMe as 204 No Content', () => {
+    expect(
+      Reflect.getMetadata(
+        HTTP_CODE_METADATA,
+        UsersController.prototype.deleteMe,
+      ),
+    ).toBe(204);
   });
 });

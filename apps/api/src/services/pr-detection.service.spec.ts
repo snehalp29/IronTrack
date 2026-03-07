@@ -918,4 +918,58 @@ describe('PrDetectionService', () => {
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(transaction.mock.calls[0]?.[0]).toHaveLength(1);
   });
+
+  it('chunks large PR upsert batches to limit concurrent lock hold time', async () => {
+    const sessionSets: SessionSetFixture[] = Array.from(
+      { length: 30 },
+      (_unused, index) => ({
+        id: `set-${index + 1}`,
+        weight: 100 + index,
+        reps: 5,
+        completedAt: new Date(
+          `2024-01-${String((index % 9) + 1).padStart(2, '0')}T10:00:00.000Z`,
+        ),
+        sessionExercise: {
+          exerciseTemplateId: `exercise-${index + 1}`,
+        },
+      }),
+    );
+
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const prismaMock = {
+      set: {
+        findMany: jest.fn(async () => sessionSets),
+      },
+      $transaction: jest.fn(),
+      pRRecord: {
+        findMany: jest.fn(async () => []),
+        upsert: jest.fn(async () => {
+          inFlight += 1;
+          maxInFlight = Math.max(maxInFlight, inFlight);
+          await new Promise<void>((resolve) => {
+            setImmediate(resolve);
+          });
+          inFlight -= 1;
+          return undefined;
+        }),
+      },
+    } as unknown as PrismaService;
+    configureTransactionMock(
+      prismaMock as unknown as { $transaction: jest.Mock },
+    );
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        PrDetectionService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(PrDetectionService);
+    await service.detectForSession('user-1', 'session-1');
+
+    expect(prismaMock.pRRecord.upsert).toHaveBeenCalled();
+    expect(maxInFlight).toBeLessThanOrEqual(25);
+  });
 });

@@ -11,6 +11,7 @@ const MAX_IDEMPOTENCY_KEY_LENGTH = 128;
 const MAX_SET_PAYLOAD_SERIALIZED_LENGTH = 4000;
 const MAX_SET_PAYLOAD_DEPTH = 32;
 const MAX_SET_PAYLOAD_ARRAY_LENGTH = 100;
+const MAX_SET_DURATION_SECONDS = 86_400;
 
 const optionalSupersetGroupKeySchema = optionalTrimmed(
   z.string().max(MAX_SUPERSET_GROUP_KEY_LENGTH),
@@ -199,7 +200,12 @@ const baseCreateSetSchema = z.object({
   idempotencyKey: z.string().min(6).max(MAX_IDEMPOTENCY_KEY_LENGTH).optional(),
   weight: z.number().finite().nonnegative().optional(),
   reps: z.number().int().positive().optional(),
-  durationSeconds: z.number().int().positive().optional(),
+  durationSeconds: z
+    .number()
+    .int()
+    .positive()
+    .max(MAX_SET_DURATION_SECONDS)
+    .optional(),
   rpe: z.number().finite().min(0).max(10).optional(),
 });
 
@@ -256,7 +262,28 @@ export const toggleSetCompletionSchema = z.object({
 });
 
 export const batchCreateSetsSchema = z.object({
-  sets: z.array(createSetSchema).min(1).max(MAX_BATCH_SET_COUNT),
+  sets: z
+    .array(createSetSchema)
+    .min(1)
+    .max(MAX_BATCH_SET_COUNT)
+    .superRefine((sets, ctx) => {
+      const seenKeys = new Set<string>();
+      for (const [index, set] of sets.entries()) {
+        if (!set.idempotencyKey) {
+          continue;
+        }
+
+        if (seenKeys.has(set.idempotencyKey)) {
+          ctx.addIssue({
+            code: 'custom',
+            message: 'Duplicate idempotencyKey in batch payload',
+            path: [index, 'idempotencyKey'],
+          });
+        }
+
+        seenKeys.add(set.idempotencyKey);
+      }
+    }),
 });
 
 export type StartSessionDto = z.infer<typeof startSessionSchema>;

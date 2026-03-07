@@ -168,4 +168,19 @@ describe('bootstrap', () => {
       expect.objectContaining({ openapi: '3.0.0' }),
     );
   });
+
+  it('exposes correlation ids in CORS response headers', async () => {
+    const { app } = createAppMocks('development');
+    (NestFactory.create as jest.Mock).mockResolvedValue(app);
+
+    const { bootstrap } = loadMainModule();
+
+    await bootstrap();
+
+    expect(app.enableCors).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exposedHeaders: ['x-correlation-id'],
+      }),
+    );
+  });
 });

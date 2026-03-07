@@ -145,6 +145,24 @@ describe('session set schemas', () => {
     expect(result.success).toBe(false);
   });
 
+  it('rejects implausibly large durationSeconds values on create and update', () => {
+    expect(
+      createSetSchema.safeParse({
+        orderIndex: 0,
+        type: 'DURATION',
+        payload: {},
+        durationSeconds: 86_401,
+      }).success,
+    ).toBe(false);
+
+    expect(
+      updateSetSchema.safeParse({
+        durationSeconds: 86_401,
+        payload: {},
+      }).success,
+    ).toBe(false);
+  });
+
   it('rejects completedAt when isCompleted is false', () => {
     const result = createSetSchema.safeParse({
       orderIndex: 0,
@@ -207,6 +225,27 @@ describe('session set schemas', () => {
         payload: { weight: 50 },
       }).success,
     ).toBe(true);
+  });
+
+  it('rejects duplicate idempotency keys within one batch create payload', () => {
+    const result = batchCreateSetsSchema.safeParse({
+      sets: [
+        {
+          orderIndex: 0,
+          type: 'WEIGHT_REPS',
+          payload: {},
+          idempotencyKey: 'same-key',
+        },
+        {
+          orderIndex: 1,
+          type: 'WEIGHT_REPS',
+          payload: {},
+          idempotencyKey: 'same-key',
+        },
+      ],
+    });
+
+    expect(result.success).toBe(false);
   });
 
   it('rejects future completedAt timestamps on create and update', () => {

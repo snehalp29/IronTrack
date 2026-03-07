@@ -303,7 +303,9 @@ export class ExercisesService {
 
   async history(userId: string, exerciseId: string, page = 1, pageSize = 20) {
     await this.getById(userId, exerciseId);
-    const skip = (page - 1) * pageSize;
+    const normalizedPage = Math.max(1, Math.trunc(page));
+    const normalizedPageSize = Math.min(100, Math.max(1, Math.trunc(pageSize)));
+    const skip = (normalizedPage - 1) * normalizedPageSize;
 
     const [items, total] = await this.prisma.$transaction([
       this.prisma.set.findMany({
@@ -344,7 +346,7 @@ export class ExercisesService {
           { createdAt: 'desc' },
         ],
         skip,
-        take: pageSize,
+        take: normalizedPageSize,
       }),
       this.prisma.set.count({
         where: {
@@ -366,7 +368,7 @@ export class ExercisesService {
 
     return {
       items,
-      pagination: { page, pageSize, total },
+      pagination: { page: normalizedPage, pageSize: normalizedPageSize, total },
     };
   }
 

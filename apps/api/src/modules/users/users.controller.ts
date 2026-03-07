@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Patch } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Patch } from '@nestjs/common';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
@@ -24,6 +24,7 @@ export class UsersController {
   }
 
   @Delete('me')
+  @HttpCode(204)
   async deleteMe(@CurrentUser() user: { sub: string }) {
     return this.usersService.deleteMe(user.sub);
   }

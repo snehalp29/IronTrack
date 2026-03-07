@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -7,35 +8,40 @@ export class CompletionService {
   constructor(private readonly prisma: PrismaService) {}
 
   async calculate(sessionId: string, userId: string) {
-    const [totalSets, completedSets] = await this.prisma.$transaction([
-      this.prisma.set.count({
-        where: {
-          deletedAt: null,
-          sessionExercise: {
-            sessionId,
+    const [totalSets, completedSets] = await this.prisma.$transaction(
+      [
+        this.prisma.set.count({
+          where: {
             deletedAt: null,
-            session: {
-              userId,
+            sessionExercise: {
+              sessionId,
               deletedAt: null,
+              session: {
+                userId,
+                deletedAt: null,
+              },
             },
           },
-        },
-      }),
-      this.prisma.set.count({
-        where: {
-          deletedAt: null,
-          isCompleted: true,
-          sessionExercise: {
-            sessionId,
+        }),
+        this.prisma.set.count({
+          where: {
             deletedAt: null,
-            session: {
-              userId,
+            isCompleted: true,
+            sessionExercise: {
+              sessionId,
               deletedAt: null,
+              session: {
+                userId,
+                deletedAt: null,
+              },
             },
           },
-        },
-      }),
-    ]);
+        }),
+      ],
+      {
+        isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+      },
+    );
 
     const completionPercent =
       totalSets === 0

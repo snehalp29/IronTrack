@@ -580,7 +580,7 @@ describe('StreakService', () => {
     });
   });
 
-  it('treats optimistic update conflicts as no-op when another writer wins', async () => {
+  it('stops after bounded retries when optimistic update conflicts persist', async () => {
     const prismaMock = {
       user: {
         findUnique: jest.fn(async () => ({
@@ -614,7 +614,72 @@ describe('StreakService', () => {
     await expect(
       service.onChecklistCompleted('user-1', '2024-01-02'),
     ).resolves.toBeUndefined();
-    expect(prismaMock.userStreak.updateMany).toHaveBeenCalledTimes(1);
+    expect(prismaMock.userStreak.findUnique).toHaveBeenCalledTimes(3);
+    expect(prismaMock.userStreak.updateMany).toHaveBeenCalledTimes(3);
+  });
+
+  it('retries optimistic update conflicts with a fresh streak snapshot', async () => {
+    const prismaMock = {
+      user: {
+        findUnique: jest.fn(async () => ({
+          id: 'user-1',
+          timezone: 'UTC',
+        })),
+      },
+      userStreak: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValueOnce({
+            id: 'streak-1',
+            userId: 'user-1',
+            currentStreakDays: 3,
+            longestStreakDays: 5,
+            lastCompletedDate: new Date('2024-01-01T00:00:00.000Z'),
+          })
+          .mockResolvedValueOnce({
+            id: 'streak-1',
+            userId: 'user-1',
+            currentStreakDays: 4,
+            longestStreakDays: 5,
+            lastCompletedDate: new Date('2024-01-02T00:00:00.000Z'),
+          }),
+        updateMany: jest
+          .fn()
+          .mockResolvedValueOnce({ count: 0 })
+          .mockResolvedValueOnce({ count: 1 }),
+      },
+      checklistItem: {
+        count: jest.fn(async () => 4),
+      },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        StreakService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(StreakService);
+    await expect(
+      service.onChecklistCompleted('user-1', '2024-01-03'),
+    ).resolves.toBeUndefined();
+
+    expect(prismaMock.userStreak.findUnique).toHaveBeenCalledTimes(2);
+    expect(prismaMock.userStreak.updateMany).toHaveBeenCalledTimes(2);
+    expect(prismaMock.userStreak.updateMany).toHaveBeenNthCalledWith(2, {
+      where: {
+        id: 'streak-1',
+        currentStreakDays: 4,
+        longestStreakDays: 5,
+        lastCompletedDate: new Date('2024-01-02T00:00:00.000Z'),
+      },
+      data: {
+        currentStreakDays: 5,
+        longestStreakDays: 5,
+        lastCompletedDate: new Date('2024-01-03T00:00:00.000Z'),
+      },
+    });
   });
 
   it('updates longest streak when consecutive completion exceeds previous longest', async () => {

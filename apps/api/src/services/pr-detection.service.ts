@@ -14,6 +14,7 @@ interface ExerciseSetInput {
 }
 
 type PrDetectionClient = PrismaService | Prisma.TransactionClient;
+const PR_UPSERT_CHUNK_SIZE = 25;
 
 @Injectable()
 export class PrDetectionService {
@@ -124,7 +125,7 @@ export class PrDetectionService {
         record.value,
       ]),
     );
-    const upserts: Prisma.PrismaPromise<unknown>[] = [];
+    const upserts: Array<() => Prisma.PrismaPromise<unknown>> = [];
 
     for (const [exerciseTemplateId, sets] of grouped.entries()) {
       const candidateMap = this.calculateCandidates(sets);
@@ -137,7 +138,7 @@ export class PrDetectionService {
         const existingValue = existingValueByKey.get(prKey);
 
         if (existingValue === undefined || candidate.value > existingValue) {
-          upserts.push(
+          upserts.push(() =>
             client.pRRecord.upsert({
               where: {
                 userId_exerciseTemplateId_prType: {
@@ -175,7 +176,17 @@ export class PrDetectionService {
     }
 
     if (upserts.length > 0) {
-      await Promise.all(upserts);
+      for (
+        let index = 0;
+        index < upserts.length;
+        index += PR_UPSERT_CHUNK_SIZE
+      ) {
+        await Promise.all(
+          upserts
+            .slice(index, index + PR_UPSERT_CHUNK_SIZE)
+            .map((createUpsert) => createUpsert()),
+        );
+      }
     }
 
     return createdPrs;

@@ -11,6 +11,7 @@ import { ExercisesModule } from './modules/exercises/exercises.module';
 import { HealthModule } from './modules/health/health.module';
 import { MlClientModule } from './modules/ml-client/ml-client.module';
 import { ProgressModule } from './modules/progress/progress.module';
+import { StreakModule } from './modules/streak/streak.module';
 
 describe('AppModule', () => {
   it('registers feature modules and global guards', () => {
@@ -26,6 +27,7 @@ describe('AppModule', () => {
     expect(imports).toContain(ProgressModule);
     expect(imports).toContain(MlClientModule);
     expect(imports).toContain(HealthModule);
+    expect(imports).toContain(StreakModule);
 
     expect(providers).toEqual(
       expect.arrayContaining([

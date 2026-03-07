@@ -516,6 +516,30 @@ describe('SessionsService', () => {
     );
   });
 
+  it('bounds nested set reads when loading a session', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.workoutSession.findFirst as jest.Mock).mockResolvedValue({
+      id: 'session-1',
+      sessionExercises: [],
+    });
+
+    await service.getSession('user-1', 'session-1');
+
+    expect(prismaMock.workoutSession.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({
+          sessionExercises: expect.objectContaining({
+            include: expect.objectContaining({
+              sets: expect.objectContaining({
+                take: 200,
+              }),
+            }),
+          }),
+        }),
+      }),
+    );
+  });
+
   it('throws when session is missing', async () => {
     const { service, prismaMock } = createService();
     (prismaMock.workoutSession.findFirst as jest.Mock).mockResolvedValue(null);
@@ -546,6 +570,24 @@ describe('SessionsService', () => {
         notes: 'updated',
       }),
     ).resolves.toEqual({ id: 'session-1', version: 3 });
+  });
+
+  it('rejects endedReason updates while the session is still in progress', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.workoutSession.findFirst as jest.Mock).mockResolvedValue({
+      id: 'session-1',
+      version: 2,
+      status: 'IN_PROGRESS',
+    });
+
+    await expect(
+      service.updateSession('user-1', 'session-1', {
+        version: 2,
+        endedReason: 'AUTO_TIMEOUT',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(prismaMock.workoutSession.updateMany).not.toHaveBeenCalled();
   });
 
   it('throws conflict when incoming session version is stale', async () => {
@@ -809,6 +851,61 @@ describe('SessionsService', () => {
           totalVolume: null,
         }),
       }),
+    );
+  });
+
+  it('recalculates affected PRs when a later finish side effect fails after PR detection succeeds', async () => {
+    const { service, prismaMock, volumeMock, prDetectionMock, streakMock } =
+      createService();
+    (prismaMock.workoutSession.findFirst as jest.Mock).mockResolvedValue({
+      id: 'session-1',
+      userId: 'user-1',
+      startedAt: new Date(Date.now() - 2000),
+      status: 'IN_PROGRESS',
+      endedReason: null,
+      user: {
+        timezone: 'UTC',
+      },
+    });
+    (prismaMock.workoutSession.updateMany as jest.Mock)
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 1 });
+    (volumeMock.cacheSessionVolume as jest.Mock).mockResolvedValue(900);
+    (prDetectionMock.detectForSession as jest.Mock).mockResolvedValue([
+      {
+        exerciseTemplateId: 'exercise-1',
+        prType: 'MAX_WEIGHT',
+        value: 100,
+      },
+      {
+        exerciseTemplateId: 'exercise-1',
+        prType: 'MAX_REPS',
+        value: 12,
+      },
+      {
+        exerciseTemplateId: 'exercise-2',
+        prType: 'MAX_VOLUME',
+        value: 900,
+      },
+    ]);
+    (streakMock.onSessionFinished as jest.Mock).mockRejectedValue(
+      new Error('streak failed'),
+    );
+
+    await expect(service.finishSession('user-1', 'session-1')).rejects.toThrow(
+      'streak failed',
+    );
+
+    expect(prDetectionMock.recalculateForExercise).toHaveBeenCalledTimes(2);
+    expect(prDetectionMock.recalculateForExercise).toHaveBeenNthCalledWith(
+      1,
+      'user-1',
+      'exercise-1',
+    );
+    expect(prDetectionMock.recalculateForExercise).toHaveBeenNthCalledWith(
+      2,
+      'user-1',
+      'exercise-2',
     );
   });
 
@@ -1232,6 +1329,30 @@ describe('SessionsService', () => {
         item: { id: 'se-2', orderIndex: 1, supersetGroupKey: 'A' },
       },
     ]);
+  });
+
+  it('bounds nested set reads when loading the active session', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.workoutSession.findFirst as jest.Mock).mockResolvedValue({
+      id: 'active-1',
+      sessionExercises: [],
+    });
+
+    await service.getActiveSession('user-1');
+
+    expect(prismaMock.workoutSession.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({
+          sessionExercises: expect.objectContaining({
+            include: expect.objectContaining({
+              sets: expect.objectContaining({
+                take: 200,
+              }),
+            }),
+          }),
+        }),
+      }),
+    );
   });
 
   it('soft deletes session and returns success', async () => {
@@ -2467,6 +2588,30 @@ describe('SessionsService', () => {
     expect(volumeMock.cacheSessionVolume).not.toHaveBeenCalled();
   });
 
+  it('rejects creating a set with implausibly large durationSeconds', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.sessionExercise.findFirst as jest.Mock).mockResolvedValue({
+      id: 'se1',
+      exerciseTemplateId: 'exercise-1',
+      session: {
+        id: 'session-1',
+        status: 'IN_PROGRESS',
+      },
+    });
+    (prismaMock.set.findFirst as jest.Mock).mockResolvedValue(null);
+
+    await expect(
+      service.createSet('user-1', 'se1', {
+        orderIndex: 0,
+        type: 'DURATION',
+        payload: {},
+        durationSeconds: 86_401,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(prismaMock.set.create).not.toHaveBeenCalled();
+  });
+
   it('rejects updating a set in a finished session', async () => {
     const { service, prismaMock, volumeMock, prDetectionMock } =
       createService();
@@ -2492,6 +2637,32 @@ describe('SessionsService', () => {
     expect(prismaMock.set.updateMany).not.toHaveBeenCalled();
     expect(prDetectionMock.recalculateForExercise).not.toHaveBeenCalled();
     expect(volumeMock.cacheSessionVolume).not.toHaveBeenCalled();
+  });
+
+  it('rejects updating a set with implausibly large durationSeconds', async () => {
+    const { service, prismaMock, prDetectionMock } = createService();
+    (prismaMock.set.findFirst as jest.Mock).mockResolvedValue({
+      id: 'set-1',
+      isCompleted: false,
+      completedAt: null,
+      sessionExercise: {
+        exerciseTemplateId: 'exercise-1',
+        session: {
+          id: 'session-1',
+          status: 'IN_PROGRESS',
+        },
+      },
+    });
+
+    await expect(
+      service.updateSet('user-1', 'se1', 'set-1', {
+        durationSeconds: 86_401,
+        payload: {},
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(prismaMock.set.updateMany).not.toHaveBeenCalled();
+    expect(prDetectionMock.recalculateForExercise).not.toHaveBeenCalled();
   });
 
   it('updates set with explicit completedAt when isCompleted=true', async () => {
@@ -3419,6 +3590,31 @@ describe('SessionsService', () => {
     expect(prismaMock.set.create).not.toHaveBeenCalled();
     expect(prDetectionMock.recalculateForExercise).not.toHaveBeenCalled();
     expect(volumeMock.cacheSessionVolume).not.toHaveBeenCalled();
+  });
+
+  it('rejects duplicate idempotency keys within a single batch create payload', async () => {
+    const { service, prismaMock } = createService();
+
+    await expect(
+      service.batchCreateSets('user-1', 'se1', {
+        sets: [
+          {
+            orderIndex: 0,
+            type: 'WEIGHT_REPS',
+            payload: {},
+            idempotencyKey: 'batch-key',
+          },
+          {
+            orderIndex: 1,
+            type: 'WEIGHT_REPS',
+            payload: {},
+            idempotencyKey: 'batch-key',
+          },
+        ],
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
   });
 
   it('throws forbidden when batch creating for inaccessible session exercise', async () => {
