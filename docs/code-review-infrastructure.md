@@ -4,11 +4,10 @@ Scope: `app.module.ts`, `main.ts`, auth guards/strategies, exception filter, cor
 
 Status: `13 total` | `13 fixed` | `0 open`
 
-Fixed History:
+Fixed:
 
 - `#1–#5`: 5xx masking, correlation-id propagation/sanitization, production CORS enforcement, and circular message safety.
-- `#6–#10`: JWT payload validation, secret separation, production Swagger gating, `fatal()` logger support, and import-safe bootstrap.
-- `#11–#13`: config-driven Google strategy environment checks, circular `details` safety, and health-probe throttler bypass.
+- `#6–#13`: JWT payload validation, secret separation, production Swagger gating, `fatal()` logger support, import-safe bootstrap, config-driven Google strategy checks, and health-probe throttler bypass.
 
 Outcomes:
 
@@ -18,7 +17,4 @@ Outcomes:
 
 Validation:
 
-- `pnpm --filter @irontrack/api test -- src/common/filters/http-exception.filter.spec.ts src/common/interceptors/correlation-id.interceptor.spec.ts src/common/logger/winston-logger.service.spec.ts src/config/env.schema.spec.ts src/modules/auth/guards/jwt-auth.guard.spec.ts src/modules/auth/strategies/jwt.strategy.spec.ts src/modules/auth/strategies/google.strategy.spec.ts src/modules/health/health.controller.spec.ts src/app.module.spec.ts src/main.spec.ts`
-- `pnpm --filter @irontrack/api typecheck`
-- `pnpm lint:code`
-- `pnpm format:check`
+- Targeted cross-cutting unit specs, `pnpm --filter @irontrack/api typecheck`, `pnpm lint:code`, and `pnpm format:check`.

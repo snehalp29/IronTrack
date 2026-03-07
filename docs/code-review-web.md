@@ -4,7 +4,7 @@ Scope: `apps/web/src/api`, auth/session helpers, active-workout store/hooks, app
 
 Status: `89 total` | `89 fixed` | `0 open`
 
-Fixed History:
+Fixed:
 
 - `W1–W31`: auth session persistence, bearer-token injection, 401 recovery, protected routes, real login/register/Google flows, client validation, and loading/error handling.
 - `W32–W67`: runtime API response validation, refresh/cookie hardening, active-session wiring, rest timer hardening, API-backed dashboard/history/settings/completion/exercise flows, mutation error handling, timezone/streak/history fixes, and modal focus handling.
@@ -18,8 +18,4 @@ Outcomes:
 
 Validation:
 
-- `pnpm --filter @irontrack/web test`
-- `pnpm --filter @irontrack/web typecheck`
-- `pnpm --filter @irontrack/web exec playwright test --config ./playwright.config.ts`
-- `pnpm lint:code`
-- `pnpm format:check`
+- `pnpm --filter @irontrack/web test`, `pnpm --filter @irontrack/web typecheck`, `pnpm --filter @irontrack/web exec playwright test --config ./playwright.config.ts`, `pnpm lint:code`, and `pnpm format:check`.

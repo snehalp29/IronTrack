@@ -4,15 +4,11 @@ Scope: `apps/api/src/services/*.service.ts` and module services in sessions, che
 
 Status: `0 open`
 
-Fixed History:
+Fixed:
 
-- `#1–#120`: foundational service correctness, side effects, soft-delete handling, deleted-row filtering, ordering fixes, ownership guards, optimistic concurrency, and early coverage gaps.
-- `#121–#167`: session finish hardening, volume recache, transactional batch set creation, bounded payload/query windows, soft-delete-safe idempotency, refreshed responses, nested payload validation, template ordering, safer rollback filters, and finished-session mutation guards.
-- `#168–#206`: ML client hardening, cookie-only refresh plumbing, sync queue hardening, validation envelope alignment, Prisma schema/index/check hardening, template pagination, progress/completion/checklist fixes, and session start/delete/finish safety.
-- `#208–#209, #228–#230`: avatar URL protocol allowlisting, finish rollback volume reset, ghost-exercise DB checks, a `Set.completedAt` index, and serializable PR detection retries.
-- `#210–#212, #215–#217, #219–#222, #225–#227, #231–#237, #239–#259`: explicit `StreakModule` registration, finish rollback PR compensation, CORS correlation-id exposure, delete/upsert HTTP semantics, session/set bounds, repeatable-read completion counts, Prisma shutdown hooks, and consolidated Prisma schema/index/check hardening.
-- `#213–#214, #218, #223–#224, #238`: schema-backed logger env normalization, standard stack logging, catalog query caps, transaction-aware session ownership checks, schema-level timezone validation, and transactional session-volume caching.
-- `#260–#261`: finished-session-only exercise history and paginated workout-template list metadata.
+- `#1–#120`: foundational correctness, deleted-row filtering, ordering, ownership guards, optimistic concurrency, and early coverage gaps.
+- `#121–#206`: session finish hardening, volume recache, transactional batch set creation, bounded payload/query windows, idempotency safety, ML client hardening, validation alignment, and Prisma/service safety fixes.
+- `#208–#261`: DB hardening, rollback/PR fixes, explicit module wiring, HTTP semantics, logger/catalog/timezone/volume hardening, finished-session-only history, and paginated template-list metadata.
 - `#159`, `#207`: verified non-defects / informational only.
 
 **Open Queue**
@@ -27,8 +23,5 @@ Outcomes:
 
 Validation:
 
-- Targeted API service/controller specs, Prisma schema guards, and shared sync/math utilities.
-- `pnpm --filter @irontrack/api typecheck`
-- `pnpm --filter @irontrack/shared typecheck`
-- `pnpm lint:code`
-- `pnpm format:check`
+- Targeted API service/controller specs, Prisma schema guards, shared sync/math utilities, and full API unit/e2e reruns.
+- `pnpm --filter @irontrack/api typecheck`, `pnpm --filter @irontrack/shared typecheck`, `pnpm lint:code`, and `pnpm format:check`.
