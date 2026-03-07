@@ -8,12 +8,8 @@ Fixed:
 
 - `#1–#120`: foundational correctness, deleted-row filtering, ordering, ownership guards, optimistic concurrency, and early coverage gaps.
 - `#121–#206`: session finish hardening, volume recache, transactional batch set creation, bounded payload/query windows, idempotency safety, ML client hardening, validation alignment, and Prisma/service safety fixes.
-- `#208–#261`: DB hardening, rollback/PR fixes, explicit module wiring, HTTP semantics, logger/catalog/timezone/volume hardening, finished-session-only history, and paginated template-list metadata.
+- `#208–#265`: DB hardening, rollback/PR fixes, explicit module wiring, HTTP semantics, logger/catalog/timezone/volume hardening, finished-session-only history, paginated template-list metadata, checklist future-date guards, finished-session-only weekly progress, and web client contract fixes for user timezone/delete-account handling.
 - `#159`, `#207`: verified non-defects / informational only.
-
-**Open Queue**
-
-- None in the reviewed service scope.
 
 Outcomes:
 

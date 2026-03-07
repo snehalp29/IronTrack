@@ -37,6 +37,7 @@ export class ProgressService {
           session: {
             userId,
             deletedAt: null,
+            status: 'FINISHED',
           },
         },
       },

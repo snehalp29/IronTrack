@@ -62,6 +62,7 @@ describe('ProgressService', () => {
             session: {
               userId: 'user-1',
               deletedAt: null,
+              status: 'FINISHED',
             },
           },
         }),
@@ -201,6 +202,7 @@ describe('ProgressService', () => {
             session: {
               userId: 'user-1',
               deletedAt: null,
+              status: 'FINISHED',
             },
           },
         }),
@@ -229,6 +231,7 @@ describe('ProgressService', () => {
             session: {
               userId: 'user-1',
               deletedAt: null,
+              status: 'FINISHED',
             },
           },
         }),
@@ -254,6 +257,7 @@ describe('ProgressService', () => {
             session: {
               userId: 'user-1',
               deletedAt: null,
+              status: 'FINISHED',
             },
           },
         }),
@@ -287,5 +291,27 @@ describe('ProgressService', () => {
     await service.weekly('user-1', '2024-01-08');
 
     expect(prismaMock.muscleGroup.count).toHaveBeenCalledTimes(2);
+  });
+
+  it('counts only sets from finished sessions in weekly progress', async () => {
+    (prismaMock.set.findMany as jest.Mock).mockResolvedValue([]);
+    (prismaMock.muscleGroup.count as jest.Mock).mockResolvedValue(0);
+
+    await service.weekly('user-1', '2024-01-01');
+
+    expect(prismaMock.set.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          sessionExercise: {
+            deletedAt: null,
+            session: {
+              userId: 'user-1',
+              deletedAt: null,
+              status: 'FINISHED',
+            },
+          },
+        }),
+      }),
+    );
   });
 });

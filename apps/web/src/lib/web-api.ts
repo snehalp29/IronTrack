@@ -95,7 +95,7 @@ const userSchema = z.object({
   id: z.string().min(1),
   email: z.string().min(1),
   name: z.string().nullable().optional(),
-  timezone: z.string().min(1),
+  timezone: z.preprocess((value) => value ?? 'UTC', z.string().min(1)),
   unitPreference: z.enum(['METRIC', 'IMPERIAL']),
   avatarUrl: optionalStringSchema,
 });
@@ -246,10 +246,12 @@ export type WeeklyProgressPayload = z.infer<typeof weeklyProgressSchema>;
 export type WorkoutStreakPayload = z.infer<typeof workoutStreakSchema>;
 
 export async function fetchCurrentUser() {
-  return requirePayload(
-    apiFetch('/users/me', {
-      schema: userSchema,
-    }),
+  return normalizeUserPayload(
+    await requirePayload(
+      apiFetch('/users/me', {
+        schema: userSchema,
+      }),
+    ),
   );
 }
 
@@ -258,22 +260,31 @@ export async function updateCurrentUser(input: {
   timezone: string;
   unitPreference: 'METRIC' | 'IMPERIAL';
 }) {
-  return requirePayload(
-    apiFetch('/users/me', {
-      method: 'PATCH',
-      body: input as unknown as BodyInit,
-      schema: userSchema,
-    }),
+  return normalizeUserPayload(
+    await requirePayload(
+      apiFetch('/users/me', {
+        method: 'PATCH',
+        body: input as unknown as BodyInit,
+        schema: userSchema,
+      }),
+    ),
   );
 }
 
 export async function deleteCurrentUser() {
-  return requirePayload(
-    apiFetch('/users/me', {
-      method: 'DELETE',
-      schema: successResponseSchema,
-    }),
-  );
+  await apiFetch('/users/me', {
+    method: 'DELETE',
+    schema: successResponseSchema,
+  });
+}
+
+function normalizeUserPayload<T extends { timezone?: string | null }>(
+  payload: T,
+): Omit<T, 'timezone'> & { timezone: string } {
+  return {
+    ...payload,
+    timezone: payload.timezone ?? 'UTC',
+  };
 }
 
 export async function fetchChecklistForDate(date: string) {

@@ -270,4 +270,21 @@ describe('ChecklistService', () => {
       },
     });
   });
+
+  it('rejects future checklist upserts before the transaction starts', async () => {
+    const { service, prismaMock, streakServiceMock } = createService();
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+
+    await expect(
+      service.upsert('user-1', {
+        date: tomorrow,
+        type: 'WORKOUT',
+        isCompleted: true,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    expect(streakServiceMock.onChecklistCompleted).not.toHaveBeenCalled();
+  });
 });

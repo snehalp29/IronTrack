@@ -16,17 +16,7 @@ export class ChecklistService {
 
   async getByDate(userId: string, date: string) {
     const requestedDate = new Date(`${date}T00:00:00.000Z`);
-    const today = new Date();
-    const todayUtc = new Date(
-      Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()),
-    );
-
-    if (requestedDate.getTime() > todayUtc.getTime()) {
-      throw new BadRequestException({
-        code: 'FUTURE_DATE_NOT_ALLOWED',
-        message: 'Future dates are not allowed',
-      });
-    }
+    this.assertNotFutureDate(requestedDate);
 
     return this.prisma.checklistItem.findMany({
       where: {
@@ -39,6 +29,7 @@ export class ChecklistService {
 
   async upsert(userId: string, input: UpsertChecklistDto) {
     const dateValue = new Date(`${input.date}T00:00:00.000Z`);
+    this.assertNotFutureDate(dateValue);
     let created = false;
     const item = await this.prisma.$transaction(async (tx) => {
       const itemWhere = {
@@ -155,5 +146,19 @@ export class ChecklistService {
       },
       orderBy: [{ date: 'asc' }, { type: 'asc' }],
     });
+  }
+
+  private assertNotFutureDate(requestedDate: Date) {
+    const today = new Date();
+    const todayUtc = new Date(
+      Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()),
+    );
+
+    if (requestedDate.getTime() > todayUtc.getTime()) {
+      throw new BadRequestException({
+        code: 'FUTURE_DATE_NOT_ALLOWED',
+        message: 'Future dates are not allowed',
+      });
+    }
   }
 }

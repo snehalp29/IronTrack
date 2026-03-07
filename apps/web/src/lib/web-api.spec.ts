@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  deleteCurrentUser,
+  fetchCurrentUser,
   fetchExerciseById,
   fetchExerciseHistory,
   fetchWorkoutTemplates,
@@ -177,6 +179,40 @@ describe('web-api', () => {
     ]);
     expect(apiFetchMock).toHaveBeenCalledWith(
       '/workout-templates',
+      expect.objectContaining({
+        schema: expect.any(Object),
+      }),
+    );
+  });
+
+  it('treats a successful account delete with no response body as success', async () => {
+    apiFetchMock.mockResolvedValue(undefined);
+
+    await expect(deleteCurrentUser()).resolves.toBeUndefined();
+    expect(apiFetchMock).toHaveBeenCalledWith('/users/me', {
+      method: 'DELETE',
+      schema: expect.any(Object),
+    });
+  });
+
+  it('normalizes a null user timezone to UTC', async () => {
+    apiFetchMock.mockResolvedValue({
+      id: 'user-1',
+      email: 'demo@irontrack.local',
+      name: 'Demo User',
+      timezone: null,
+      unitPreference: 'METRIC',
+      avatarUrl: null,
+    });
+
+    await expect(fetchCurrentUser()).resolves.toEqual(
+      expect.objectContaining({
+        id: 'user-1',
+        timezone: 'UTC',
+      }),
+    );
+    expect(apiFetchMock).toHaveBeenCalledWith(
+      '/users/me',
       expect.objectContaining({
         schema: expect.any(Object),
       }),
