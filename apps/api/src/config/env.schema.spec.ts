@@ -92,6 +92,16 @@ describe('validateEnv', () => {
     expect(parsed.NODE_ENV).toBe('development');
   });
 
+  it('normalizes surrounding whitespace in NODE_ENV', () => {
+    const parsed = validateEnv(
+      createBaseConfig({
+        NODE_ENV: ' test ',
+      }),
+    );
+
+    expect(parsed.NODE_ENV).toBe('test');
+  });
+
   it('defaults API_PORT to 3000', () => {
     const parsed = validateEnv(createBaseConfig());
     expect(parsed.API_PORT).toBe(3000);

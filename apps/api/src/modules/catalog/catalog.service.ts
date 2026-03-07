@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 
 import { PrismaService } from '../../prisma/prisma.service';
 
+const MAX_CATALOG_RESULTS = 500;
+
 @Injectable()
 export class CatalogService {
   constructor(private readonly prisma: PrismaService) {}
@@ -17,6 +19,7 @@ export class CatalogService {
         },
         { name: 'asc' },
       ],
+      take: MAX_CATALOG_RESULTS,
     });
   }
 
@@ -31,6 +34,7 @@ export class CatalogService {
         },
         { name: 'asc' },
       ],
+      take: MAX_CATALOG_RESULTS,
     });
   }
 }

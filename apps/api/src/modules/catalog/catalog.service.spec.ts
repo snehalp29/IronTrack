@@ -21,6 +21,7 @@ describe('CatalogService', () => {
     await expect(service.muscleGroups()).resolves.toEqual([{ id: 'm1' }]);
     expect(prismaMock.muscleGroup.findMany).toHaveBeenCalledWith({
       orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { name: 'asc' }],
+      take: 500,
     });
   });
 
@@ -32,6 +33,24 @@ describe('CatalogService', () => {
     await expect(service.equipment()).resolves.toEqual([{ id: 'e1' }]);
     expect(prismaMock.equipment.findMany).toHaveBeenCalledWith({
       orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { name: 'asc' }],
+      take: 500,
+    });
+  });
+
+  it('applies a defensive take cap to public catalog queries', async () => {
+    (prismaMock.muscleGroup.findMany as jest.Mock).mockResolvedValue([]);
+    (prismaMock.equipment.findMany as jest.Mock).mockResolvedValue([]);
+
+    await service.muscleGroups();
+    await service.equipment();
+
+    expect(prismaMock.muscleGroup.findMany).toHaveBeenCalledWith({
+      orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { name: 'asc' }],
+      take: 500,
+    });
+    expect(prismaMock.equipment.findMany).toHaveBeenCalledWith({
+      orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { name: 'asc' }],
+      take: 500,
     });
   });
 });

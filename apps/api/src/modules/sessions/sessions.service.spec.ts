@@ -1438,6 +1438,43 @@ describe('SessionsService', () => {
     ).resolves.toEqual({ id: 'se1' });
   });
 
+  it('uses a transaction client for addSessionExercise ownership and insert work', async () => {
+    const { service, prismaMock } = createService();
+    const tx = {
+      workoutSession: {
+        findFirst: jest.fn(async () => ({
+          id: 'session-1',
+          status: 'IN_PROGRESS',
+        })),
+      },
+      exerciseTemplate: {
+        findMany: jest.fn(async () => [{ id: 'exercise-1' }]),
+      },
+      sessionExercise: {
+        create: jest.fn(async () => ({ id: 'se-tx' })),
+      },
+    };
+    (prismaMock.$transaction as jest.Mock).mockImplementation(async (arg) => {
+      if (typeof arg === 'function') {
+        return arg(tx);
+      }
+      throw new Error('Unsupported transaction shape in test');
+    });
+
+    await expect(
+      service.addSessionExercise('user-1', 'session-1', {
+        exerciseTemplateId: 'exercise-1',
+        orderIndex: 1,
+      }),
+    ).resolves.toEqual({ id: 'se-tx' });
+
+    expect(tx.workoutSession.findFirst).toHaveBeenCalledTimes(1);
+    expect(tx.exerciseTemplate.findMany).toHaveBeenCalledTimes(1);
+    expect(tx.sessionExercise.create).toHaveBeenCalledTimes(1);
+    expect(prismaMock.workoutSession.findFirst).not.toHaveBeenCalled();
+    expect(prismaMock.sessionExercise.create).not.toHaveBeenCalled();
+  });
+
   it('rejects adding an exercise to a finished session', async () => {
     const { service, prismaMock } = createService();
     (prismaMock.workoutSession.findFirst as jest.Mock).mockResolvedValue({

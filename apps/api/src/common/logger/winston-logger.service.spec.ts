@@ -43,10 +43,10 @@ describe('WinstonLoggerService', () => {
     expect(logger.error).toHaveBeenCalledWith('db failed', {
       trace: 'trace-line',
       context: 'Db',
-      details: expect.objectContaining({
+      details: {
         name: 'Error',
-        stack: expect.any(String),
-      }),
+      },
+      stack: 'trace-line',
     });
   });
 
@@ -78,6 +78,31 @@ describe('WinstonLoggerService', () => {
     };
 
     expect(service.logger.level).toBe('info');
+  });
+
+  it('normalizes validated NODE_ENV values before deriving log level', () => {
+    process.env.NODE_ENV = ' production ';
+    const service = new WinstonLoggerService() as unknown as {
+      logger: { level: string };
+    };
+
+    expect(service.logger.level).toBe('info');
+  });
+
+  it('logs error stacks under a top-level stack field', () => {
+    const { service, logger } = createService();
+
+    const error = new Error('db failed');
+    service.error(error, undefined, 'Db');
+
+    expect(logger.error).toHaveBeenCalledWith('db failed', {
+      context: 'Db',
+      details: {
+        name: 'Error',
+      },
+      stack: expect.any(String),
+      trace: undefined,
+    });
   });
 
   it('routes fatal logs through the error transport with a fatal marker', () => {

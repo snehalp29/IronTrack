@@ -127,12 +127,14 @@ const corsOriginsSchema = z
     message: CORS_INVALID_ORIGIN_MESSAGE,
   });
 const DEFAULT_CORS_ORIGINS = corsOriginsSchema.parse(DEFAULT_CORS_ORIGINS_RAW);
+export const nodeEnvSchema = z.preprocess(
+  trimStringOrUndefined,
+  z.enum(['development', 'test', 'production']).default('development'),
+);
 
 export const envSchema = z
   .object({
-    NODE_ENV: z
-      .enum(['development', 'test', 'production'])
-      .default('development'),
+    NODE_ENV: nodeEnvSchema,
     API_PORT: z.coerce.number().int().positive().max(65535).default(3000),
     // Normalize once at env boundary so all consumers get a canonical prefix.
     API_PREFIX: z.preprocess(

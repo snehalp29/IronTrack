@@ -1,10 +1,13 @@
 import { Injectable, LoggerService } from '@nestjs/common';
 import { createLogger, format, transports } from 'winston';
 
+import { nodeEnvSchema } from '../../config/env.schema';
+
 @Injectable()
 export class WinstonLoggerService implements LoggerService {
+  private readonly nodeEnv = resolveNodeEnv(process.env.NODE_ENV);
   private readonly logger = createLogger({
-    level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
+    level: this.nodeEnv === 'production' ? 'info' : 'debug',
     format: format.combine(format.timestamp(), format.json()),
     transports: [new transports.Console()],
   });
@@ -12,14 +15,15 @@ export class WinstonLoggerService implements LoggerService {
   private formatMessage(message: unknown): {
     message: string;
     details?: unknown;
+    stack?: string;
   } {
     if (message instanceof Error) {
       return {
         message: message.message,
         details: {
           name: message.name,
-          stack: message.stack,
         },
+        stack: message.stack,
       };
     }
 
@@ -41,6 +45,7 @@ export class WinstonLoggerService implements LoggerService {
       trace,
       context,
       details: payload.details,
+      stack: trace ?? payload.stack,
     });
   }
 
@@ -65,6 +70,18 @@ export class WinstonLoggerService implements LoggerService {
       context,
       details: payload.details,
       fatal: true,
+      stack: payload.stack,
     });
   }
+}
+
+function resolveNodeEnv(
+  nodeEnv: unknown,
+): 'development' | 'test' | 'production' {
+  const parsed = nodeEnvSchema.safeParse(nodeEnv);
+  if (parsed.success) {
+    return parsed.data;
+  }
+
+  return 'development';
 }

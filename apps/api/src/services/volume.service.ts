@@ -3,12 +3,17 @@ import { Injectable } from '@nestjs/common';
 import { calculateSetVolume } from '../common/utils/volume';
 import { PrismaService } from '../prisma/prisma.service';
 
+type VolumeClient = Pick<PrismaService, 'set' | 'workoutSession'>;
+
 @Injectable()
 export class VolumeService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async calculateSessionVolume(sessionId: string): Promise<number> {
-    const sets = await this.prisma.set.findMany({
+  async calculateSessionVolume(
+    sessionId: string,
+    client: VolumeClient = this.prisma,
+  ): Promise<number> {
+    const sets = await client.set.findMany({
       where: {
         deletedAt: null,
         isCompleted: true,
@@ -31,16 +36,18 @@ export class VolumeService {
   }
 
   async cacheSessionVolume(sessionId: string): Promise<number> {
-    const totalVolume = await this.calculateSessionVolume(sessionId);
+    return this.prisma.$transaction(async (tx) => {
+      const totalVolume = await this.calculateSessionVolume(sessionId, tx);
 
-    await this.prisma.workoutSession.updateMany({
-      where: {
-        id: sessionId,
-        deletedAt: null,
-      },
-      data: { totalVolume },
+      await tx.workoutSession.updateMany({
+        where: {
+          id: sessionId,
+          deletedAt: null,
+        },
+        data: { totalVolume },
+      });
+
+      return totalVolume;
     });
-
-    return totalVolume;
   }
 }

@@ -6,12 +6,19 @@ describe('VolumeService', () => {
   const prismaMock = {
     set: { findMany: jest.fn() },
     workoutSession: { updateMany: jest.fn() },
+    $transaction: jest.fn(),
   } as unknown as PrismaService;
 
   const service = new VolumeService(prismaMock);
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (prismaMock.$transaction as jest.Mock).mockImplementation(async (arg) => {
+      if (typeof arg === 'function') {
+        return arg(prismaMock);
+      }
+      throw new Error('Unsupported transaction shape in test');
+    });
   });
 
   it('calculates set volume by weight x reps', () => {
@@ -104,5 +111,35 @@ describe('VolumeService', () => {
       where: { id: 'missing-session', deletedAt: null },
       data: { totalVolume: 320 },
     });
+  });
+
+  it('calculates and writes cached volume inside one transaction', async () => {
+    const tx = {
+      set: {
+        findMany: jest.fn(async () => [
+          { weight: 60, reps: 5, durationSeconds: null },
+        ]),
+      },
+      workoutSession: {
+        updateMany: jest.fn(async () => ({ count: 1 })),
+      },
+    };
+    (prismaMock.$transaction as jest.Mock).mockImplementation(async (arg) => {
+      if (typeof arg === 'function') {
+        return arg(tx);
+      }
+      throw new Error('Unsupported transaction shape in test');
+    });
+
+    await expect(service.cacheSessionVolume('session-2')).resolves.toBe(300);
+
+    expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+    expect(tx.set.findMany).toHaveBeenCalledTimes(1);
+    expect(tx.workoutSession.updateMany).toHaveBeenCalledWith({
+      where: { id: 'session-2', deletedAt: null },
+      data: { totalVolume: 300 },
+    });
+    expect(prismaMock.set.findMany).not.toHaveBeenCalled();
+    expect(prismaMock.workoutSession.updateMany).not.toHaveBeenCalled();
   });
 });

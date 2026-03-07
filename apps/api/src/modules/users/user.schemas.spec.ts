@@ -44,4 +44,10 @@ describe('user schemas', () => {
       updateMeSchema.parse({ avatarUrl: 'data:text/html;base64,PHNjcmlwdA==' }),
     ).toThrow();
   });
+
+  it('rejects invalid timezone values at the schema boundary', () => {
+    expect(() => updateMeSchema.parse({ timezone: 'Mars/Olympus' })).toThrow(
+      /Invalid timezone/,
+    );
+  });
 });

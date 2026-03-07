@@ -611,31 +611,36 @@ export class SessionsService {
     sessionId: string,
     input: AddSessionExerciseDto,
   ) {
-    await this.assertSessionOwnership(userId, sessionId, {
-      requireInProgress: true,
-    });
-    await this.assertExerciseTemplateAccessible(
-      userId,
-      input.exerciseTemplateId,
-    );
-
     try {
-      const created = await this.prisma.sessionExercise.create({
-        data: {
+      return await this.prisma.$transaction(async (tx) => {
+        await this.assertSessionOwnership(
+          userId,
           sessionId,
-          exerciseTemplateId: input.exerciseTemplateId,
-          orderIndex: input.orderIndex,
-          notes: input.notes,
-          supersetGroupKey: input.supersetGroupKey,
-        },
-      });
+          {
+            requireInProgress: true,
+          },
+          tx,
+        );
+        await this.assertExerciseTemplatesAccessible(
+          userId,
+          [input.exerciseTemplateId],
+          tx,
+        );
 
-      return created;
+        return tx.sessionExercise.create({
+          data: {
+            sessionId,
+            exerciseTemplateId: input.exerciseTemplateId,
+            orderIndex: input.orderIndex,
+            notes: input.notes,
+            supersetGroupKey: input.supersetGroupKey,
+          },
+        });
+      });
     } catch (error) {
       if (isSessionExerciseOrderUniqueConstraintError(error)) {
         this.throwSessionExerciseOrderConflict();
       }
-
       throw error;
     }
   }
@@ -1368,8 +1373,9 @@ export class SessionsService {
     userId: string,
     sessionId: string,
     options?: { requireInProgress?: boolean },
+    client: Pick<PrismaService, 'workoutSession'> = this.prisma,
   ) {
-    const session = await this.prisma.workoutSession.findFirst({
+    const session = await client.workoutSession.findFirst({
       where: {
         id: sessionId,
         userId,
