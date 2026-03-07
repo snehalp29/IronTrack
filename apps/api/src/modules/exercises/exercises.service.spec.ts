@@ -770,7 +770,7 @@ describe('ExercisesService', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it('returns paginated exercise history from active session rows only', async () => {
+  it('returns paginated exercise history from finished session rows only', async () => {
     const { service, prismaMock } = createService();
     (prismaMock.set.findMany as jest.Mock).mockReturnValueOnce(
       'history-find-many',
@@ -804,6 +804,7 @@ describe('ExercisesService', () => {
             session: {
               userId: 'user-1',
               deletedAt: null,
+              status: 'FINISHED',
             },
           },
         },
@@ -832,6 +833,7 @@ describe('ExercisesService', () => {
           session: {
             userId: 'user-1',
             deletedAt: null,
+            status: 'FINISHED',
           },
         },
       },
@@ -880,6 +882,45 @@ describe('ExercisesService', () => {
     expect(prismaMock.set.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ skip: 0, take: 100 }),
     );
+  });
+
+  it('limits exercise history to finished sessions only', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.set.findMany as jest.Mock).mockResolvedValue([]);
+    (prismaMock.set.count as jest.Mock).mockResolvedValue(0);
+
+    await service.history('user-1', 'exercise-1');
+
+    expect(prismaMock.set.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          sessionExercise: expect.objectContaining({
+            session: {
+              userId: 'user-1',
+              deletedAt: null,
+              status: 'FINISHED',
+            },
+          }),
+        }),
+      }),
+    );
+    expect(prismaMock.set.count).toHaveBeenCalledWith({
+      where: {
+        deletedAt: null,
+        sessionExercise: {
+          exerciseTemplateId: 'exercise-1',
+          deletedAt: null,
+          exercise: {
+            deletedAt: null,
+          },
+          session: {
+            userId: 'user-1',
+            deletedAt: null,
+            status: 'FINISHED',
+          },
+        },
+      },
+    });
   });
 
   it('upserts exercise note after ownership/access check', async () => {

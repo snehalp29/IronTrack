@@ -82,8 +82,12 @@ describe('WorkoutTemplatesService', () => {
     (prismaMock.workoutTemplate.findMany as jest.Mock).mockResolvedValue([
       { id: 't1' },
     ]);
+    (prismaMock.workoutTemplate.count as jest.Mock).mockResolvedValue(1);
 
-    await expect(service.list('user-1')).resolves.toEqual([{ id: 't1' }]);
+    await expect(service.list('user-1')).resolves.toEqual({
+      items: [{ id: 't1' }],
+      pagination: { page: 1, pageSize: 100, total: 1 },
+    });
     expect(prismaMock.workoutTemplate.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { userId: 'user-1', deletedAt: null },
@@ -114,6 +118,7 @@ describe('WorkoutTemplatesService', () => {
     (prismaMock.workoutTemplate.findMany as jest.Mock).mockResolvedValue([
       { id: 't1' },
     ]);
+    (prismaMock.workoutTemplate.count as jest.Mock).mockResolvedValue(26);
 
     await service.list('user-1', { page: 2, pageSize: 25 });
 
@@ -123,6 +128,35 @@ describe('WorkoutTemplatesService', () => {
         take: 25,
       }),
     );
+    expect(prismaMock.workoutTemplate.count).toHaveBeenCalledWith({
+      where: { userId: 'user-1', deletedAt: null },
+    });
+  });
+
+  it('returns template pagination metadata alongside items', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.workoutTemplate.findMany as jest.Mock).mockReturnValueOnce(
+      'template-find-many',
+    );
+    (prismaMock.workoutTemplate.count as jest.Mock).mockReturnValueOnce(
+      'template-count',
+    );
+    (prismaMock.$transaction as jest.Mock).mockResolvedValue([
+      [{ id: 't1' }],
+      7,
+    ]);
+
+    await expect(
+      service.list('user-1', { page: 2, pageSize: 5 }),
+    ).resolves.toEqual({
+      items: [{ id: 't1' }],
+      pagination: { page: 2, pageSize: 5, total: 7 },
+    });
+
+    expect(prismaMock.$transaction).toHaveBeenCalledWith([
+      'template-find-many',
+      'template-count',
+    ]);
   });
 
   it('returns template by id with computed muscle coverage', async () => {

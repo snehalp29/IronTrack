@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   fetchExerciseById,
   fetchExerciseHistory,
+  fetchWorkoutTemplates,
   listExercises,
 } from './web-api';
 
@@ -143,6 +144,39 @@ describe('web-api', () => {
     );
     expect(apiFetchMock).toHaveBeenCalledWith(
       '/exercises/exercise-bench/history?page=2&pageSize=10',
+      expect.objectContaining({
+        schema: expect.any(Object),
+      }),
+    );
+  });
+
+  it('unwraps paginated workout-template responses into the items array', async () => {
+    apiFetchMock.mockResolvedValue({
+      items: [
+        {
+          id: 'template-1',
+          name: 'Push Day',
+          description: null,
+          exercises: [],
+        },
+      ],
+      pagination: {
+        page: 1,
+        pageSize: 100,
+        total: 1,
+      },
+    });
+
+    await expect(fetchWorkoutTemplates()).resolves.toEqual([
+      {
+        id: 'template-1',
+        name: 'Push Day',
+        description: null,
+        exercises: [],
+      },
+    ]);
+    expect(apiFetchMock).toHaveBeenCalledWith(
+      '/workout-templates',
       expect.objectContaining({
         schema: expect.any(Object),
       }),

@@ -12,6 +12,7 @@ Fixed History:
 - `#208–#209, #228–#230`: avatar URL protocol allowlisting, finish rollback volume reset, ghost-exercise DB checks, a `Set.completedAt` index, and serializable PR detection retries.
 - `#210–#212, #215–#217, #219–#222, #225–#227, #231–#237, #239–#259`: explicit `StreakModule` registration, finish rollback PR compensation, CORS correlation-id exposure, delete/upsert HTTP semantics, session/set bounds, repeatable-read completion counts, Prisma shutdown hooks, and consolidated Prisma schema/index/check hardening.
 - `#213–#214, #218, #223–#224, #238`: schema-backed logger env normalization, standard stack logging, catalog query caps, transaction-aware session ownership checks, schema-level timezone validation, and transactional session-volume caching.
+- `#260–#261`: finished-session-only exercise history and paginated workout-template list metadata.
 - `#159`, `#207`: verified non-defects / informational only.
 
 **Open Queue**

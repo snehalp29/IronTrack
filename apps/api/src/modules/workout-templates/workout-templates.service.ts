@@ -23,31 +23,44 @@ export class WorkoutTemplatesService {
     query: ListWorkoutTemplatesQuery = { page: 1, pageSize: 100 },
   ) {
     const skip = (query.page - 1) * query.pageSize;
+    const where = { userId, deletedAt: null as Date | null };
 
-    return this.prisma.workoutTemplate.findMany({
-      where: { userId, deletedAt: null },
-      skip,
-      take: query.pageSize,
-      orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
-      include: {
-        exercises: {
-          where: {
-            exercise: {
-              deletedAt: null,
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.workoutTemplate.findMany({
+        where,
+        skip,
+        take: query.pageSize,
+        orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
+        include: {
+          exercises: {
+            where: {
+              exercise: {
+                deletedAt: null,
+              },
             },
-          },
-          orderBy: { orderIndex: 'asc' },
-          include: {
-            exercise: {
-              include: {
-                primaryMuscle: true,
-                secondaryMuscles: { include: { muscleGroup: true } },
+            orderBy: { orderIndex: 'asc' },
+            include: {
+              exercise: {
+                include: {
+                  primaryMuscle: true,
+                  secondaryMuscles: { include: { muscleGroup: true } },
+                },
               },
             },
           },
         },
+      }),
+      this.prisma.workoutTemplate.count({ where }),
+    ]);
+
+    return {
+      items,
+      pagination: {
+        page: query.page,
+        pageSize: query.pageSize,
+        total,
       },
-    });
+    };
   }
 
   async getById(userId: string, id: string) {

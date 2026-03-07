@@ -22,13 +22,17 @@ describe('WorkoutTemplatesController', () => {
   });
 
   it('delegates list', async () => {
-    (workoutTemplatesServiceMock.list as jest.Mock).mockResolvedValue([
-      { id: 'w1' },
-    ]);
+    (workoutTemplatesServiceMock.list as jest.Mock).mockResolvedValue({
+      items: [{ id: 'w1' }],
+      pagination: { page: 1, pageSize: 100, total: 1 },
+    });
 
     await expect(
       controller.list({ sub: 'u1' }, { page: 1, pageSize: 100 }),
-    ).resolves.toEqual([{ id: 'w1' }]);
+    ).resolves.toEqual({
+      items: [{ id: 'w1' }],
+      pagination: { page: 1, pageSize: 100, total: 1 },
+    });
     expect(workoutTemplatesServiceMock.list).toHaveBeenCalledWith('u1', {
       page: 1,
       pageSize: 100,
@@ -36,13 +40,17 @@ describe('WorkoutTemplatesController', () => {
   });
 
   it('delegates list with explicit pagination', async () => {
-    (workoutTemplatesServiceMock.list as jest.Mock).mockResolvedValue([
-      { id: 'w1' },
-    ]);
+    (workoutTemplatesServiceMock.list as jest.Mock).mockResolvedValue({
+      items: [{ id: 'w1' }],
+      pagination: { page: 2, pageSize: 25, total: 40 },
+    });
 
     await expect(
       controller.list({ sub: 'u1' }, { page: 2, pageSize: 25 }),
-    ).resolves.toEqual([{ id: 'w1' }]);
+    ).resolves.toEqual({
+      items: [{ id: 'w1' }],
+      pagination: { page: 2, pageSize: 25, total: 40 },
+    });
     expect(workoutTemplatesServiceMock.list).toHaveBeenCalledWith('u1', {
       page: 2,
       pageSize: 25,

@@ -320,6 +320,7 @@ export class ExercisesService {
             session: {
               userId,
               deletedAt: null,
+              status: 'FINISHED',
             },
           },
         },
@@ -360,6 +361,7 @@ export class ExercisesService {
             session: {
               userId,
               deletedAt: null,
+              status: 'FINISHED',
             },
           },
         },

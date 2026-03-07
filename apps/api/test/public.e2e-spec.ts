@@ -103,7 +103,8 @@ describe('Public endpoints (e2e)', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual(muscleGroups);
     expect(prismaMock.muscleGroup.findMany).toHaveBeenCalledWith({
-      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { name: 'asc' }],
+      take: 500,
     });
   });
 
@@ -113,7 +114,8 @@ describe('Public endpoints (e2e)', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual(equipment);
     expect(prismaMock.equipment.findMany).toHaveBeenCalledWith({
-      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      orderBy: [{ sortOrder: { sort: 'asc', nulls: 'last' } }, { name: 'asc' }],
+      take: 500,
     });
   });
 });

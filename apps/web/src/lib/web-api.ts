@@ -82,7 +82,14 @@ const workoutTemplateSchema = z.object({
   muscleCoverage: z.array(z.string()).optional(),
 });
 
-const workoutTemplateListSchema = z.array(workoutTemplateSchema);
+const workoutTemplateListSchema = z.object({
+  items: z.array(workoutTemplateSchema),
+  pagination: z.object({
+    page: z.number().int().positive(),
+    pageSize: z.number().int().positive(),
+    total: z.number().int().nonnegative(),
+  }),
+});
 
 const userSchema = z.object({
   id: z.string().min(1),
@@ -295,11 +302,13 @@ export async function fetchWorkoutStreak() {
 }
 
 export async function fetchWorkoutTemplates() {
-  return requirePayload(
+  const payload = await requirePayload(
     apiFetch('/workout-templates', {
       schema: workoutTemplateListSchema,
     }),
   );
+
+  return payload.items;
 }
 
 export async function fetchWorkoutTemplateById(templateId: string) {
