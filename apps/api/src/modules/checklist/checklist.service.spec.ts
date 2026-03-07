@@ -16,6 +16,7 @@ describe('ChecklistService', () => {
       checklistItem: {
         findMany: jest.fn(async () => []),
         findUnique: jest.fn(async () => null),
+        update: jest.fn(async () => ({ id: 'item-1' })),
         updateMany: jest.fn(async () => ({ count: 0 })),
         upsert: jest.fn(async () => ({ id: 'item-1' })),
       },
@@ -258,17 +259,8 @@ describe('ChecklistService', () => {
         },
       }),
     );
-    expect(prismaMock.checklistItem.updateMany).toHaveBeenCalledWith({
-      where: {
-        userId: 'user-1',
-        date: new Date('2024-01-10T00:00:00.000Z'),
-        type: 'WORKOUT',
-        completedAt: null,
-      },
-      data: {
-        completedAt: expect.any(Date),
-      },
-    });
+    expect(prismaMock.checklistItem.update).not.toHaveBeenCalled();
+    expect(prismaMock.checklistItem.updateMany).not.toHaveBeenCalled();
   });
 
   it('rejects future checklist upserts before the transaction starts', async () => {
@@ -286,5 +278,47 @@ describe('ChecklistService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prismaMock.$transaction).not.toHaveBeenCalled();
     expect(streakServiceMock.onChecklistCompleted).not.toHaveBeenCalled();
+  });
+
+  it('rejects future checklist week queries', async () => {
+    const { service, prismaMock } = createService();
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+
+    await expect(
+      service.getWeek('user-1', { startDate: tomorrow }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prismaMock.checklistItem.findMany).not.toHaveBeenCalled();
+  });
+
+  it('reuses the initial upsert result when the completed row already has completedAt', async () => {
+    const { service, prismaMock } = createService();
+    const createdItem = {
+      id: 'item-1',
+      userId: 'user-1',
+      date: new Date('2024-01-10T00:00:00.000Z'),
+      type: 'WORKOUT',
+      isCompleted: true,
+      completedAt: new Date('2024-01-10T10:00:00.000Z'),
+      user: {
+        timezone: 'UTC',
+      },
+    };
+    (prismaMock.checklistItem.findUnique as jest.Mock).mockResolvedValue(null);
+    (prismaMock.checklistItem.upsert as jest.Mock).mockResolvedValue(
+      createdItem,
+    );
+
+    await expect(
+      service.upsert('user-1', {
+        date: '2024-01-10',
+        type: 'WORKOUT',
+        isCompleted: true,
+      }),
+    ).resolves.toEqual(expect.objectContaining({ id: 'item-1' }));
+
+    expect(prismaMock.checklistItem.findUnique).toHaveBeenCalledTimes(1);
+    expect(prismaMock.checklistItem.updateMany).not.toHaveBeenCalled();
   });
 });

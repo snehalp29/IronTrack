@@ -66,7 +66,7 @@ describe('ProgressService', () => {
             },
           },
         }),
-        select: expect.not.objectContaining({
+        select: expect.objectContaining({
           durationSeconds: true,
         }),
       }),
@@ -310,6 +310,21 @@ describe('ProgressService', () => {
               status: 'FINISHED',
             },
           },
+        }),
+      }),
+    );
+  });
+
+  it('selects durationSeconds so shared volume rules can evolve without stale progress data', async () => {
+    (prismaMock.set.findMany as jest.Mock).mockResolvedValue([]);
+    (prismaMock.muscleGroup.count as jest.Mock).mockResolvedValue(0);
+
+    await service.weekly('user-1', '2024-01-01');
+
+    expect(prismaMock.set.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({
+          durationSeconds: true,
         }),
       }),
     );

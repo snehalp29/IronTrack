@@ -9,7 +9,8 @@ Fixed:
 - `#1–#120`: foundational correctness, deleted-row filtering, ordering, ownership guards, optimistic concurrency, and early coverage gaps.
 - `#121–#206`: session finish hardening, volume recache, transactional batch set creation, bounded payload/query windows, idempotency safety, ML client hardening, validation alignment, and Prisma/service safety fixes.
 - `#208–#265`: DB hardening, rollback/PR fixes, explicit module wiring, HTTP semantics, logger/catalog/timezone/volume hardening, finished-session-only history, paginated template-list metadata, checklist future-date guards, finished-session-only weekly progress, and web client contract fixes for user timezone/delete-account handling.
-- `#159`, `#207`: verified non-defects / informational only.
+- `#266–#278`, `#280–#285`: DELETE 204 semantics, exercise/checklist/progress/web invalidation fixes, ML error narrowing, version-aware workout-store migration, checklist upsert query reduction, dead client streak helper removal, and 204 delete-account client cleanup.
+- `#159`, `#207`, `#279`, `#283`: verified non-defects / informational only.
 
 Outcomes:
 

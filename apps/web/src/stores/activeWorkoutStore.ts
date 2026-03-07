@@ -184,6 +184,17 @@ function normalizePersistedWorkoutState(persistedState: unknown) {
   };
 }
 
+function migratePersistedWorkoutState(
+  persistedState: unknown,
+  version: number,
+) {
+  if (version > ACTIVE_WORKOUT_STORE_VERSION) {
+    return createInitialWorkoutSnapshot();
+  }
+
+  return normalizePersistedWorkoutState(persistedState);
+}
+
 const activeWorkoutStorage = createJSONStorage<ActiveWorkoutState>(() => {
   if (typeof window === 'undefined' || !window.localStorage) {
     return createNoopStorage();
@@ -349,8 +360,7 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()(
       clear: () => set(createInitialWorkoutSnapshot()),
     }),
     {
-      migrate: ((persistedState: unknown) =>
-        normalizePersistedWorkoutState(persistedState)) as unknown as (
+      migrate: migratePersistedWorkoutState as unknown as (
         persistedState: unknown,
         version: number,
       ) => ActiveWorkoutState,

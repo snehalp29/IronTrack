@@ -274,7 +274,6 @@ export async function updateCurrentUser(input: {
 export async function deleteCurrentUser() {
   await apiFetch('/users/me', {
     method: 'DELETE',
-    schema: successResponseSchema,
   });
 }
 

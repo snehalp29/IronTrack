@@ -1,3 +1,5 @@
+import { HTTP_CODE_METADATA } from '@nestjs/common/constants';
+
 import { SessionSetsController } from './session-sets.controller';
 import type { SessionsService } from './sessions.service';
 
@@ -58,14 +60,21 @@ describe('SessionSetsController', () => {
 
     await expect(
       controller.removeSet({ sub: 'u1' }, 'se1', 'set-1'),
-    ).resolves.toEqual({
-      success: true,
-    });
+    ).resolves.toBeUndefined();
     expect(sessionsServiceMock.deleteSet).toHaveBeenCalledWith(
       'u1',
       'se1',
       'set-1',
     );
+  });
+
+  it('marks removeSet as an HTTP 204 action', () => {
+    expect(
+      Reflect.getMetadata(
+        HTTP_CODE_METADATA,
+        SessionSetsController.prototype.removeSet,
+      ),
+    ).toBe(204);
   });
 
   it('delegates completeSet', async () => {

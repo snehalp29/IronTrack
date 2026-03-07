@@ -191,7 +191,6 @@ describe('web-api', () => {
     await expect(deleteCurrentUser()).resolves.toBeUndefined();
     expect(apiFetchMock).toHaveBeenCalledWith('/users/me', {
       method: 'DELETE',
-      schema: expect.any(Object),
     });
   });
 
@@ -217,5 +216,14 @@ describe('web-api', () => {
         schema: expect.any(Object),
       }),
     );
+  });
+
+  it('calls account delete without expecting a response payload schema', async () => {
+    apiFetchMock.mockResolvedValue(undefined);
+
+    await expect(deleteCurrentUser()).resolves.toBeUndefined();
+    expect(apiFetchMock).toHaveBeenCalledWith('/users/me', {
+      method: 'DELETE',
+    });
   });
 });

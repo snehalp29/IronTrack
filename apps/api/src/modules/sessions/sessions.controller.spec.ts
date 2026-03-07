@@ -178,14 +178,21 @@ describe('SessionsController', () => {
 
     await expect(
       controller.removeExercise({ sub: 'u1' }, 's1', 'se1'),
-    ).resolves.toEqual({
-      success: true,
-    });
+    ).resolves.toBeUndefined();
     expect(sessionsServiceMock.deleteSessionExercise).toHaveBeenCalledWith(
       'u1',
       's1',
       'se1',
     );
+  });
+
+  it('marks removeExercise as an HTTP 204 action', () => {
+    expect(
+      Reflect.getMetadata(
+        HTTP_CODE_METADATA,
+        SessionsController.prototype.removeExercise,
+      ),
+    ).toBe(204);
   });
 
   it('delegates reorderExercises', async () => {

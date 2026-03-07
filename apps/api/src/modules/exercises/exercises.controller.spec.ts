@@ -1,3 +1,5 @@
+import { HTTP_CODE_METADATA } from '@nestjs/common/constants';
+
 import { ExercisesController } from './exercises.controller';
 import type { ExercisesService } from './exercises.service';
 
@@ -72,13 +74,22 @@ describe('ExercisesController', () => {
       success: true,
     });
 
-    await expect(controller.remove({ sub: 'user-1' }, 'x1')).resolves.toEqual({
-      success: true,
-    });
+    await expect(
+      controller.remove({ sub: 'user-1' }, 'x1'),
+    ).resolves.toBeUndefined();
     expect(exercisesServiceMock.softDelete).toHaveBeenCalledWith(
       'user-1',
       'x1',
     );
+  });
+
+  it('marks remove as an HTTP 204 action', () => {
+    expect(
+      Reflect.getMetadata(
+        HTTP_CODE_METADATA,
+        ExercisesController.prototype.remove,
+      ),
+    ).toBe(204);
   });
 
   it('delegates history', async () => {

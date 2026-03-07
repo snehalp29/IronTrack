@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   Patch,
   Post,
@@ -64,8 +65,9 @@ export class ExercisesController {
   }
 
   @Delete(':id')
+  @HttpCode(204)
   async remove(@CurrentUser() user: { sub: string }, @Param('id') id: string) {
-    return this.exercisesService.softDelete(user.sub, id);
+    await this.exercisesService.softDelete(user.sub, id);
   }
 
   @Get(':id/history')

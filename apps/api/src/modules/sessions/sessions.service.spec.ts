@@ -909,6 +909,52 @@ describe('SessionsService', () => {
     );
   });
 
+  it('rolls the session back before recalculating PRs when completion fails after PR detection succeeds', async () => {
+    const {
+      service,
+      prismaMock,
+      volumeMock,
+      prDetectionMock,
+      streakMock,
+      completionMock,
+    } = createService();
+    (prismaMock.workoutSession.findFirst as jest.Mock).mockResolvedValue({
+      id: 'session-1',
+      userId: 'user-1',
+      startedAt: new Date(Date.now() - 2000),
+      status: 'IN_PROGRESS',
+      endedReason: null,
+      user: {
+        timezone: 'UTC',
+      },
+    });
+    (prismaMock.workoutSession.updateMany as jest.Mock)
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 1 });
+    (volumeMock.cacheSessionVolume as jest.Mock).mockResolvedValue(900);
+    (prDetectionMock.detectForSession as jest.Mock).mockResolvedValue([
+      {
+        exerciseTemplateId: 'exercise-1',
+        prType: 'MAX_WEIGHT',
+        value: 100,
+      },
+    ]);
+    (streakMock.onSessionFinished as jest.Mock).mockResolvedValue(undefined);
+    (completionMock.calculate as jest.Mock).mockRejectedValue(
+      new Error('completion failed'),
+    );
+
+    await expect(service.finishSession('user-1', 'session-1')).rejects.toThrow(
+      'completion failed',
+    );
+
+    const rollbackOrder = (prismaMock.workoutSession.updateMany as jest.Mock)
+      .mock.invocationCallOrder[1];
+    const recalcOrder = (prDetectionMock.recalculateForExercise as jest.Mock)
+      .mock.invocationCallOrder[0];
+    expect(rollbackOrder).toBeLessThan(recalcOrder);
+  });
+
   it('runs finish side effects only once when concurrent finish requests race', async () => {
     const {
       service,

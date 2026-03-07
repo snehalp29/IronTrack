@@ -3,7 +3,6 @@ import type { FormEvent } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  computeWorkoutStreakDays,
   getTodayDate,
   useActiveWorkoutPageData,
   useCompletionFlowData,
@@ -188,18 +187,6 @@ describe('web-data', () => {
     expect(
       getTodayDate('Mars/Olympus', new Date('2026-03-07T04:30:00.000Z')),
     ).toBe('2026-03-07');
-  });
-
-  it('treats two UTC-separated sessions on the same local day as one streak day', () => {
-    expect(
-      computeWorkoutStreakDays(
-        [
-          { startedAt: '2026-03-06T03:30:00.000Z' },
-          { startedAt: '2026-03-05T15:00:00.000Z' },
-        ],
-        'America/New_York',
-      ),
-    ).toBe(1);
   });
 
   it('swallows rejected settings saves after the mutation reports the error', async () => {
@@ -1564,5 +1551,241 @@ describe('web-data', () => {
         startedAt: '2026-03-06T12:00:00.000Z',
       },
     );
+  });
+
+  it('waits for the user profile before enabling the dashboard checklist query', () => {
+    useQueryMock.mockImplementation(({ queryKey }: { queryKey: unknown[] }) => {
+      if (queryKey[0] === 'user') {
+        return {
+          data: undefined,
+          error: undefined,
+          isLoading: true,
+          isSuccess: false,
+        };
+      }
+
+      return {
+        data: [],
+        error: undefined,
+        isLoading: false,
+        isSuccess: true,
+      };
+    });
+
+    useDashboardPageData();
+
+    const checklistQuery = useQueryMock.mock.calls.find(
+      ([options]) => options.queryKey[0] === 'checklist',
+    )?.[0];
+    expect(checklistQuery).toEqual(
+      expect.objectContaining({
+        enabled: false,
+      }),
+    );
+  });
+
+  it('invalidates exercise listings after a successful exercise-wizard submit', async () => {
+    useQueryMock.mockReturnValue({
+      data: [],
+      error: undefined,
+      isLoading: false,
+      isSuccess: true,
+    });
+    useMutationMock.mockReturnValue({
+      error: undefined,
+      isPending: false,
+      mutateAsync: vi.fn(async () => ({
+        id: 'exercise-created',
+      })),
+    });
+    useStateMock
+      .mockReturnValueOnce([
+        {
+          ...initialWizardFormValues,
+          name: 'Bench Press',
+          primaryMuscleGroupId: 'muscle-1',
+        },
+        vi.fn(),
+      ])
+      .mockReturnValueOnce([undefined, vi.fn()]);
+
+    const data = useExerciseWizardPageData();
+
+    await expect(data.onSubmit()).resolves.toBeUndefined();
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ['exercises'],
+    });
+    expect(navigateMock).toHaveBeenCalledWith('/exercise/exercise-created');
+  });
+
+  it('invalidates active-session, streak, and progress queries after a successful normal finish', async () => {
+    const finish = vi.fn();
+    useStateMock
+      .mockReturnValueOnce([undefined, vi.fn()])
+      .mockReturnValueOnce([undefined, vi.fn()])
+      .mockReturnValueOnce([false, vi.fn()])
+      .mockReturnValueOnce([false, vi.fn()])
+      .mockReturnValueOnce([false, vi.fn()])
+      .mockReturnValueOnce([false, vi.fn()])
+      .mockReturnValueOnce([[], vi.fn()])
+      .mockReturnValueOnce([[], vi.fn()])
+      .mockReturnValueOnce([false, vi.fn()])
+      .mockReturnValueOnce([undefined, vi.fn()])
+      .mockReturnValueOnce([false, vi.fn()])
+      .mockReturnValueOnce(['', vi.fn()]);
+    useQueryMock.mockReturnValue({
+      data: null,
+      error: undefined,
+      isLoading: false,
+      isSuccess: false,
+    });
+    useActiveWorkoutStoreMock.mockImplementation(
+      (
+        selector: (state: {
+          state: string;
+          sessionId?: string;
+          startedAt?: string;
+          exercises: Array<{
+            id: string;
+            name: string;
+            orderIndex: number;
+            sets: Array<{
+              id: string;
+              orderIndex: number;
+              isCompleted: boolean;
+            }>;
+          }>;
+          updateSet: () => void;
+          removeExercise: () => void;
+          reorderExercises: () => void;
+          finish: typeof finish;
+          restTimerSeconds: number;
+          start: () => void;
+          clear: () => void;
+          syncFromServer: () => void;
+        }) => unknown,
+      ) =>
+        selector({
+          exercises: [
+            {
+              id: 'se-1',
+              name: 'Bench Press',
+              orderIndex: 0,
+              sets: [{ id: 'set-1', orderIndex: 0, isCompleted: true }],
+            },
+          ],
+          finish,
+          removeExercise: vi.fn(),
+          reorderExercises: vi.fn(),
+          restTimerSeconds: 0,
+          sessionId: 'session-1',
+          start: vi.fn(),
+          startedAt: '2026-03-06T12:00:00.000Z',
+          state: 'IN_PROGRESS',
+          updateSet: vi.fn(),
+          clear: vi.fn(),
+          syncFromServer: vi.fn(),
+        }),
+    );
+    finishWorkoutSessionMock.mockResolvedValue({
+      durationSeconds: 1200,
+      newPrs: [],
+      totalVolume: 3200,
+    });
+
+    const data = useActiveWorkoutPageData();
+
+    await expect(data.onFinishWorkout()).resolves.toBeUndefined();
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ['sessions'],
+    });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ['active-session'],
+    });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ['streak', 'workout'],
+    });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ['progress'],
+    });
+    expect(navigateMock).toHaveBeenCalledWith('/workout/complete');
+  });
+
+  it('does not invalidate finish-related queries when incomplete confirmation fails', async () => {
+    const setErrorMessage = vi.fn();
+    useStateMock
+      .mockReturnValueOnce([undefined, setErrorMessage])
+      .mockReturnValueOnce([undefined, vi.fn()])
+      .mockReturnValueOnce([false, vi.fn()])
+      .mockReturnValueOnce([false, vi.fn()])
+      .mockReturnValueOnce([false, vi.fn()])
+      .mockReturnValueOnce([true, vi.fn()])
+      .mockReturnValueOnce([[], vi.fn()])
+      .mockReturnValueOnce([[], vi.fn()])
+      .mockReturnValueOnce([false, vi.fn()])
+      .mockReturnValueOnce([undefined, vi.fn()])
+      .mockReturnValueOnce([false, vi.fn()])
+      .mockReturnValueOnce(['', vi.fn()]);
+    useQueryMock.mockReturnValue({
+      data: null,
+      error: undefined,
+      isLoading: false,
+      isSuccess: false,
+    });
+    useActiveWorkoutStoreMock.mockImplementation(
+      (
+        selector: (state: {
+          state: string;
+          sessionId?: string;
+          startedAt?: string;
+          exercises: Array<{
+            id: string;
+            name: string;
+            orderIndex: number;
+            sets: Array<{
+              id: string;
+              orderIndex: number;
+              isCompleted: boolean;
+            }>;
+          }>;
+          updateSet: () => void;
+          removeExercise: () => void;
+          reorderExercises: () => void;
+          finish: () => void;
+          restTimerSeconds: number;
+          start: () => void;
+          clear: () => void;
+          syncFromServer: () => void;
+        }) => unknown,
+      ) =>
+        selector({
+          exercises: [
+            {
+              id: 'se-1',
+              name: 'Bench Press',
+              orderIndex: 0,
+              sets: [{ id: 'set-1', orderIndex: 0, isCompleted: false }],
+            },
+          ],
+          finish: vi.fn(),
+          removeExercise: vi.fn(),
+          reorderExercises: vi.fn(),
+          restTimerSeconds: 0,
+          sessionId: 'session-1',
+          start: vi.fn(),
+          startedAt: '2026-03-06T12:00:00.000Z',
+          state: 'IN_PROGRESS',
+          updateSet: vi.fn(),
+          clear: vi.fn(),
+          syncFromServer: vi.fn(),
+        }),
+    );
+    finishWorkoutSessionMock.mockRejectedValue(new Error('Finish failed'));
+
+    const data = useActiveWorkoutPageData();
+
+    await expect(data.incomplete.onConfirm()).resolves.toBeUndefined();
+    expect(setErrorMessage).toHaveBeenCalledWith('Finish failed');
+    expect(queryClient.invalidateQueries).not.toHaveBeenCalled();
   });
 });

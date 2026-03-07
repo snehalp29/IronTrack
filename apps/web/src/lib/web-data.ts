@@ -110,10 +110,11 @@ export function useDashboardPageData() {
     queryKey: ['user', 'me'],
     queryFn: fetchCurrentUser,
   });
-  const today = getTodayDate(userQuery.data?.timezone);
+  const today = userQuery.data ? getTodayDate(userQuery.data.timezone) : null;
   const checklistQuery = useQuery({
-    queryKey: ['checklist', today],
-    queryFn: () => fetchChecklistForDate(today),
+    enabled: Boolean(today),
+    queryKey: ['checklist', today ?? 'pending'],
+    queryFn: () => fetchChecklistForDate(today ?? getTodayDate('UTC')),
   });
   const templatesQuery = useQuery({
     queryKey: ['templates'],
@@ -731,6 +732,7 @@ export function useExerciseDetailPageData() {
 
 export function useExerciseWizardPageData() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const rawStep = Number(searchParams.get('step') ?? '1');
   const step = Number.isFinite(rawStep)
@@ -859,6 +861,7 @@ export function useExerciseWizardPageData() {
       try {
         const created = await createMutation.mutateAsync();
         if (created?.id) {
+          await queryClient.invalidateQueries({ queryKey: ['exercises'] });
           navigate(`/exercise/${created.id}`);
         }
       } catch {
@@ -984,6 +987,14 @@ export function useActiveWorkoutPageData() {
     });
   };
 
+  const invalidateFinishedWorkoutQueries = async () => {
+    queryClient.setQueryData(['active-session'], null);
+    await queryClient.invalidateQueries({ queryKey: ['sessions'] });
+    await queryClient.invalidateQueries({ queryKey: ['active-session'] });
+    await queryClient.invalidateQueries({ queryKey: ['streak', 'workout'] });
+    await queryClient.invalidateQueries({ queryKey: ['progress'] });
+  };
+
   return {
     state: state === 'COMPLETED' ? 'IDLE' : state,
     exercises,
@@ -1049,7 +1060,7 @@ export function useActiveWorkoutPageData() {
           durationSeconds: summary.durationSeconds ?? 0,
           prs: summary.newPrs.length,
         });
-        await queryClient.invalidateQueries({ queryKey: ['sessions'] });
+        await invalidateFinishedWorkoutQueries();
         navigate('/workout/complete');
       } catch (error) {
         setErrorMessage(asErrorMessage(error) ?? 'Failed to finish workout');
@@ -1218,8 +1229,6 @@ export function useActiveWorkoutPageData() {
       },
       onConfirm: async () => {
         setShowIncomplete(false);
-        await queryClient.invalidateQueries({ queryKey: ['sessions'] });
-        await queryClient.invalidateQueries({ queryKey: ['progress'] });
         if (sessionId) {
           try {
             const summary = await finishWorkoutSession(sessionId);
@@ -1228,6 +1237,7 @@ export function useActiveWorkoutPageData() {
               durationSeconds: summary.durationSeconds ?? 0,
               prs: summary.newPrs.length,
             });
+            await invalidateFinishedWorkoutQueries();
             navigate('/workout/complete');
           } catch (error) {
             setErrorMessage(
@@ -1262,39 +1272,6 @@ function formatDurationLabel(totalSeconds: number): string {
   return `${Math.max(1, Math.round(totalSeconds / 60))}m`;
 }
 
-export function computeWorkoutStreakDays(
-  sessions: Array<{
-    startedAt: string;
-  }>,
-  timezone = 'UTC',
-): number {
-  const uniqueDays = Array.from(
-    new Set(
-      sessions
-        .map((session) => formatDateInTimezone(session.startedAt, timezone))
-        .sort((left, right) => right.localeCompare(left)),
-    ),
-  );
-
-  if (uniqueDays.length === 0) {
-    return 0;
-  }
-
-  let streak = 1;
-  for (let index = 1; index < uniqueDays.length; index += 1) {
-    const difference = differenceInWholeDays(
-      uniqueDays[index - 1],
-      uniqueDays[index],
-    );
-    if (difference !== 1) {
-      break;
-    }
-    streak += 1;
-  }
-
-  return streak;
-}
-
 function formatDateInTimezone(value: Date | string, timezone: string): string {
   const date = value instanceof Date ? value : new Date(value);
   const formatter = createDateFormatter(timezone) ?? createDateFormatter('UTC');
@@ -1311,20 +1288,6 @@ function formatDateInTimezone(value: Date | string, timezone: string): string {
   }
 
   return `${year}-${month}-${day}`;
-}
-
-function differenceInWholeDays(
-  leftDateKey: string,
-  rightDateKey: string,
-): number {
-  const left = parseDateKey(leftDateKey);
-  const right = parseDateKey(rightDateKey);
-  return (left.getTime() - right.getTime()) / (24 * 60 * 60 * 1000);
-}
-
-function parseDateKey(dateKey: string): Date {
-  const [year, month, day] = dateKey.split('-').map((value) => Number(value));
-  return new Date(Date.UTC(year, month - 1, day));
 }
 
 function buildSetsLabel(
@@ -1392,7 +1355,6 @@ function formatExerciseTypeLabel(exerciseType: string): string {
         : segment,
     )
     .join(' + ')
-    .replace('Weight + Reps', 'Weight + Reps')
     .replace('Reps + Only', 'Reps Only')
     .replace('Bodyweight + Plus + Weight', 'Bodyweight + Weight');
 }

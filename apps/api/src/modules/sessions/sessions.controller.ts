@@ -127,12 +127,13 @@ export class SessionsController {
   }
 
   @Delete(':sessionId/exercises/:id')
+  @HttpCode(204)
   async removeExercise(
     @CurrentUser() user: { sub: string },
     @Param('sessionId') sessionId: string,
     @Param('id') id: string,
   ) {
-    return this.sessionsService.deleteSessionExercise(user.sub, sessionId, id);
+    await this.sessionsService.deleteSessionExercise(user.sub, sessionId, id);
   }
 
   @Post(':sessionId/exercises/swap')

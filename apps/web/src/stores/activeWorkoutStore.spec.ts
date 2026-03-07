@@ -248,12 +248,38 @@ describe('activeWorkoutStore', () => {
 
   it('declares a persisted store version and migration handler', () => {
     const persistOptions = useActiveWorkoutStore.persist.getOptions() as {
-      migrate?: (persistedState: unknown) => unknown;
+      migrate?: (persistedState: unknown, version: number) => unknown;
       version?: number;
     };
 
     expect(persistOptions.version).toBe(1);
     expect(persistOptions.migrate).toBeTypeOf('function');
+  });
+
+  it('resets unknown future persisted versions instead of blindly normalizing them', () => {
+    const persistOptions = useActiveWorkoutStore.persist.getOptions() as {
+      migrate?: (persistedState: unknown, version: number) => unknown;
+    };
+
+    const migrated = persistOptions.migrate?.(
+      {
+        state: 'IN_PROGRESS',
+        sessionId: 'stale-session',
+        exercises: [{ id: 'e1' }],
+        restTimerSeconds: 45,
+        restTimerActive: true,
+      },
+      99,
+    ) as ReturnType<typeof useActiveWorkoutStore.getState>;
+
+    expect(migrated).toMatchObject({
+      state: 'IDLE',
+      sessionId: undefined,
+      exercises: [],
+      restTimerSeconds: 0,
+      restTimerActive: false,
+      restTimerDefaultSeconds: 90,
+    });
   });
 
   it('uses browser localStorage when available', async () => {

@@ -150,4 +150,29 @@ describe('MlClientService', () => {
       GatewayTimeoutException,
     );
   });
+
+  it('rethrows non-Axios errors instead of wrapping them as upstream failures', async () => {
+    const { service, httpService } = createService('https://ml.example.com');
+    httpService.post.mockReturnValue(
+      throwError(() => new TypeError('Unexpected serialization error')),
+    );
+
+    await expect(service.nextLoad({ x: 1 })).rejects.toThrow(
+      'Unexpected serialization error',
+    );
+  });
+
+  it('maps ETIMEDOUT Axios-style errors to gateway timeout responses', async () => {
+    const { service, httpService } = createService('https://ml.example.com');
+    httpService.post.mockReturnValue(
+      throwError(() => ({
+        code: 'ETIMEDOUT',
+        isAxiosError: true,
+      })),
+    );
+
+    await expect(service.restTime({ x: 1 })).rejects.toBeInstanceOf(
+      GatewayTimeoutException,
+    );
+  });
 });

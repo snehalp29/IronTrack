@@ -1,4 +1,12 @@
-import { Body, Controller, Delete, Param, Patch, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+} from '@nestjs/common';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
@@ -45,12 +53,13 @@ export class SessionSetsController {
   }
 
   @Delete(':seId/sets/:id')
+  @HttpCode(204)
   async removeSet(
     @CurrentUser() user: { sub: string },
     @Param('seId') sessionExerciseId: string,
     @Param('id') id: string,
   ) {
-    return this.sessionsService.deleteSet(user.sub, sessionExerciseId, id);
+    await this.sessionsService.deleteSet(user.sub, sessionExerciseId, id);
   }
 
   @Patch(':seId/sets/:id/complete')

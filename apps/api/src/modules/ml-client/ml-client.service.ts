@@ -11,6 +11,7 @@ import { firstValueFrom } from 'rxjs';
 const ML_REQUEST_TIMEOUT_MS = 5000;
 
 type MlAxiosLikeError = {
+  isAxiosError?: unknown;
   code?: unknown;
   response?: {
     status?: unknown;
@@ -93,7 +94,7 @@ export class MlClientService {
       return data;
     } catch (error) {
       if (isMlAxiosLikeError(error)) {
-        if (error.code === 'ECONNABORTED') {
+        if (isMlTimeoutError(error)) {
           throw new GatewayTimeoutException({
             code: 'ML_UPSTREAM_TIMEOUT',
             message: 'ML service timed out',
@@ -125,5 +126,18 @@ export class MlClientService {
 }
 
 function isMlAxiosLikeError(error: unknown): error is MlAxiosLikeError {
-  return typeof error === 'object' && error !== null;
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+
+  const maybeAxiosError = error as MlAxiosLikeError;
+  return (
+    maybeAxiosError.isAxiosError === true ||
+    typeof maybeAxiosError.code === 'string' ||
+    typeof maybeAxiosError.response?.status === 'number'
+  );
+}
+
+function isMlTimeoutError(error: MlAxiosLikeError): boolean {
+  return error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT';
 }

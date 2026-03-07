@@ -44,6 +44,7 @@ export class ProgressService {
       select: {
         weight: true,
         reps: true,
+        durationSeconds: true,
         sessionExercise: {
           select: {
             exercise: {
@@ -69,7 +70,7 @@ export class ProgressService {
       const volume = calculateSetVolume({
         weight: set.weight,
         reps: set.reps,
-        durationSeconds: null,
+        durationSeconds: set.durationSeconds,
       });
       const primary = set.sessionExercise.exercise.primaryMuscle;
       const appliedSecondaryMuscleIds = new Set<string>();

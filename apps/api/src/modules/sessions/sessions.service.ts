@@ -359,20 +359,6 @@ export class SessionsService {
       );
       completion = await this.completionService.calculate(sessionId, userId);
     } catch (error) {
-      if (newPrs.length > 0) {
-        const exerciseTemplateIds = Array.from(
-          new Set(newPrs.map((record) => record.exerciseTemplateId)),
-        );
-        await Promise.all(
-          exerciseTemplateIds.map((exerciseTemplateId) =>
-            this.prDetectionService.recalculateForExercise(
-              userId,
-              exerciseTemplateId,
-            ),
-          ),
-        );
-      }
-
       await this.prisma.workoutSession.updateMany({
         where: {
           id: sessionId,
@@ -389,6 +375,20 @@ export class SessionsService {
           version: { increment: 1 },
         },
       });
+
+      if (newPrs.length > 0) {
+        const exerciseTemplateIds = Array.from(
+          new Set(newPrs.map((record) => record.exerciseTemplateId)),
+        );
+        await Promise.all(
+          exerciseTemplateIds.map((exerciseTemplateId) =>
+            this.prDetectionService.recalculateForExercise(
+              userId,
+              exerciseTemplateId,
+            ),
+          ),
+        );
+      }
       throw error;
     }
 

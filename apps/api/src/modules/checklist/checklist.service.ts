@@ -77,7 +77,7 @@ export class ChecklistService {
       }
 
       const completedAt = new Date();
-      await tx.checklistItem.upsert({
+      const upsertedItem = await tx.checklistItem.upsert({
         select: itemSelect,
         where: itemWhere,
         update: {
@@ -91,20 +91,16 @@ export class ChecklistService {
           completedAt,
         },
       });
-      await tx.checklistItem.updateMany({
-        where: {
-          userId,
-          date: dateValue,
-          type: input.type,
-          completedAt: null,
-        },
+
+      if (upsertedItem.completedAt) {
+        return upsertedItem;
+      }
+
+      return tx.checklistItem.update({
+        where: itemWhere,
         data: {
           completedAt,
         },
-      });
-
-      return tx.checklistItem.findUnique({
-        where: itemWhere,
         select: itemSelect,
       });
     });
@@ -133,6 +129,7 @@ export class ChecklistService {
 
   async getWeek(userId: string, query: ChecklistWeekQueryDto) {
     const start = new Date(`${query.startDate}T00:00:00.000Z`);
+    this.assertNotFutureDate(start);
     const end = new Date(start);
     end.setUTCDate(start.getUTCDate() + 6);
 
