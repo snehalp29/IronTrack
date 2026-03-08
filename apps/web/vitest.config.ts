@@ -7,6 +7,7 @@ export default defineConfig({
       'src/**/*.spec.ts',
       'src/**/*.spec.tsx',
       'playwright.config.spec.ts',
+      'vitest-coverage-config.spec.ts',
     ],
     coverage: {
       provider: 'v8',
@@ -36,6 +37,7 @@ export default defineConfig({
         statements: 100,
         branches: 100,
         functions: 100,
+        lines: 100,
       },
     },
   },

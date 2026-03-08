@@ -145,3 +145,42 @@ test('applies a superset for multiple exercises through the browser flow', async
     page.getByRole('dialog', { name: 'Superset Builder' }),
   ).toBeHidden();
 });
+
+test('navigates the full post-workout completion flow through summary, progress, next, and streak', async ({
+  page,
+}) => {
+  await seedAuthenticatedSession(page);
+  await mockApi(page);
+  await page.goto('/workout/active');
+
+  await page.getByRole('button', { name: 'Finish Workout' }).click();
+  await page.getByRole('button', { name: 'Finish Anyway' }).click();
+
+  await expect(page).toHaveURL(/\/workout\/complete$/);
+  await page.getByRole('link', { name: 'View Summary' }).click();
+  await expect(page).toHaveURL(/\/workout\/complete\/summary$/);
+  await expect(page.getByText('Volume: 10240')).toBeVisible();
+
+  await page.getByRole('link', { name: 'Weekly Progress' }).click();
+  await expect(page).toHaveURL(/\/workout\/complete\/progress$/);
+  await expect(page.getByText('Muscle coverage: 66%')).toBeVisible();
+
+  await page.getByRole('link', { name: 'Up Next' }).click();
+  await expect(page).toHaveURL(/\/workout\/complete\/next$/);
+  await expect(
+    page.getByText(/Recommended template: Push Day A/),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('link', { name: 'Preview Workout' }),
+  ).toHaveAttribute('href', '/workout/template-1/preview');
+
+  await page.getByRole('link', { name: 'See Streak' }).click();
+  await expect(page).toHaveURL(/\/workout\/complete\/streak$/);
+  await expect(page.getByText('3 days')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Back to Dashboard' }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(
+    page.getByRole('heading', { name: 'Today Overview' }),
+  ).toBeVisible();
+});

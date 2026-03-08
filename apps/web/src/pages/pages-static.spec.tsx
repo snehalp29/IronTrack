@@ -26,6 +26,12 @@ const useActiveWorkoutStoreMock = vi.hoisted(() => vi.fn());
 const navigateMock = vi.hoisted(() => vi.fn());
 const useBeforeUnloadMock = vi.hoisted(() => vi.fn());
 const usePromptMock = vi.hoisted(() => vi.fn());
+const routeLocationState = vi.hoisted(() => ({
+  value: {
+    pathname: '/',
+    state: null as unknown,
+  },
+}));
 const routeParamsState = vi.hoisted(() => ({
   value: { templateId: 'tpl-42' } as { templateId?: string },
 }));
@@ -46,6 +52,7 @@ vi.mock('react-router-dom', () => ({
       {children}
     </a>
   ),
+  useLocation: () => routeLocationState.value,
   useNavigate: () => navigateMock,
   unstable_usePrompt: usePromptMock,
   useBeforeUnload: useBeforeUnloadMock,
@@ -73,6 +80,10 @@ describe('static/simple pages', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     routeParamsState.value = { templateId: 'tpl-42' };
+    routeLocationState.value = {
+      pathname: '/',
+      state: null,
+    };
 
     useDashboardPageDataMock.mockReturnValue({
       isLoading: false,
@@ -317,7 +328,7 @@ describe('static/simple pages', () => {
     expect(html).toContain('href="/"');
   });
 
-  it('clears the completed workout store from streak page', () => {
+  it('navigates from the streak page with a dashboard clear flag', () => {
     const clearMock = vi.fn();
     useActiveWorkoutStoreMock.mockImplementation(
       (
@@ -347,7 +358,187 @@ describe('static/simple pages', () => {
     expect(button).toBeDefined();
 
     button?.props.onClick?.();
-    expect(clearMock).toHaveBeenCalledTimes(1);
-    expect(navigateMock).toHaveBeenCalledWith('/');
+    expect(clearMock).not.toHaveBeenCalled();
+    expect(navigateMock).toHaveBeenCalledWith('/', {
+      state: {
+        clearCompletedWorkout: true,
+      },
+    });
+  });
+
+  it('renders dashboard and completion fallbacks when no next template is available', () => {
+    useDashboardPageDataMock.mockReturnValue({
+      isLoading: false,
+      errorMessage: 'Dashboard unavailable',
+      checklistCompleteCount: 1,
+      checklistTotalCount: 1,
+      nextTemplate: undefined,
+      workoutStreakDays: 1,
+    });
+    useCompletionFlowDataMock.mockReturnValue({
+      progressCards: [],
+      recommendedTemplate: undefined,
+      streakDays: 1,
+      weeklyCoverageLabel: 'Muscle coverage: 0%',
+    });
+
+    const dashboardHtml = render(<DashboardPage />);
+    const nextHtml = render(<CompletionNextPage />);
+
+    expect(dashboardHtml).toContain('Dashboard unavailable');
+    expect(dashboardHtml).toContain('Current streak: 1 day');
+    expect(dashboardHtml).toContain('Build your next template');
+    expect(dashboardHtml).toContain('href="/workout/template/new"');
+    expect(nextHtml).toContain('Build a new workout');
+    expect(nextHtml).toContain('tailored to your current training');
+    expect(nextHtml).not.toContain('Preview Workout');
+  });
+
+  it('renders history and exercise select error states', () => {
+    useHistoryPageDataMock.mockReturnValue({
+      isLoading: false,
+      errorMessage: 'History unavailable',
+      items: [],
+    });
+    useExerciseSelectPageDataMock.mockReturnValue({
+      errorMessage: 'Exercise catalog unavailable',
+      isLoading: false,
+      items: [],
+      onCreateExercise: vi.fn(),
+      onSelectExercise: vi.fn(),
+    });
+
+    expect(render(<HistoryPage />)).toContain('History unavailable');
+    expect(render(<ExerciseSelectPage />)).toContain(
+      'Exercise catalog unavailable',
+    );
+  });
+
+  it('wires settings prompt and beforeunload guards for dirty and clean states', () => {
+    render(<SettingsPage />);
+
+    let latestPrompt = usePromptMock.mock.calls.at(-1)?.[0] as
+      | {
+          when: (args: {
+            currentLocation: { pathname: string };
+            nextLocation: { pathname: string };
+          }) => boolean;
+        }
+      | undefined;
+    let beforeUnloadHandler = useBeforeUnloadMock.mock.calls.at(-1)?.[0] as
+      | ((event: { preventDefault: () => void; returnValue?: string }) => void)
+      | undefined;
+
+    expect(
+      latestPrompt?.when({
+        currentLocation: { pathname: '/settings' },
+        nextLocation: { pathname: '/history' },
+      }),
+    ).toBe(false);
+
+    const cleanEvent = { preventDefault: vi.fn(), returnValue: undefined };
+    beforeUnloadHandler?.(cleanEvent);
+    expect(cleanEvent.preventDefault).not.toHaveBeenCalled();
+
+    useSettingsPageDataMock.mockReturnValue({
+      errorMessage: undefined,
+      isDirty: true,
+      isSaving: false,
+      name: 'Iron Lifter',
+      timezone: 'America/New_York',
+      unitPreference: 'METRIC',
+      restTimerDefaultSeconds: '120',
+      timezones: ['UTC', 'America/New_York'],
+      onDeleteAccount: vi.fn(),
+      onLogout: vi.fn(),
+      onNameChange: vi.fn(),
+      onRestTimerDefaultSecondsChange: vi.fn(),
+      onSave: vi.fn(),
+      onTimezoneChange: vi.fn(),
+      onUnitPreferenceChange: vi.fn(),
+    });
+
+    render(<SettingsPage />);
+
+    latestPrompt = usePromptMock.mock.calls.at(-1)?.[0] as
+      | {
+          when: (args: {
+            currentLocation: { pathname: string };
+            nextLocation: { pathname: string };
+          }) => boolean;
+        }
+      | undefined;
+    beforeUnloadHandler = useBeforeUnloadMock.mock.calls.at(-1)?.[0] as
+      | ((event: { preventDefault: () => void; returnValue?: string }) => void)
+      | undefined;
+
+    expect(
+      latestPrompt?.when({
+        currentLocation: { pathname: '/settings' },
+        nextLocation: { pathname: '/settings' },
+      }),
+    ).toBe(false);
+    expect(
+      latestPrompt?.when({
+        currentLocation: { pathname: '/settings' },
+        nextLocation: { pathname: '/login' },
+      }),
+    ).toBe(false);
+    expect(
+      latestPrompt?.when({
+        currentLocation: { pathname: '/settings' },
+        nextLocation: { pathname: '/history' },
+      }),
+    ).toBe(true);
+
+    const dirtyEvent = { preventDefault: vi.fn(), returnValue: undefined };
+    beforeUnloadHandler?.(dirtyEvent);
+    expect(dirtyEvent.preventDefault).toHaveBeenCalledTimes(1);
+    expect(dirtyEvent.returnValue).toBe('');
+  });
+
+  it('covers remaining static page fallback and click branches', () => {
+    useSettingsPageDataMock.mockReturnValue({
+      errorMessage: 'Unable to save settings',
+      isDirty: false,
+      isSaving: false,
+      name: 'Iron Lifter',
+      timezone: 'America/New_York',
+      unitPreference: 'METRIC',
+      restTimerDefaultSeconds: '120',
+      timezones: ['UTC', 'America/New_York'],
+      onDeleteAccount: vi.fn(),
+      onLogout: vi.fn(),
+      onNameChange: vi.fn(),
+      onRestTimerDefaultSecondsChange: vi.fn(),
+      onSave: vi.fn(),
+      onTimezoneChange: vi.fn(),
+      onUnitPreferenceChange: vi.fn(),
+    });
+    expect(render(<SettingsPage />)).toContain('Unable to save settings');
+
+    const selectExercise = vi.fn();
+    const createExercise = vi.fn();
+    useExerciseSelectPageDataMock.mockReturnValue({
+      errorMessage: undefined,
+      isLoading: false,
+      items: [{ id: 'ex-1', name: 'Bench Press' }],
+      onCreateExercise: createExercise,
+      onSelectExercise: selectExercise,
+    });
+    const selectView = ExerciseSelectPage();
+    findButtonByLabel(selectView, 'Bench Press')?.props.onClick?.();
+    findButtonByLabel(selectView, 'Create New Exercise')?.props.onClick?.();
+    expect(selectExercise).toHaveBeenCalledWith('ex-1');
+    expect(createExercise).toHaveBeenCalledTimes(1);
+
+    routeParamsState.value = {};
+    useWorkoutPreviewPageDataMock.mockReturnValue({
+      errorMessage: undefined,
+      isLoading: false,
+      onStartWorkout: vi.fn(),
+      template: undefined,
+    });
+    expect(render(<WorkoutPreviewPage />)).toContain('Template not found.');
   });
 });

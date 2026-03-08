@@ -18,6 +18,11 @@ import {
 
 const useStateMock = vi.hoisted(() => vi.fn());
 const useEffectMock = vi.hoisted(() => vi.fn());
+const useRefMock = vi.hoisted(() =>
+  vi.fn(<T>(initialValue: T) => ({
+    current: initialValue,
+  })),
+);
 const useMemoMock = vi.hoisted(() =>
   vi.fn((factory: () => unknown) => factory()),
 );
@@ -63,6 +68,7 @@ vi.mock('react', async (importOriginal) => {
     ...actual,
     useEffect: useEffectMock,
     useMemo: useMemoMock,
+    useRef: useRefMock,
     useState: useStateMock,
   };
 });
@@ -126,6 +132,9 @@ describe('web-data', () => {
     vi.clearAllMocks();
     vi.useRealTimers();
     useEffectMock.mockImplementation(() => undefined);
+    useRefMock.mockImplementation(<T>(initialValue: T) => ({
+      current: initialValue,
+    }));
     useQueryClientMock.mockReturnValue(queryClient);
   });
 
@@ -189,6 +198,42 @@ describe('web-data', () => {
     ).toBe('2026-03-07');
   });
 
+  it('always includes UTC in the settings timezone options', () => {
+    useStateMock
+      .mockReturnValueOnce(['Name', vi.fn()])
+      .mockReturnValueOnce(['America/New_York', vi.fn()])
+      .mockReturnValueOnce(['METRIC', vi.fn()])
+      .mockReturnValueOnce(['90', vi.fn()])
+      .mockReturnValueOnce([
+        {
+          name: 'Name',
+          timezone: 'America/New_York',
+          unitPreference: 'METRIC',
+          restTimerDefault: '90',
+        },
+        vi.fn(),
+      ])
+      .mockReturnValueOnce([undefined, vi.fn()]);
+    useQueryMock.mockReturnValue({
+      data: {
+        name: 'Iron Lifter',
+        timezone: 'America/New_York',
+        unitPreference: 'METRIC',
+      },
+      error: undefined,
+      isLoading: false,
+    });
+    useMutationMock.mockReturnValue({
+      error: undefined,
+      isPending: false,
+      mutateAsync: vi.fn(),
+    });
+
+    const data = useSettingsPageData();
+
+    expect(data.timezones).toContain('UTC');
+  });
+
   it('swallows rejected settings saves after the mutation reports the error', async () => {
     const preventDefault = vi.fn();
     const setErrorMessage = vi.fn();
@@ -197,6 +242,15 @@ describe('web-data', () => {
       .mockReturnValueOnce(['UTC', vi.fn()])
       .mockReturnValueOnce(['METRIC', vi.fn()])
       .mockReturnValueOnce(['90', vi.fn()])
+      .mockReturnValueOnce([
+        {
+          name: 'Name',
+          timezone: 'UTC',
+          unitPreference: 'METRIC',
+          restTimerDefault: '90',
+        },
+        vi.fn(),
+      ])
       .mockReturnValueOnce([undefined, setErrorMessage]);
     useQueryMock.mockReturnValue({
       data: undefined,
@@ -232,6 +286,15 @@ describe('web-data', () => {
       .mockReturnValueOnce(['America/New_York', vi.fn()])
       .mockReturnValueOnce(['IMPERIAL', vi.fn()])
       .mockReturnValueOnce(['120', vi.fn()])
+      .mockReturnValueOnce([
+        {
+          name: 'Iron Lifter',
+          timezone: 'UTC',
+          unitPreference: 'METRIC',
+          restTimerDefault: '90',
+        },
+        vi.fn(),
+      ])
       .mockReturnValueOnce([undefined, vi.fn()]);
     useQueryMock.mockReturnValue({
       data: {
@@ -843,6 +906,15 @@ describe('web-data', () => {
       .mockReturnValueOnce(['UTC', vi.fn()])
       .mockReturnValueOnce(['METRIC', vi.fn()])
       .mockReturnValueOnce(['90', vi.fn()])
+      .mockReturnValueOnce([
+        {
+          name: 'Name',
+          timezone: 'UTC',
+          unitPreference: 'METRIC',
+          restTimerDefault: '90',
+        },
+        vi.fn(),
+      ])
       .mockReturnValueOnce([undefined, vi.fn()]);
     useQueryMock.mockReturnValue({
       data: undefined,
@@ -873,6 +945,15 @@ describe('web-data', () => {
       .mockReturnValueOnce(['UTC', vi.fn()])
       .mockReturnValueOnce(['METRIC', vi.fn()])
       .mockReturnValueOnce(['90', vi.fn()])
+      .mockReturnValueOnce([
+        {
+          name: 'Name',
+          timezone: 'UTC',
+          unitPreference: 'METRIC',
+          restTimerDefault: '90',
+        },
+        vi.fn(),
+      ])
       .mockReturnValueOnce([undefined, setErrorMessage]);
     useQueryMock.mockReturnValue({
       data: undefined,

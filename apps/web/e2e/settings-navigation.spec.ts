@@ -52,3 +52,28 @@ test('allows account deletion from settings', async ({ page }) => {
   await expect(page).toHaveURL(/\/register$/);
   await expect(page.getByRole('heading', { name: 'Register' })).toBeVisible();
 });
+
+test('persists saved settings across reload', async ({ page }) => {
+  await seedAuthenticatedSession(page);
+  await mockApi(page);
+  await page.goto('/settings');
+
+  await page.getByLabel('Name', { exact: true }).fill('Updated Lifter');
+  await page.getByLabel('Timezone').selectOption('UTC');
+  await page.getByLabel('Units').selectOption('METRIC');
+  await page.getByLabel('Default Rest (seconds)').fill('75');
+  await expect(page.getByLabel('Timezone')).toHaveValue('UTC');
+  await expect(page.getByLabel('Units')).toHaveValue('METRIC');
+  await expect(page.getByLabel('Default Rest (seconds)')).toHaveValue('75');
+  await page.getByRole('button', { name: 'Save Settings' }).click();
+
+  await expect(page.getByText('You have unsaved changes.')).toHaveCount(0);
+  await page.reload();
+
+  await expect(page.getByLabel('Name', { exact: true })).toHaveValue(
+    'Updated Lifter',
+  );
+  await expect(page.getByLabel('Timezone')).toHaveValue('UTC');
+  await expect(page.getByLabel('Units')).toHaveValue('METRIC');
+  await expect(page.getByLabel('Default Rest (seconds)')).toHaveValue('75');
+});

@@ -238,4 +238,114 @@ describe('workout modals', () => {
     expect(onSave).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it('renders modal fallback branches and escape-key handlers', () => {
+    const overflowClose = vi.fn();
+    const overflowView = ExerciseOverflowModal({
+      open: true,
+      exerciseName: undefined,
+      onClose: overflowClose,
+      onEditNotes: vi.fn(),
+      onSwapExercise: vi.fn(),
+      onDeleteExercise: vi.fn(),
+    });
+    findElement(
+      overflowView,
+      (element) => element.props.onKeyDown !== undefined,
+    )?.props.onKeyDown?.({
+      key: 'Escape',
+      preventDefault: vi.fn(),
+    });
+    expect(render(overflowView as ReactElement)).not.toContain('meta');
+    expect(overflowClose).toHaveBeenCalledTimes(1);
+
+    const incompleteClose = vi.fn();
+    const incompleteView = IncompleteWarningModal({
+      open: true,
+      onClose: incompleteClose,
+      onConfirm: vi.fn(),
+    });
+    findElement(
+      incompleteView,
+      (element) => element.props.onKeyDown !== undefined,
+    )?.props.onKeyDown?.({
+      key: 'Escape',
+      preventDefault: vi.fn(),
+    });
+    expect(incompleteClose).toHaveBeenCalledTimes(1);
+
+    const reorderClose = vi.fn();
+    const reorderView = ReorderModal({
+      open: true,
+      exercises: [
+        { id: 'se-1', name: 'Bench Press', orderIndex: 0 },
+        { id: 'se-2', name: 'Incline Press', orderIndex: 1 },
+      ],
+      onClose: reorderClose,
+      onMoveUp: vi.fn(),
+      onMoveDown: vi.fn(),
+      onApply: vi.fn(),
+    });
+    findButtonsByTextIncludes(reorderView, 'Move ')[1]?.props.onClick?.();
+    findButtonsByTextIncludes(reorderView, 'Move ')[2]?.props.onClick?.();
+    findElement(
+      reorderView,
+      (element) => element.props.onKeyDown !== undefined,
+    )?.props.onKeyDown?.({
+      key: 'Escape',
+      preventDefault: vi.fn(),
+    });
+    expect(reorderClose).toHaveBeenCalledTimes(1);
+
+    const toggleExercise = vi.fn();
+    const supersetClose = vi.fn();
+    const supersetView = SupersetModal({
+      open: true,
+      exercises: [
+        { id: 'se-1', name: 'Bench Press' },
+        { id: 'se-2', name: 'Rows' },
+      ],
+      selectedExerciseIds: ['se-1'],
+      onClose: supersetClose,
+      onToggleExercise: toggleExercise,
+      onApply: vi.fn(),
+    });
+    findButtonsByTextIncludes(supersetView, 'Select ')[1]?.props.onClick?.();
+    findElement(
+      supersetView,
+      (element) => element.props.onKeyDown !== undefined,
+    )?.props.onKeyDown?.({
+      key: 'Escape',
+      preventDefault: vi.fn(),
+    });
+    expect(toggleExercise).toHaveBeenCalledWith('se-2');
+    expect(supersetClose).toHaveBeenCalledTimes(1);
+
+    const notesClose = vi.fn();
+    const notesView = ExerciseNotesModal({
+      open: true,
+      exerciseName: undefined,
+      errorMessage: undefined,
+      isSaving: true,
+      notes: '',
+      onChange: vi.fn(),
+      onClose: notesClose,
+      onSave: vi.fn(),
+    });
+    const notesHtml = render(notesView as ReactElement);
+    expect(notesHtml).not.toContain('Failed to save notes');
+    expect(notesHtml).not.toContain('Bench Press');
+    expect(findButtonByLabel(notesView, 'Save Notes')?.props.disabled).toBe(
+      true,
+    );
+    expect(findButtonByLabel(notesView, 'Cancel')?.props.disabled).toBe(true);
+    findElement(
+      notesView,
+      (element) => element.props.onKeyDown !== undefined,
+    )?.props.onKeyDown?.({
+      key: 'Escape',
+      preventDefault: vi.fn(),
+    });
+    expect(notesClose).toHaveBeenCalledTimes(1);
+  });
 });

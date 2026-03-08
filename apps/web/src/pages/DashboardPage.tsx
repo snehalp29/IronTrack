@@ -1,9 +1,31 @@
-import { Link } from 'react-router-dom';
+import { useEffect } from 'react';
+
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 import { useDashboardPageData } from '../lib/web-data';
+import { useActiveWorkoutStore } from '../stores/activeWorkoutStore';
+
+type DashboardLocationState = {
+  clearCompletedWorkout?: boolean;
+};
 
 export function DashboardPage() {
   const data = useDashboardPageData();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const clear = useActiveWorkoutStore((state) => state.clear);
+  const shouldClearCompletedWorkout = Boolean(
+    (location.state as DashboardLocationState | null)?.clearCompletedWorkout,
+  );
+
+  useEffect(() => {
+    if (!shouldClearCompletedWorkout) {
+      return;
+    }
+
+    clear();
+    navigate('/', { replace: true, state: null });
+  }, [clear, navigate, shouldClearCompletedWorkout]);
 
   return (
     <div className="two grid">

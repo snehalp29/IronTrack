@@ -310,4 +310,126 @@ describe('ActiveWorkoutPage', () => {
       undefined,
     );
   });
+
+  it('renders idle errors and exercise-less active sessions', () => {
+    const onIdleAction = vi.fn();
+    useActiveWorkoutPageDataMock.mockReturnValue({
+      state: 'IDLE',
+      exercises: [],
+      totals: { completed: 0, total: 0 },
+      restTimerSeconds: 0,
+      errorMessage: 'Could not restore workout',
+      idleActionLabel: 'Resume Workout',
+      onIdleAction,
+      onFinishWorkout: vi.fn(),
+      onToggleSet: vi.fn(),
+      overflow: {
+        open: false,
+        exerciseName: undefined,
+        onClose: vi.fn(),
+        onEditNotes: vi.fn(),
+        onSwapExercise: vi.fn(),
+        onDeleteExercise: vi.fn(),
+      },
+      reorder: {
+        open: false,
+        exercises: [],
+        onClose: vi.fn(),
+        onMoveUp: vi.fn(),
+        onMoveDown: vi.fn(),
+        onApply: vi.fn(),
+      },
+      superset: {
+        open: false,
+        exercises: [],
+        selectedExerciseIds: [],
+        onClose: vi.fn(),
+        onToggleExercise: vi.fn(),
+        onApply: vi.fn(),
+      },
+      incomplete: {
+        open: false,
+        onClose: vi.fn(),
+        onConfirm: vi.fn(),
+      },
+      notes: {
+        open: false,
+        exerciseName: undefined,
+        errorMessage: undefined,
+        isSaving: false,
+        notes: '',
+        onChange: vi.fn(),
+        onClose: vi.fn(),
+        onSave: vi.fn(),
+      },
+      openOverflow: vi.fn(),
+      openReorder: vi.fn(),
+      openSuperset: vi.fn(),
+    });
+
+    const idleView = ActiveWorkoutPage();
+    expect(renderToStaticMarkup(idleView)).toContain(
+      'Could not restore workout',
+    );
+    findButtonByLabel(idleView, 'Resume Workout')?.props.onClick?.();
+    expect(onIdleAction).toHaveBeenCalledTimes(1);
+
+    useActiveWorkoutPageDataMock.mockReturnValue({
+      state: 'IN_PROGRESS',
+      exercises: [],
+      totals: { completed: 0, total: 0 },
+      restTimerSeconds: 0,
+      errorMessage: undefined,
+      idleActionLabel: 'Resume Workout',
+      onIdleAction: vi.fn(),
+      onFinishWorkout: vi.fn(),
+      onToggleSet: vi.fn(),
+      overflow: {
+        open: false,
+        exerciseName: undefined,
+        onClose: vi.fn(),
+        onEditNotes: vi.fn(),
+        onSwapExercise: vi.fn(),
+        onDeleteExercise: vi.fn(),
+      },
+      reorder: {
+        open: false,
+        exercises: [],
+        onClose: vi.fn(),
+        onMoveUp: vi.fn(),
+        onMoveDown: vi.fn(),
+        onApply: vi.fn(),
+      },
+      superset: {
+        open: false,
+        exercises: [],
+        selectedExerciseIds: [],
+        onClose: vi.fn(),
+        onToggleExercise: vi.fn(),
+        onApply: vi.fn(),
+      },
+      incomplete: {
+        open: false,
+        onClose: vi.fn(),
+        onConfirm: vi.fn(),
+      },
+      notes: {
+        open: false,
+        exerciseName: undefined,
+        errorMessage: undefined,
+        isSaving: false,
+        notes: '',
+        onChange: vi.fn(),
+        onClose: vi.fn(),
+        onSave: vi.fn(),
+      },
+      openOverflow: vi.fn(),
+      openReorder: vi.fn(),
+      openSuperset: vi.fn(),
+    });
+
+    expect(renderToStaticMarkup(ActiveWorkoutPage())).toContain(
+      'Completed sets: 0 / 0',
+    );
+  });
 });

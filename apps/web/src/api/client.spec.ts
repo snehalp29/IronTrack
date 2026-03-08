@@ -732,3 +732,154 @@ describe('buildApiUrl', () => {
     );
   });
 });
+
+describe('client coverage regressions', () => {
+  afterEach(() => {
+    clearAuthSession();
+    setLoginRedirect(null);
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it('treats 205 reset-content responses as empty successes', async () => {
+    const textMock = vi.fn();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 205,
+        text: textMock,
+      }),
+    );
+
+    await expect(apiFetch('/health')).resolves.toBeUndefined();
+    expect(textMock).not.toHaveBeenCalled();
+  });
+
+  it('does not redirect again when the browser is already on the login route', async () => {
+    vi.stubGlobal('localStorage', createStorageMock());
+    vi.stubGlobal('window', {
+      location: {
+        assign: vi.fn(),
+        pathname: '/login',
+      },
+    });
+    persistAuthSession({
+      accessToken: 'expired-access-token',
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        json: vi.fn().mockResolvedValue({ error: 'invalid_token' }),
+      }),
+    );
+
+    await expect(apiFetch('/sessions/s1')).rejects.toThrow(
+      'Request failed (401)',
+    );
+    expect(getAuthSession()).toBeNull();
+    expect(window.location.assign).not.toHaveBeenCalled();
+  });
+
+  it('falls back to global location when window.location is unavailable', async () => {
+    vi.stubGlobal('localStorage', createStorageMock());
+    persistAuthSession({
+      accessToken: 'expired-access-token',
+    });
+    const assignMock = vi.fn();
+    vi.stubGlobal('window', {});
+    vi.stubGlobal('location', {
+      assign: assignMock,
+      pathname: '/history',
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        json: vi.fn().mockResolvedValue({ error: 'invalid_token' }),
+      }),
+    );
+
+    await expect(apiFetch('/sessions/s1')).rejects.toThrow(
+      'Request failed (401)',
+    );
+    expect(assignMock).toHaveBeenCalledWith('/login');
+  });
+
+  it('throws when refreshing without a persisted session and rejects malformed refresh payloads', async () => {
+    await expect(refreshAuthSession()).rejects.toThrow(
+      'No persisted session to refresh',
+    );
+
+    vi.stubGlobal('localStorage', createStorageMock());
+    persistAuthSession({
+      accessToken: 'expired-access-token',
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: vi.fn().mockResolvedValue(JSON.stringify({ accessToken: 123 })),
+      }),
+    );
+
+    await expect(refreshAuthSession()).rejects.toThrow(
+      'API response shape was invalid',
+    );
+  });
+
+  it('clears auth and redirects immediately when a 401 arrives with refresh disabled', async () => {
+    const assignMock = vi.fn();
+    vi.stubGlobal('localStorage', createStorageMock());
+    vi.stubGlobal('window', {
+      location: {
+        assign: assignMock,
+        pathname: '/history',
+      },
+    });
+    persistAuthSession({
+      accessToken: 'expired-access-token',
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        json: vi.fn().mockResolvedValue({
+          error: { message: 'expired' },
+        }),
+      }),
+    );
+
+    await expect(
+      apiFetch('/sessions', { skipAuthRefresh: true }),
+    ).rejects.toThrow('expired');
+    expect(getAuthSession()).toBeNull();
+    expect(assignMock).toHaveBeenCalledWith('/login');
+  });
+
+  it('does nothing when no browser location object is available for redirect fallback', async () => {
+    vi.stubGlobal('localStorage', createStorageMock());
+    vi.stubGlobal('window', {});
+    persistAuthSession({
+      accessToken: 'expired-access-token',
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        json: vi.fn().mockResolvedValue({ error: 'invalid_token' }),
+      }),
+    );
+
+    await expect(apiFetch('/sessions/s1')).rejects.toThrow(
+      'Request failed (401)',
+    );
+    expect(getAuthSession()).toBeNull();
+  });
+});

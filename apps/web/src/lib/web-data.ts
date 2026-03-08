@@ -3,6 +3,7 @@ import {
   type FormEvent,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 
@@ -199,31 +200,76 @@ export function useSettingsPageData() {
   const [restTimerDefault, setRestTimerDefaultValue] = useState(
     String(restTimerDefaultSeconds),
   );
+  const [savedSettings, setSavedSettings] = useState(() => ({
+    name: '',
+    timezone: 'UTC',
+    unitPreference: 'METRIC' as 'METRIC' | 'IMPERIAL',
+    restTimerDefault: String(restTimerDefaultSeconds),
+  }));
   const [errorMessage, setErrorMessage] = useState<string>();
+  const hasLocalSettingsEditsRef = useRef(false);
+  const hasHydratedProfileRef = useRef(false);
+  const hasHydratedRestTimerRef = useRef(false);
 
   useEffect(() => {
-    if (!userQuery.data) {
+    if (
+      !userQuery.data ||
+      hasLocalSettingsEditsRef.current ||
+      hasHydratedProfileRef.current
+    ) {
       return;
     }
 
     setName(userQuery.data.name ?? '');
     setTimezone(userQuery.data.timezone);
     setUnitPreference(userQuery.data.unitPreference);
+    setSavedSettings((current) => ({
+      ...current,
+      name: userQuery.data.name ?? '',
+      timezone: userQuery.data.timezone,
+      unitPreference: userQuery.data.unitPreference,
+    }));
+    hasHydratedProfileRef.current = true;
   }, [userQuery.data]);
 
   useEffect(() => {
-    setRestTimerDefaultValue(String(restTimerDefaultSeconds));
+    const nextValue = String(restTimerDefaultSeconds);
+    if (hasLocalSettingsEditsRef.current || hasHydratedRestTimerRef.current) {
+      return;
+    }
+
+    setRestTimerDefaultValue(nextValue);
+    setSavedSettings((current) => ({
+      ...current,
+      restTimerDefault: nextValue,
+    }));
+    hasHydratedRestTimerRef.current = true;
   }, [restTimerDefaultSeconds]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
       const trimmedName = name.trim();
+      const parsedRestTimerDefault = parsePositiveInteger(restTimerDefault, 90);
       const updated = await updateCurrentUser({
         name: trimmedName || undefined,
         timezone,
         unitPreference,
       });
-      setRestTimerDefault(parsePositiveInteger(restTimerDefault, 90));
+      setRestTimerDefault(parsedRestTimerDefault);
+      hasLocalSettingsEditsRef.current = false;
+      hasHydratedProfileRef.current = true;
+      hasHydratedRestTimerRef.current = true;
+      setName(updated.name ?? '');
+      setTimezone(updated.timezone);
+      setUnitPreference(updated.unitPreference);
+      setRestTimerDefaultValue(String(parsedRestTimerDefault));
+      setSavedSettings({
+        name: updated.name ?? '',
+        timezone: updated.timezone,
+        unitPreference: updated.unitPreference,
+        restTimerDefault: String(parsedRestTimerDefault),
+      });
+      queryClient.setQueryData(['user', 'me'], updated);
       await queryClient.invalidateQueries({ queryKey: ['user', 'me'] });
       return updated;
     },
@@ -236,12 +282,12 @@ export function useSettingsPageData() {
   });
 
   const trimmedName = name.trim();
-  const savedName = userQuery.data?.name?.trim() ?? '';
+  const savedName = savedSettings.name.trim();
   const isDirty =
     trimmedName !== savedName ||
-    timezone !== (userQuery.data?.timezone ?? 'UTC') ||
-    unitPreference !== (userQuery.data?.unitPreference ?? 'METRIC') ||
-    restTimerDefault !== String(restTimerDefaultSeconds);
+    timezone !== savedSettings.timezone ||
+    unitPreference !== savedSettings.unitPreference ||
+    restTimerDefault !== savedSettings.restTimerDefault;
 
   return {
     errorMessage: errorMessage ?? asErrorMessage(userQuery.error),
@@ -253,15 +299,19 @@ export function useSettingsPageData() {
     restTimerDefaultSeconds: restTimerDefault,
     timezones: getSupportedTimezones(timezone),
     onNameChange: (event: ChangeEvent<HTMLInputElement>) => {
+      hasLocalSettingsEditsRef.current = true;
       setName(event.target.value);
     },
     onTimezoneChange: (event: ChangeEvent<HTMLSelectElement>) => {
+      hasLocalSettingsEditsRef.current = true;
       setTimezone(event.target.value);
     },
     onUnitPreferenceChange: (event: ChangeEvent<HTMLSelectElement>) => {
+      hasLocalSettingsEditsRef.current = true;
       setUnitPreference(event.target.value as 'METRIC' | 'IMPERIAL');
     },
     onRestTimerDefaultSecondsChange: (event: ChangeEvent<HTMLInputElement>) => {
+      hasLocalSettingsEditsRef.current = true;
       setRestTimerDefaultValue(event.target.value);
     },
     onSave: async (event?: FormEvent) => {
@@ -1453,9 +1503,11 @@ function resolveSupportedTimezones(): string[] {
       supportedValuesOf?: (key: 'timeZone') => string[];
     }
   ).supportedValuesOf;
-  return supportedValuesOf
+  const timezones = supportedValuesOf
     ? supportedValuesOf('timeZone')
-    : ['UTC', 'America/New_York', 'America/Los_Angeles'];
+    : ['America/New_York', 'America/Los_Angeles'];
+
+  return Array.from(new Set(['UTC', ...timezones]));
 }
 
 const SUPPORTED_TIMEZONE_CACHE = new Map<string, string[]>();

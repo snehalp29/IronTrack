@@ -638,4 +638,907 @@ describe('interactive pages', () => {
       nodeText((confirmPasswordLabel?.props.children ?? null) as ReactNode),
     ).toBe('Confirm Password');
   });
+
+  it('ExerciseWizardPage wires intermediate step controls and next navigation', () => {
+    const onChangeField = vi.fn();
+    const onNext = vi.fn();
+
+    useExerciseWizardPageDataMock.mockReturnValue({
+      currentStepLabel: 'Name and description',
+      formValues: {
+        defaultCues: '',
+        defaultSets: '',
+        description: '',
+        equipmentIds: [] as string[],
+        exerciseType: 'WEIGHT_REPS',
+        name: '',
+        primaryMuscleGroupId: '',
+        repMax: '',
+        repMin: '',
+        secondaryMuscleGroupIds: [] as string[],
+      },
+      isLoading: false,
+      isSubmitting: false,
+      isSubmitStep: false,
+      onBack: vi.fn(),
+      onChangeField,
+      onNext,
+      onSubmit: vi.fn(),
+      options: {
+        equipment: [
+          { id: 'eq-1', name: 'Barbell' },
+          { id: 'eq-2', name: 'Bench' },
+        ],
+        muscleGroups: [
+          { id: 'mg-1', name: 'Chest' },
+          { id: 'mg-2', name: 'Shoulders' },
+        ],
+      },
+      step: 1,
+      totalSteps: 7,
+    });
+
+    const nameStep = ExerciseWizardPage();
+    const nameInput = findElement(
+      nameStep,
+      (element) => element.type === 'input' && element.props.value === '',
+    );
+    const descriptionInput = findElement(
+      nameStep,
+      (element) => element.type === 'textarea',
+    );
+
+    nameInput?.props.onChange?.({ target: { value: 'Bench Press' } });
+    descriptionInput?.props.onChange?.({
+      target: { value: 'Pause on the chest' },
+    });
+    findButtonByLabel(nameStep, 'Next')?.props.onClick?.();
+
+    expect(onChangeField).toHaveBeenNthCalledWith(1, 'name', 'Bench Press');
+    expect(onChangeField).toHaveBeenNthCalledWith(
+      2,
+      'description',
+      'Pause on the chest',
+    );
+    expect(onNext).toHaveBeenCalledTimes(1);
+
+    onChangeField.mockClear();
+    useExerciseWizardPageDataMock.mockReturnValue({
+      currentStepLabel: 'Exercise type',
+      formValues: {
+        defaultCues: '',
+        defaultSets: '',
+        description: '',
+        equipmentIds: [] as string[],
+        exerciseType: 'WEIGHT_REPS',
+        name: '',
+        primaryMuscleGroupId: '',
+        repMax: '',
+        repMin: '',
+        secondaryMuscleGroupIds: [] as string[],
+      },
+      isLoading: false,
+      isSubmitting: false,
+      isSubmitStep: false,
+      onBack: vi.fn(),
+      onChangeField,
+      onNext: vi.fn(),
+      onSubmit: vi.fn(),
+      options: {
+        equipment: [],
+        muscleGroups: [],
+      },
+      step: 2,
+      totalSteps: 7,
+    });
+
+    findElement(
+      ExerciseWizardPage(),
+      (element) => element.type === 'select',
+    )?.props.onChange?.({ target: { value: 'BODYWEIGHT' } });
+    expect(onChangeField).toHaveBeenCalledWith('exerciseType', 'BODYWEIGHT');
+
+    onChangeField.mockClear();
+    useExerciseWizardPageDataMock.mockReturnValue({
+      currentStepLabel: 'Secondary muscles',
+      formValues: {
+        defaultCues: '',
+        defaultSets: '',
+        description: '',
+        equipmentIds: [] as string[],
+        exerciseType: 'WEIGHT_REPS',
+        name: '',
+        primaryMuscleGroupId: 'mg-1',
+        repMax: '',
+        repMin: '',
+        secondaryMuscleGroupIds: [] as string[],
+      },
+      isLoading: false,
+      isSubmitting: false,
+      isSubmitStep: false,
+      onBack: vi.fn(),
+      onChangeField,
+      onNext: vi.fn(),
+      onSubmit: vi.fn(),
+      options: {
+        equipment: [],
+        muscleGroups: [
+          { id: 'mg-1', name: 'Chest' },
+          { id: 'mg-2', name: 'Shoulders' },
+          { id: 'mg-3', name: 'Triceps' },
+        ],
+      },
+      step: 4,
+      totalSteps: 7,
+    });
+
+    findElement(
+      ExerciseWizardPage(),
+      (element) => element.type === 'select',
+    )?.props.onChange?.({
+      target: {
+        selectedOptions: [{ value: 'mg-2' }, { value: 'mg-3' }],
+      },
+    });
+    expect(onChangeField).toHaveBeenCalledWith('secondaryMuscleGroupIds', [
+      'mg-2',
+      'mg-3',
+    ]);
+
+    onChangeField.mockClear();
+    useExerciseWizardPageDataMock.mockReturnValue({
+      currentStepLabel: 'Equipment',
+      formValues: {
+        defaultCues: '',
+        defaultSets: '',
+        description: '',
+        equipmentIds: [] as string[],
+        exerciseType: 'WEIGHT_REPS',
+        name: '',
+        primaryMuscleGroupId: 'mg-1',
+        repMax: '',
+        repMin: '',
+        secondaryMuscleGroupIds: [] as string[],
+      },
+      isLoading: false,
+      isSubmitting: false,
+      isSubmitStep: false,
+      onBack: vi.fn(),
+      onChangeField,
+      onNext: vi.fn(),
+      onSubmit: vi.fn(),
+      options: {
+        equipment: [
+          { id: 'eq-1', name: 'Barbell' },
+          { id: 'eq-2', name: 'Bench' },
+        ],
+        muscleGroups: [],
+      },
+      step: 5,
+      totalSteps: 7,
+    });
+
+    findElement(
+      ExerciseWizardPage(),
+      (element) => element.type === 'select',
+    )?.props.onChange?.({
+      target: {
+        selectedOptions: [{ value: 'eq-1' }, { value: 'eq-2' }],
+      },
+    });
+    expect(onChangeField).toHaveBeenCalledWith('equipmentIds', [
+      'eq-1',
+      'eq-2',
+    ]);
+
+    onChangeField.mockClear();
+    useExerciseWizardPageDataMock.mockReturnValue({
+      currentStepLabel: 'Defaults',
+      formValues: {
+        defaultCues: '',
+        defaultSets: '3',
+        description: '',
+        equipmentIds: [] as string[],
+        exerciseType: 'WEIGHT_REPS',
+        name: '',
+        primaryMuscleGroupId: '',
+        repMax: '12',
+        repMin: '8',
+        secondaryMuscleGroupIds: [] as string[],
+      },
+      isLoading: false,
+      isSubmitting: false,
+      isSubmitStep: false,
+      onBack: vi.fn(),
+      onChangeField,
+      onNext: vi.fn(),
+      onSubmit: vi.fn(),
+      options: {
+        equipment: [],
+        muscleGroups: [],
+      },
+      step: 6,
+      totalSteps: 7,
+    });
+
+    const defaultsStep = ExerciseWizardPage();
+    const inputs = [
+      { expected: ['defaultSets', '4'], index: 0, value: '4' },
+      { expected: ['repMin', '6'], index: 1, value: '6' },
+      { expected: ['repMax', '10'], index: 2, value: '10' },
+    ] as const;
+
+    const stepInputs = [
+      findElement(
+        defaultsStep,
+        (element) => element.type === 'input' && element.props.value === '3',
+      ),
+      findElement(
+        defaultsStep,
+        (element) => element.type === 'input' && element.props.value === '8',
+      ),
+      findElement(
+        defaultsStep,
+        (element) => element.type === 'input' && element.props.value === '12',
+      ),
+    ];
+
+    inputs.forEach(({ expected, index, value }) => {
+      stepInputs[index]?.props.onChange?.({ target: { value } });
+      expect(onChangeField).toHaveBeenCalledWith(expected[0], expected[1]);
+    });
+
+    findElement(
+      defaultsStep,
+      (element) => element.type === 'textarea' && element.props.rows === 4,
+    )?.props.onChange?.({ target: { value: 'Brace the core' } });
+    expect(onChangeField).toHaveBeenCalledWith('defaultCues', 'Brace the core');
+  });
+
+  it('TemplateBuilderPage wires step controls across the builder flow', () => {
+    const onChangeName = vi.fn();
+    const onToggleExercise = vi.fn();
+    const onChangeExerciseField = vi.fn();
+    const onMoveExercise = vi.fn();
+    const onChangeDescription = vi.fn();
+    const onNext = vi.fn();
+
+    useTemplateBuilderPageDataMock.mockReturnValue({
+      currentStepLabel: 'Template Name',
+      description: '',
+      errorMessage: undefined,
+      exercises: [],
+      isLoading: false,
+      isSubmitting: false,
+      isSubmitStep: false,
+      name: '',
+      onBack: vi.fn(),
+      onChangeDescription,
+      onChangeExerciseField,
+      onChangeName,
+      onMoveExercise,
+      onNext,
+      onSubmit: vi.fn(),
+      onToggleExercise,
+      step: 1,
+      totalSteps: TOTAL_TEMPLATE_STEPS,
+    });
+
+    const nameStep = TemplateBuilderPage();
+    findElement(
+      nameStep,
+      (element) =>
+        element.type === 'input' && element.props.id === 'template-name',
+    )?.props.onChange?.({ target: { value: 'Push Day A' } });
+    findButtonByLabel(nameStep, 'Next')?.props.onClick?.();
+
+    expect(onChangeName).toHaveBeenCalledWith('Push Day A');
+    expect(onNext).toHaveBeenCalledTimes(1);
+
+    onToggleExercise.mockClear();
+    onChangeExerciseField.mockClear();
+    useTemplateBuilderPageDataMock.mockReturnValue({
+      currentStepLabel: 'Select exercises',
+      description: '',
+      errorMessage: undefined,
+      exercises: [
+        {
+          defaultSets: '4',
+          id: 'exercise-bench',
+          name: 'Bench Press',
+          repMax: '8',
+          repMin: '6',
+          selected: true,
+          supersetGroupKey: '',
+        },
+      ],
+      isLoading: false,
+      isSubmitting: false,
+      isSubmitStep: false,
+      name: 'Push Day A',
+      onBack: vi.fn(),
+      onChangeDescription,
+      onChangeExerciseField,
+      onChangeName,
+      onMoveExercise,
+      onNext: vi.fn(),
+      onSubmit: vi.fn(),
+      onToggleExercise,
+      step: 2,
+      totalSteps: TOTAL_TEMPLATE_STEPS,
+    });
+
+    const selectionStep = TemplateBuilderPage();
+    findElement(
+      selectionStep,
+      (element) =>
+        element.type === 'input' && element.props.type === 'checkbox',
+    )?.props.onChange?.();
+    const numericInputs = [
+      findElement(
+        selectionStep,
+        (element) =>
+          element.type === 'input' &&
+          element.props.id === 'template-default-sets-exercise-bench',
+      ),
+      findElement(
+        selectionStep,
+        (element) =>
+          element.type === 'input' &&
+          element.props.id === 'template-rep-min-exercise-bench',
+      ),
+      findElement(
+        selectionStep,
+        (element) =>
+          element.type === 'input' &&
+          element.props.id === 'template-rep-max-exercise-bench',
+      ),
+    ];
+    numericInputs[0]?.props.onChange?.({ target: { value: '5' } });
+    numericInputs[1]?.props.onChange?.({ target: { value: '7' } });
+    numericInputs[2]?.props.onChange?.({ target: { value: '9' } });
+
+    expect(onToggleExercise).toHaveBeenCalledWith('exercise-bench');
+    expect(onChangeExerciseField).toHaveBeenNthCalledWith(
+      1,
+      'exercise-bench',
+      'defaultSets',
+      '5',
+    );
+    expect(onChangeExerciseField).toHaveBeenNthCalledWith(
+      2,
+      'exercise-bench',
+      'repMin',
+      '7',
+    );
+    expect(onChangeExerciseField).toHaveBeenNthCalledWith(
+      3,
+      'exercise-bench',
+      'repMax',
+      '9',
+    );
+
+    useTemplateBuilderPageDataMock.mockReturnValue({
+      currentStepLabel: 'Select exercises',
+      description: '',
+      errorMessage: undefined,
+      exercises: [
+        {
+          defaultSets: '4',
+          id: 'exercise-bench',
+          name: 'Bench Press',
+          repMax: '8',
+          repMin: '6',
+          selected: false,
+          supersetGroupKey: '',
+        },
+      ],
+      isLoading: false,
+      isSubmitting: false,
+      isSubmitStep: false,
+      name: 'Push Day A',
+      onBack: vi.fn(),
+      onChangeDescription,
+      onChangeExerciseField,
+      onChangeName,
+      onMoveExercise,
+      onNext: vi.fn(),
+      onSubmit: vi.fn(),
+      onToggleExercise,
+      step: 2,
+      totalSteps: TOTAL_TEMPLATE_STEPS,
+    });
+    expect(renderToStaticMarkup(TemplateBuilderPage())).not.toContain(
+      'Default Sets for Bench Press',
+    );
+
+    onMoveExercise.mockClear();
+    onChangeExerciseField.mockClear();
+    useTemplateBuilderPageDataMock.mockReturnValue({
+      currentStepLabel: 'Order and supersets',
+      description: '',
+      errorMessage: undefined,
+      exercises: [
+        {
+          defaultSets: '4',
+          id: 'exercise-bench',
+          name: 'Bench Press',
+          repMax: '8',
+          repMin: '6',
+          selected: true,
+          supersetGroupKey: '',
+        },
+      ],
+      isLoading: false,
+      isSubmitting: false,
+      isSubmitStep: false,
+      name: 'Push Day A',
+      onBack: vi.fn(),
+      onChangeDescription,
+      onChangeExerciseField,
+      onChangeName,
+      onMoveExercise,
+      onNext: vi.fn(),
+      onSubmit: vi.fn(),
+      onToggleExercise,
+      step: 3,
+      totalSteps: TOTAL_TEMPLATE_STEPS,
+    });
+
+    const orderStep = TemplateBuilderPage();
+    findButtonByLabel(orderStep, 'Move Bench Press Up')?.props.onClick?.();
+    findButtonByLabel(orderStep, 'Move Bench Press Down')?.props.onClick?.();
+    findElement(
+      orderStep,
+      (element) =>
+        element.type === 'input' &&
+        element.props.id === 'template-superset-exercise-bench',
+    )?.props.onChange?.({ target: { value: 'A' } });
+
+    expect(onMoveExercise).toHaveBeenNthCalledWith(1, 'exercise-bench', -1);
+    expect(onMoveExercise).toHaveBeenNthCalledWith(2, 'exercise-bench', 1);
+    expect(onChangeExerciseField).toHaveBeenCalledWith(
+      'exercise-bench',
+      'supersetGroupKey',
+      'A',
+    );
+
+    useTemplateBuilderPageDataMock.mockReturnValue({
+      currentStepLabel: 'Order and supersets',
+      description: '',
+      errorMessage: undefined,
+      exercises: [],
+      isLoading: false,
+      isSubmitting: false,
+      isSubmitStep: false,
+      name: 'Push Day A',
+      onBack: vi.fn(),
+      onChangeDescription,
+      onChangeExerciseField,
+      onChangeName,
+      onMoveExercise,
+      onNext: vi.fn(),
+      onSubmit: vi.fn(),
+      onToggleExercise,
+      step: 3,
+      totalSteps: TOTAL_TEMPLATE_STEPS,
+    });
+
+    expect(renderToStaticMarkup(TemplateBuilderPage())).toContain(
+      'Select exercises on the previous step first.',
+    );
+
+    useTemplateBuilderPageDataMock.mockReturnValue({
+      currentStepLabel: 'Final review and notes',
+      description: '',
+      errorMessage: undefined,
+      exercises: [
+        {
+          defaultSets: '4',
+          id: 'exercise-bench',
+          name: 'Bench Press',
+          repMax: '8',
+          repMin: '6',
+          selected: true,
+          supersetGroupKey: 'A',
+        },
+      ],
+      isLoading: false,
+      isSubmitting: true,
+      isSubmitStep: true,
+      name: 'Push Day A',
+      onBack: vi.fn(),
+      onChangeDescription,
+      onChangeExerciseField,
+      onChangeName,
+      onMoveExercise,
+      onNext: vi.fn(),
+      onSubmit: vi.fn(),
+      onToggleExercise,
+      step: 4,
+      totalSteps: TOTAL_TEMPLATE_STEPS,
+    });
+
+    const reviewStep = TemplateBuilderPage();
+    findElement(
+      reviewStep,
+      (element) =>
+        element.type === 'textarea' &&
+        element.props.id === 'template-description',
+    )?.props.onChange?.({ target: { value: 'Controlled tempo' } });
+    expect(onChangeDescription).toHaveBeenCalledWith('Controlled tempo');
+    expect(
+      findButtonByLabel(reviewStep, 'Create Template')?.props.disabled,
+    ).toBe(true);
+  });
+
+  it('TemplateBuilderPage renders review fallbacks and loading/error chrome', () => {
+    useTemplateBuilderPageDataMock.mockReturnValue({
+      currentStepLabel: 'Final review and notes',
+      description: '',
+      errorMessage: 'Builder unavailable',
+      exercises: [],
+      isLoading: true,
+      isSubmitting: false,
+      isSubmitStep: false,
+      name: '',
+      onBack: vi.fn(),
+      onChangeDescription: vi.fn(),
+      onChangeExerciseField: vi.fn(),
+      onChangeName: vi.fn(),
+      onMoveExercise: vi.fn(),
+      onNext: vi.fn(),
+      onSubmit: vi.fn(),
+      onToggleExercise: vi.fn(),
+      step: 4,
+      totalSteps: TOTAL_TEMPLATE_STEPS,
+    });
+
+    const html = renderToStaticMarkup(TemplateBuilderPage());
+    expect(html).toContain('Unnamed template');
+    expect(html).toContain('Builder unavailable');
+    expect(html).toContain('Loading exercises…');
+  });
+
+  it('ExerciseDetailPage supports tab switching and empty history fallback', () => {
+    const historyView = ExerciseDetailPage();
+    findButtonByLabel(historyView, 'History')?.props.onClick?.();
+    findButtonByLabel(historyView, 'Form Guide')?.props.onClick?.();
+
+    const historyParams = setSearchParamsMock.mock.calls[0]?.[0] as
+      | URLSearchParams
+      | undefined;
+    const guideParams = setSearchParamsMock.mock.calls[1]?.[0] as
+      | URLSearchParams
+      | undefined;
+    expect(historyParams?.get('tab')).toBe('history');
+    expect(guideParams?.get('tab')).toBe('guide');
+
+    searchParamsState.value = new URLSearchParams('tab=history');
+    useExerciseDetailPageDataMock.mockReturnValue({
+      errorMessage: 'History unavailable',
+      exercise: {
+        defaultSetsLabel: '4 sets',
+        description: 'Pause on the chest and drive through the bar.',
+        equipment: [],
+        exerciseTypeLabel: 'Weight + Reps',
+        name: 'Bench Press',
+        note: undefined,
+        primaryMuscle: 'Chest',
+        repRangeLabel: '6-8 reps',
+        secondaryMuscles: [],
+      },
+      historyItems: [],
+      isLoading: true,
+    });
+
+    const html = renderToStaticMarkup(ExerciseDetailPage());
+    expect(html).toContain('History unavailable');
+    expect(html).toContain('Loading exercise…');
+    expect(html).toContain('No exercise history yet.');
+  });
+
+  it('LoginPage renders submitting and validation error states, and handles Google failures', async () => {
+    formStateState.value = {
+      errors: {
+        email: { message: 'Email is required' },
+        password: { message: 'Password is required' },
+        root: { message: 'Login failed' },
+      },
+      isSubmitting: true,
+    };
+
+    const view = LoginPage();
+    expect(renderToStaticMarkup(view)).toContain('Login failed');
+    expect(renderToStaticMarkup(view)).toContain('Email is required');
+    expect(renderToStaticMarkup(view)).toContain('Password is required');
+    expect(findButtonByLabel(view, 'Signing In...')?.props.disabled).toBe(true);
+    expect(
+      findButtonByLabel(view, 'Continue with Google')?.props.disabled,
+    ).toBe(true);
+
+    formStateState.value = {
+      errors: {},
+      isSubmitting: false,
+    };
+    signInWithGoogleMock.mockRejectedValueOnce(new Error('GIS unavailable'));
+
+    await findButtonByLabel(
+      LoginPage(),
+      'Continue with Google',
+    )?.props.onClick?.();
+
+    expect(clearErrorsMock).toHaveBeenCalledWith('root');
+    expect(setErrorMock).toHaveBeenCalledWith(
+      'root',
+      expect.objectContaining({
+        type: 'server',
+      }),
+    );
+  });
+
+  it('RegisterPage renders submitting and validation error states, and handles Google failures', async () => {
+    formStateState.value = {
+      errors: {
+        email: { message: 'Email is required' },
+        password: { message: 'Password is required' },
+        confirmPassword: { message: 'Confirm your password' },
+        root: { message: 'Register failed' },
+      },
+      isSubmitting: true,
+    };
+
+    const view = RegisterPage();
+    const html = renderToStaticMarkup(view);
+    expect(html).toContain('Register failed');
+    expect(html).toContain('Email is required');
+    expect(html).toContain('Password is required');
+    expect(html).toContain('Confirm your password');
+    expect(findButtonByLabel(view, 'Creating Account...')?.props.disabled).toBe(
+      true,
+    );
+    expect(
+      findButtonByLabel(view, 'Continue with Google')?.props.disabled,
+    ).toBe(true);
+
+    formStateState.value = {
+      errors: {},
+      isSubmitting: false,
+    };
+    signInWithGoogleMock.mockRejectedValueOnce(new Error('GIS unavailable'));
+
+    await findButtonByLabel(
+      RegisterPage(),
+      'Continue with Google',
+    )?.props.onClick?.();
+
+    expect(clearErrorsMock).toHaveBeenCalledWith('root');
+    expect(setErrorMock).toHaveBeenCalledWith(
+      'root',
+      expect.objectContaining({
+        type: 'server',
+      }),
+    );
+  });
+
+  it('covers the remaining page event and error branches', async () => {
+    const onChangeField = vi.fn();
+    useExerciseWizardPageDataMock.mockReturnValue({
+      currentStepLabel: 'Primary muscle',
+      formValues: {
+        defaultCues: '',
+        defaultSets: '',
+        description: '',
+        equipmentIds: [] as string[],
+        exerciseType: 'WEIGHT_REPS',
+        name: 'Bench Press',
+        primaryMuscleGroupId: '',
+        repMax: '',
+        repMin: '',
+        secondaryMuscleGroupIds: [] as string[],
+      },
+      isLoading: false,
+      isSubmitting: false,
+      isSubmitStep: false,
+      onBack: vi.fn(),
+      onChangeField,
+      onNext: vi.fn(),
+      onSubmit: vi.fn(),
+      options: {
+        equipment: [],
+        muscleGroups: [{ id: 'mg-1', name: 'Chest' }],
+      },
+      step: 3,
+      totalSteps: 7,
+    });
+
+    findElement(
+      ExerciseWizardPage(),
+      (element) => element.type === 'select',
+    )?.props.onChange?.({ target: { value: 'mg-1' } });
+    expect(onChangeField).toHaveBeenCalledWith('primaryMuscleGroupId', 'mg-1');
+
+    searchParamsState.value = new URLSearchParams('tab=guide');
+    useEffectMock.mockImplementation((effect: () => void) => effect());
+    useExerciseDetailPageDataMock.mockReturnValue({
+      errorMessage: undefined,
+      exercise: {
+        defaultSetsLabel: '4 sets',
+        description: 'Pause on the chest and drive through the bar.',
+        equipment: [],
+        exerciseTypeLabel: 'Weight + Reps',
+        name: 'Bench Press',
+        note: undefined,
+        primaryMuscle: 'Chest',
+        repRangeLabel: '6-8 reps',
+        secondaryMuscles: [],
+      },
+      historyItems: [],
+      isLoading: false,
+    });
+    const detailHtml = renderToStaticMarkup(ExerciseDetailPage());
+    expect(detailHtml).toContain('Equipment: None');
+    expect(detailHtml).toContain('Secondary muscles: None');
+    expect(setSearchParamsMock).not.toHaveBeenCalled();
+
+    submittedValuesState.value = {
+      email: 'demo@irontrack.local',
+      password: 'wrong-password',
+    };
+    loginWithPasswordMock.mockRejectedValueOnce(new Error('invalid'));
+    await findForm(LoginPage())?.props.onSubmit?.({ preventDefault: vi.fn() });
+    expect(setErrorMock).toHaveBeenCalledWith(
+      'root',
+      expect.objectContaining({
+        type: 'server',
+      }),
+    );
+
+    signInWithGoogleMock.mockResolvedValueOnce(undefined);
+    await findButtonByLabel(
+      LoginPage(),
+      'Continue with Google',
+    )?.props.onClick?.();
+    expect(navigateMock).toHaveBeenCalledWith('/');
+
+    submittedValuesState.value = {
+      email: 'demo@irontrack.local',
+      name: 'Demo User',
+      password: 'DemoPass123!',
+      confirmPassword: 'DemoPass123!',
+    };
+    registerWithPasswordMock.mockRejectedValueOnce(new Error('duplicate'));
+    await findForm(RegisterPage())?.props.onSubmit?.({
+      preventDefault: vi.fn(),
+    });
+    expect(setErrorMock).toHaveBeenCalledWith(
+      'root',
+      expect.objectContaining({
+        type: 'server',
+      }),
+    );
+
+    useExerciseWizardPageDataMock.mockReturnValue({
+      currentStepLabel: 'Review',
+      errorMessage: 'Review unavailable',
+      formValues: {
+        defaultCues: '',
+        defaultSets: '',
+        description: '',
+        equipmentIds: ['eq-missing'],
+        exerciseType: 'WEIGHT_REPS',
+        name: '',
+        primaryMuscleGroupId: '',
+        repMax: '',
+        repMin: '',
+        secondaryMuscleGroupIds: ['mg-missing'],
+      },
+      isLoading: false,
+      isSubmitting: false,
+      isSubmitStep: true,
+      onBack: vi.fn(),
+      onChangeField: vi.fn(),
+      onNext: vi.fn(),
+      onSubmit: vi.fn(),
+      options: {
+        equipment: [],
+        muscleGroups: [],
+      },
+      step: 7,
+      totalSteps: 7,
+    });
+    const reviewHtml = renderToStaticMarkup(ExerciseWizardPage());
+    expect(reviewHtml).toContain('Unnamed exercise');
+    expect(reviewHtml).toContain('No description');
+    expect(reviewHtml).toContain('No primary muscle selected');
+    expect(reviewHtml).toContain('mg-missing');
+    expect(reviewHtml).toContain('eq-missing');
+    expect(reviewHtml).toContain('No cues');
+    expect(reviewHtml).toContain('Review unavailable');
+
+    searchParamsState.value = new URLSearchParams('tab=guide');
+    useEffectMock.mockImplementation(() => undefined);
+    useExerciseDetailPageDataMock.mockReturnValue({
+      errorMessage: 'Exercise unavailable',
+      exercise: undefined,
+      historyItems: [],
+      isLoading: false,
+    });
+    const missingExerciseHtml = renderToStaticMarkup(ExerciseDetailPage());
+    expect(missingExerciseHtml).toContain('Exercise Detail');
+    expect(missingExerciseHtml).toContain('Exercise unavailable');
+  });
+
+  it('ExerciseWizardPage review shows empty secondary and equipment fallbacks', () => {
+    useExerciseWizardPageDataMock.mockReturnValue({
+      currentStepLabel: 'Review',
+      errorMessage: undefined,
+      formValues: {
+        defaultCues: '',
+        defaultSets: '',
+        description: 'Primary chest press',
+        equipmentIds: [],
+        exerciseType: 'WEIGHT_REPS',
+        name: 'Bench Press',
+        primaryMuscleGroupId: 'mg-1',
+        repMax: '',
+        repMin: '',
+        secondaryMuscleGroupIds: [],
+      },
+      isLoading: false,
+      isSubmitting: false,
+      isSubmitStep: true,
+      onBack: vi.fn(),
+      onChangeField: vi.fn(),
+      onNext: vi.fn(),
+      onSubmit: vi.fn(),
+      options: {
+        equipment: [{ id: 'eq-1', name: 'Barbell' }],
+        muscleGroups: [{ id: 'mg-1', name: 'Chest' }],
+      },
+      step: 7,
+      totalSteps: 7,
+    });
+
+    const html = renderToStaticMarkup(ExerciseWizardPage());
+    expect(html).toContain('No secondary muscles selected');
+    expect(html).toContain('No equipment selected');
+  });
+
+  it('ExerciseWizardPage review resolves known secondary muscle labels', () => {
+    useExerciseWizardPageDataMock.mockReturnValue({
+      currentStepLabel: 'Review',
+      errorMessage: undefined,
+      formValues: {
+        defaultCues: '',
+        defaultSets: '',
+        description: 'Primary chest press',
+        equipmentIds: [],
+        exerciseType: 'WEIGHT_REPS',
+        name: 'Bench Press',
+        primaryMuscleGroupId: 'mg-1',
+        repMax: '',
+        repMin: '',
+        secondaryMuscleGroupIds: ['mg-2'],
+      },
+      isLoading: false,
+      isSubmitting: false,
+      isSubmitStep: true,
+      onBack: vi.fn(),
+      onChangeField: vi.fn(),
+      onNext: vi.fn(),
+      onSubmit: vi.fn(),
+      options: {
+        equipment: [],
+        muscleGroups: [
+          { id: 'mg-1', name: 'Chest' },
+          { id: 'mg-2', name: 'Shoulders' },
+        ],
+      },
+      step: 7,
+      totalSteps: 7,
+    });
+
+    expect(renderToStaticMarkup(ExerciseWizardPage())).toContain('Shoulders');
+  });
 });

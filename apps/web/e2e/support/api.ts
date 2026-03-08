@@ -284,6 +284,22 @@ async function handleApiRoute(
     return;
   }
 
+  if (
+    url.pathname.startsWith('/api/v1/workout-templates/') &&
+    method === 'GET'
+  ) {
+    await route.fulfill({
+      status: 404,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        error: {
+          message: 'Template not found.',
+        },
+      }),
+    });
+    return;
+  }
+
   if (path === '/api/v1/workout-templates' && method === 'POST') {
     const payload = request.postDataJSON() as {
       description?: string;

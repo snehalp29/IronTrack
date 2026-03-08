@@ -94,6 +94,29 @@ pnpm test:e2e:web
 pnpm test:shared
 ```
 
+Docker-backed e2e:
+
+```bash
+pnpm test:e2e:docker
+```
+
+Run the Docker-backed API and web e2e suites separately:
+
+```bash
+pnpm docker:up
+pnpm docker:wait
+pnpm test:e2e:api:docker
+pnpm test:e2e:web:docker
+```
+
+Optional overrides:
+
+```bash
+E2E_API_BASE_URL=http://127.0.0.1:3000 \
+E2E_WEB_BASE_URL=http://127.0.0.1:3001 \
+pnpm test:e2e:docker
+```
+
 ## Branch Protection (Recommended)
 
 Configure GitHub branch protection for `main` with:

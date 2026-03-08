@@ -1,9 +1,13 @@
+import { useRef } from 'react';
+
 import { unstable_usePrompt, useBeforeUnload } from 'react-router-dom';
 
 import { useSettingsPageData } from '../lib/web-data';
 
 export function SettingsPage() {
   const data = useSettingsPageData();
+  const isDirtyRef = useRef(data.isDirty);
+  isDirtyRef.current = data.isDirty;
 
   unstable_usePrompt({
     message: 'You have unsaved changes. Leave this page?',
@@ -13,7 +17,7 @@ export function SettingsPage() {
       !['/login', '/register'].includes(nextLocation.pathname),
   });
   useBeforeUnload((event) => {
-    if (!data.isDirty) {
+    if (!isDirtyRef.current) {
       return;
     }
 

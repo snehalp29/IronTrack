@@ -282,6 +282,164 @@ describe('activeWorkoutStore', () => {
     });
   });
 
+  it('normalizes current persisted versions and resets timers when syncing a different session', () => {
+    const persistOptions = useActiveWorkoutStore.persist.getOptions() as {
+      migrate?: (persistedState: unknown, version: number) => unknown;
+    };
+
+    const migrated = persistOptions.migrate?.(
+      {
+        state: 'IN_PROGRESS',
+        sessionId: 'session-1',
+        startedAt: '2026-03-06T12:00:00.000Z',
+        exercises: [{ id: 'e1' }],
+        restTimerSeconds: Number.NaN,
+        restTimerEndsAt: Number.POSITIVE_INFINITY,
+        restTimerActive: 'yes',
+        restTimerDefaultSeconds: 0,
+        completeSummary: {
+          totalVolume: 10,
+          durationSeconds: 20,
+          prs: 1,
+        },
+      },
+      1,
+    ) as ReturnType<typeof useActiveWorkoutStore.getState>;
+
+    expect(migrated).toMatchObject({
+      state: 'IN_PROGRESS',
+      sessionId: 'session-1',
+      exercises: [{ id: 'e1' }],
+      restTimerSeconds: 0,
+      restTimerEndsAt: undefined,
+      restTimerActive: false,
+      restTimerDefaultSeconds: 90,
+      completeSummary: {
+        totalVolume: 10,
+        durationSeconds: 20,
+        prs: 1,
+      },
+    });
+
+    const { setRestTimer, start, syncFromServer } =
+      useActiveWorkoutStore.getState();
+    start('session-8', [makeExercise('e1', 0)], {
+      startedAt: '2026-03-06T12:00:00.000Z',
+    });
+    setRestTimer(45);
+
+    syncFromServer('session-9', [makeExercise('e2', 0)], {
+      startedAt: '2026-03-06T12:05:00.000Z',
+    });
+
+    expect(useActiveWorkoutStore.getState()).toMatchObject({
+      state: 'IN_PROGRESS',
+      sessionId: 'session-9',
+      startedAt: '2026-03-06T12:05:00.000Z',
+      restTimerSeconds: 0,
+      restTimerEndsAt: undefined,
+      restTimerActive: false,
+    });
+    expect(
+      useActiveWorkoutStore.getState().exercises.map((item) => item.id),
+    ).toEqual(['e2']);
+  });
+
+  it('preserves valid persisted timer fields and drops malformed completion summaries', () => {
+    const persistOptions = useActiveWorkoutStore.persist.getOptions() as {
+      migrate?: (persistedState: unknown, version: number) => unknown;
+    };
+
+    const migrated = persistOptions.migrate?.(
+      {
+        state: 'IN_PROGRESS',
+        sessionId: 'session-10',
+        startedAt: '2026-03-06T12:00:00.000Z',
+        exercises: [],
+        restTimerSeconds: 30,
+        restTimerEndsAt: 123_456,
+        restTimerActive: true,
+        restTimerDefaultSeconds: 120,
+        completeSummary: {
+          totalVolume: 10,
+          durationSeconds: '20',
+          prs: 1,
+        },
+      },
+      1,
+    ) as ReturnType<typeof useActiveWorkoutStore.getState>;
+
+    expect(migrated).toMatchObject({
+      restTimerSeconds: 30,
+      restTimerEndsAt: 123_456,
+      restTimerActive: true,
+      restTimerDefaultSeconds: 120,
+      completeSummary: undefined,
+    });
+  });
+
+  it('falls back for invalid persisted identity fields on the current version', () => {
+    const persistOptions = useActiveWorkoutStore.persist.getOptions() as {
+      migrate?: (persistedState: unknown, version: number) => unknown;
+    };
+
+    const migrated = persistOptions.migrate?.(
+      {
+        state: 'IN_PROGRESS',
+        sessionId: 123,
+        startedAt: 456,
+        exercises: 'not-an-array',
+      },
+      1,
+    ) as ReturnType<typeof useActiveWorkoutStore.getState>;
+
+    expect(migrated).toMatchObject({
+      state: 'IN_PROGRESS',
+      sessionId: undefined,
+      startedAt: undefined,
+      exercises: [],
+    });
+  });
+
+  it('returns the initial snapshot for non-object persisted payloads and invalid states', () => {
+    const persistOptions = useActiveWorkoutStore.persist.getOptions() as {
+      migrate?: (persistedState: unknown, version: number) => unknown;
+    };
+
+    expect(persistOptions.migrate?.(null, 1)).toMatchObject({
+      state: 'IDLE',
+      exercises: [],
+    });
+
+    expect(
+      persistOptions.migrate?.(
+        {
+          state: 'STALE',
+        },
+        1,
+      ),
+    ).toMatchObject({
+      state: 'IDLE',
+    });
+  });
+
+  it('preserves the existing startedAt value when syncing without a server timestamp', () => {
+    const { start, syncFromServer } = useActiveWorkoutStore.getState();
+
+    start('session-11', [makeExercise('e1', 0)], {
+      startedAt: '2026-03-06T12:00:00.000Z',
+    });
+
+    syncFromServer('session-11', [
+      makeExercise('e1', 0),
+      makeExercise('e2', 1),
+    ]);
+
+    expect(useActiveWorkoutStore.getState().startedAt).toBe(
+      '2026-03-06T12:00:00.000Z',
+    );
+  });
+
   it('uses browser localStorage when available', async () => {
     vi.resetModules();
     const localStorage = {

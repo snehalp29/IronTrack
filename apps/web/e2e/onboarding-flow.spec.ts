@@ -194,4 +194,19 @@ test.describe('Onboarding Flow', () => {
       page.getByRole('heading', { name: 'Select Exercise' }),
     ).toBeVisible();
   });
+
+  test('shows the workout preview fallback for a missing template', async ({
+    page,
+  }) => {
+    await seedAuthenticatedSession(page);
+    await mockApi(page);
+    await page.goto('/workout/missing-template/preview');
+
+    await expect(
+      page.getByRole('heading', { name: 'Workout Preview' }),
+    ).toBeVisible();
+    await expect(page.getByText('Template not found.')).toBeVisible();
+    await page.getByRole('link', { name: 'Back to Dashboard' }).click();
+    await expect(page).toHaveURL(/\/$/);
+  });
 });

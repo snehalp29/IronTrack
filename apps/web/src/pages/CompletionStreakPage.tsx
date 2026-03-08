@@ -1,11 +1,9 @@
 import { useNavigate } from 'react-router-dom';
 
 import { useCompletionFlowData } from '../lib/web-data';
-import { useActiveWorkoutStore } from '../stores/activeWorkoutStore';
 
 export function CompletionStreakPage() {
   const navigate = useNavigate();
-  const clear = useActiveWorkoutStore((state) => state.clear);
   const data = useCompletionFlowData();
 
   return (
@@ -17,8 +15,11 @@ export function CompletionStreakPage() {
       <p className="meta">Animated streak celebration placeholder.</p>
       <button
         onClick={() => {
-          clear();
-          navigate('/');
+          navigate('/', {
+            state: {
+              clearCompletedWorkout: true,
+            },
+          });
         }}
       >
         Back to Dashboard

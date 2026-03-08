@@ -21,7 +21,11 @@ type RouteNode = {
   };
 };
 
-const routerMock = vi.hoisted(() => ({ kind: 'router' }));
+const routerNavigateMock = vi.hoisted(() => vi.fn());
+const routerMock = vi.hoisted(() => ({
+  kind: 'router',
+  navigate: routerNavigateMock,
+}));
 const createBrowserRouterMock = vi.hoisted(() =>
   vi.fn((routes: RouteNode[]) => {
     void routes;
@@ -33,12 +37,39 @@ const routerProviderMock = vi.hoisted(() =>
     <div>RouterProvider:{router === routerMock ? 'ok' : 'bad'}</div>
   )),
 );
+const setLoginRedirectMock = vi.hoisted(() => vi.fn());
+const activeWorkoutState = vi.hoisted(() => ({
+  state: 'IDLE' as 'IDLE' | 'COMPLETED',
+  summary: undefined as unknown,
+}));
 
 vi.mock('react-router-dom', () => ({
   createBrowserRouter: createBrowserRouterMock,
+  Navigate: ({ replace, to }: { replace?: boolean; to: string }) => (
+    <div data-replace={String(replace)} data-to={to}>
+      Navigate
+    </div>
+  ),
   NavLink: ({ children }: { children: unknown }) => <>{children}</>,
   Outlet: () => <div>Outlet</div>,
   RouterProvider: routerProviderMock,
+}));
+
+vi.mock('./api/client', () => ({
+  setLoginRedirect: setLoginRedirectMock,
+}));
+
+vi.mock('./stores/activeWorkoutStore', () => ({
+  useActiveWorkoutStore: (
+    selector: (state: {
+      state: 'IDLE' | 'COMPLETED';
+      completeSummary: unknown;
+    }) => unknown,
+  ) =>
+    selector({
+      state: activeWorkoutState.state,
+      completeSummary: activeWorkoutState.summary,
+    }),
 }));
 
 describe('App', () => {
@@ -81,5 +112,54 @@ describe('App', () => {
       { router: routerMock },
       undefined,
     );
+  });
+
+  it('registers login redirects against the router navigate API', () => {
+    const redirectHandler = setLoginRedirectMock.mock.calls[0]?.[0] as
+      | ((path: string) => void)
+      | undefined;
+
+    expect(redirectHandler).toBeTypeOf('function');
+    redirectHandler?.('/login');
+
+    expect(routerNavigateMock).toHaveBeenCalledWith('/login', {
+      replace: true,
+    });
+  });
+
+  it('guards completion routes until the workout store has a completed summary', () => {
+    const routerCall = createBrowserRouterMock.mock.calls[0];
+    const routes = routerCall?.[0] ?? [];
+    const rootRoute = routes.find((route) => route.path === '/');
+    const completionRoute = rootRoute?.children?.find(
+      (route) => route.path === 'workout/complete',
+    );
+    const completionElement = completionRoute?.element;
+
+    expect(completionElement).toBeDefined();
+    if (!completionElement) {
+      throw new Error('Expected completion route element');
+    }
+
+    activeWorkoutState.state = 'IDLE';
+    activeWorkoutState.summary = undefined;
+    const blocked = (
+      completionElement.type as (props: { children: unknown }) => unknown
+    )(completionElement.props);
+    expect(
+      renderToStaticMarkup(
+        blocked as Parameters<typeof renderToStaticMarkup>[0],
+      ),
+    ).toContain('data-to="/workout/active"');
+
+    activeWorkoutState.state = 'COMPLETED';
+    activeWorkoutState.summary = { totalVolume: 1 };
+    const allowed = (
+      completionElement.type as (props: { children: unknown }) => unknown
+    )(completionElement.props);
+    expect(
+      (allowed as { props?: { children?: { type?: unknown } } }).props?.children
+        ?.type,
+    ).toBe(completionElement.props.children.type);
   });
 });
