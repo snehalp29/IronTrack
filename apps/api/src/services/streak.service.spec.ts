@@ -11,6 +11,9 @@ describe('StreakService', () => {
     jest.restoreAllMocks();
   });
 
+  const buildChecklistTypeRows = (...types: ChecklistType[]) =>
+    types.map((type) => ({ type }));
+
   it('creates workout streak on first completion', async () => {
     const prismaMock = {
       user: {
@@ -389,8 +392,12 @@ describe('StreakService', () => {
   });
 
   it('counts completed checklist items with UTC-normalized date', async () => {
-    const checklistFindMany = jest.fn(async () => []);
-    const checklistCount = jest.fn(async () => 4);
+    const checklistFindMany = jest.fn(async () => [
+      { type: ChecklistType.WORKOUT },
+      { type: ChecklistType.WARMUP },
+      { type: ChecklistType.MOBILITY },
+      { type: ChecklistType.NOTES },
+    ]);
     const prismaMock = {
       user: {
         findUnique: jest.fn(async () => ({ id: 'user-1', timezone: 'UTC' })),
@@ -401,7 +408,6 @@ describe('StreakService', () => {
       },
       checklistItem: {
         findMany: checklistFindMany,
-        count: checklistCount,
       },
     } as unknown as PrismaService;
 
@@ -415,7 +421,11 @@ describe('StreakService', () => {
     const service = moduleRef.get(StreakService);
     await service.onChecklistCompleted('user-1', '2024-02-03');
 
-    expect(checklistCount).toHaveBeenCalledWith({
+    expect(checklistFindMany).toHaveBeenCalledWith({
+      distinct: ['type'],
+      select: {
+        type: true,
+      },
       where: {
         userId: 'user-1',
         date: new Date('2024-02-03T00:00:00.000Z'),
@@ -430,7 +440,6 @@ describe('StreakService', () => {
         },
       },
     });
-    expect(checklistFindMany).not.toHaveBeenCalled();
   });
 
   it('does not increment when stored @db.Date matches checklist date in user timezone', async () => {
@@ -453,7 +462,14 @@ describe('StreakService', () => {
         updateMany: jest.fn(async () => ({ count: 1 })),
       },
       checklistItem: {
-        count: jest.fn(async () => 4),
+        findMany: jest.fn(async () =>
+          buildChecklistTypeRows(
+            ChecklistType.WORKOUT,
+            ChecklistType.WARMUP,
+            ChecklistType.MOBILITY,
+            ChecklistType.NOTES,
+          ),
+        ),
       },
     } as unknown as PrismaService;
 
@@ -551,7 +567,14 @@ describe('StreakService', () => {
         updateMany: jest.fn(async () => ({ count: 1 })),
       },
       checklistItem: {
-        count: jest.fn(async () => 4),
+        findMany: jest.fn(async () =>
+          buildChecklistTypeRows(
+            ChecklistType.WORKOUT,
+            ChecklistType.WARMUP,
+            ChecklistType.MOBILITY,
+            ChecklistType.NOTES,
+          ),
+        ),
       },
     } as unknown as PrismaService;
 
@@ -599,7 +622,14 @@ describe('StreakService', () => {
         updateMany: jest.fn(async () => ({ count: 0 })),
       },
       checklistItem: {
-        count: jest.fn(async () => 4),
+        findMany: jest.fn(async () =>
+          buildChecklistTypeRows(
+            ChecklistType.WORKOUT,
+            ChecklistType.WARMUP,
+            ChecklistType.MOBILITY,
+            ChecklistType.NOTES,
+          ),
+        ),
       },
     } as unknown as PrismaService;
 
@@ -649,7 +679,14 @@ describe('StreakService', () => {
           .mockResolvedValueOnce({ count: 1 }),
       },
       checklistItem: {
-        count: jest.fn(async () => 4),
+        findMany: jest.fn(async () =>
+          buildChecklistTypeRows(
+            ChecklistType.WORKOUT,
+            ChecklistType.WARMUP,
+            ChecklistType.MOBILITY,
+            ChecklistType.NOTES,
+          ),
+        ),
       },
     } as unknown as PrismaService;
 
@@ -701,7 +738,14 @@ describe('StreakService', () => {
         updateMany: jest.fn(async () => ({ count: 1 })),
       },
       checklistItem: {
-        count: jest.fn(async () => 4),
+        findMany: jest.fn(async () =>
+          buildChecklistTypeRows(
+            ChecklistType.WORKOUT,
+            ChecklistType.WARMUP,
+            ChecklistType.MOBILITY,
+            ChecklistType.NOTES,
+          ),
+        ),
       },
     } as unknown as PrismaService;
 
@@ -749,7 +793,14 @@ describe('StreakService', () => {
         updateMany: jest.fn(async () => ({ count: 1 })),
       },
       checklistItem: {
-        count: jest.fn(async () => 4),
+        findMany: jest.fn(async () =>
+          buildChecklistTypeRows(
+            ChecklistType.WORKOUT,
+            ChecklistType.WARMUP,
+            ChecklistType.MOBILITY,
+            ChecklistType.NOTES,
+          ),
+        ),
       },
     } as unknown as PrismaService;
 
@@ -797,7 +848,14 @@ describe('StreakService', () => {
         updateMany: jest.fn(async () => ({ count: 1 })),
       },
       checklistItem: {
-        count: jest.fn(async () => 4),
+        findMany: jest.fn(async () =>
+          buildChecklistTypeRows(
+            ChecklistType.WORKOUT,
+            ChecklistType.WARMUP,
+            ChecklistType.MOBILITY,
+            ChecklistType.NOTES,
+          ),
+        ),
       },
     } as unknown as PrismaService;
 
@@ -825,7 +883,13 @@ describe('StreakService', () => {
         updateMany: jest.fn(),
       },
       checklistItem: {
-        count: jest.fn(async () => 3),
+        findMany: jest.fn(async () =>
+          buildChecklistTypeRows(
+            ChecklistType.WORKOUT,
+            ChecklistType.WARMUP,
+            ChecklistType.MOBILITY,
+          ),
+        ),
       },
     } as unknown as PrismaService;
 
@@ -856,7 +920,14 @@ describe('StreakService', () => {
         create: jest.fn(async ({ data }) => data),
       },
       checklistItem: {
-        count: jest.fn(async () => 5),
+        findMany: jest.fn(async () =>
+          buildChecklistTypeRows(
+            ChecklistType.WORKOUT,
+            ChecklistType.WARMUP,
+            ChecklistType.MOBILITY,
+            ChecklistType.NOTES,
+          ),
+        ),
       },
     } as unknown as PrismaService;
 
@@ -1174,5 +1245,57 @@ describe('StreakService', () => {
       longestStreakDays: 20,
       lastCompletedDate: '2026-03-06',
     });
+  });
+
+  it('requires all distinct checklist types before incrementing the checklist streak', async () => {
+    const checklistCount = jest.fn(async () => 4);
+    const checklistFindMany = jest.fn(async () =>
+      buildChecklistTypeRows(ChecklistType.WORKOUT, ChecklistType.WARMUP),
+    );
+    const prismaMock = {
+      user: {
+        findUnique: jest.fn(async () => ({ id: 'user-1', timezone: 'UTC' })),
+      },
+      userStreak: {
+        findUnique: jest.fn(async () => null),
+        create: jest.fn(async ({ data }) => data),
+      },
+      checklistItem: {
+        count: checklistCount,
+        findMany: checklistFindMany,
+      },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        StreakService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(StreakService);
+    await service.onChecklistCompleted('user-1', '2024-02-03');
+
+    expect(checklistFindMany).toHaveBeenCalledWith({
+      distinct: ['type'],
+      select: {
+        type: true,
+      },
+      where: {
+        userId: 'user-1',
+        date: new Date('2024-02-03T00:00:00.000Z'),
+        isCompleted: true,
+        type: {
+          in: [
+            ChecklistType.WORKOUT,
+            ChecklistType.WARMUP,
+            ChecklistType.MOBILITY,
+            ChecklistType.NOTES,
+          ],
+        },
+      },
+    });
+    expect(checklistCount).not.toHaveBeenCalled();
+    expect(prismaMock.userStreak.create).not.toHaveBeenCalled();
   });
 });

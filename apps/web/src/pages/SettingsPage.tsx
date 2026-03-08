@@ -1,6 +1,6 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 
-import { unstable_usePrompt, useBeforeUnload } from 'react-router-dom';
+import { useBeforeUnload, useBlocker } from 'react-router-dom';
 
 import { useSettingsPageData } from '../lib/web-data';
 
@@ -9,13 +9,26 @@ export function SettingsPage() {
   const isDirtyRef = useRef(data.isDirty);
   isDirtyRef.current = data.isDirty;
 
-  unstable_usePrompt({
-    message: 'You have unsaved changes. Leave this page?',
-    when: ({ currentLocation, nextLocation }) =>
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
       data.isDirty &&
       currentLocation.pathname !== nextLocation.pathname &&
       !['/login', '/register'].includes(nextLocation.pathname),
-  });
+  );
+
+  useEffect(() => {
+    if (blocker.state !== 'blocked') {
+      return;
+    }
+
+    if (window.confirm('You have unsaved changes. Leave this page?')) {
+      blocker.proceed();
+      return;
+    }
+
+    blocker.reset();
+  }, [blocker]);
+
   useBeforeUnload((event) => {
     if (!isDirtyRef.current) {
       return;

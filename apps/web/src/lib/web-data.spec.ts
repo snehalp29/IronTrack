@@ -42,6 +42,7 @@ const createWorkoutTemplateMock = vi.hoisted(() => vi.fn());
 const listWorkoutSessionsMock = vi.hoisted(() => vi.fn());
 const fetchWorkoutStreakMock = vi.hoisted(() => vi.fn());
 const fetchActiveSessionMock = vi.hoisted(() => vi.fn());
+const startWorkoutSessionMock = vi.hoisted(() => vi.fn());
 const finishWorkoutSessionMock = vi.hoisted(() => vi.fn());
 const toggleWorkoutSetCompletionMock = vi.hoisted(() => vi.fn());
 const swapWorkoutExerciseMock = vi.hoisted(() => vi.fn());
@@ -115,6 +116,7 @@ vi.mock('./web-api', async (importOriginal) => {
     fetchWorkoutStreak: fetchWorkoutStreakMock,
     finishWorkoutSession: finishWorkoutSessionMock,
     listWorkoutSessions: listWorkoutSessionsMock,
+    startWorkoutSession: startWorkoutSessionMock,
     swapWorkoutExercise: swapWorkoutExerciseMock,
     toggleWorkoutSetCompletion: toggleWorkoutSetCompletionMock,
     updateWorkoutExercise: updateWorkoutExerciseMock,
@@ -136,6 +138,11 @@ describe('web-data', () => {
       current: initialValue,
     }));
     useQueryClientMock.mockReturnValue(queryClient);
+    useMutationMock.mockReturnValue({
+      error: undefined,
+      isPending: false,
+      mutateAsync: vi.fn(),
+    });
   });
 
   it('deduplicates checklist date calculation with the user timezone on dashboard', () => {
@@ -368,6 +375,79 @@ describe('web-data', () => {
     });
   });
 
+  it('loads every finished-session page for history data instead of truncating to the first page', async () => {
+    useQueryMock.mockImplementation(({ queryKey }: { queryKey: unknown[] }) => {
+      if (queryKey[0] === 'user') {
+        return {
+          data: {
+            timezone: 'UTC',
+          },
+          error: undefined,
+          isLoading: false,
+        };
+      }
+
+      return {
+        data: undefined,
+        error: undefined,
+        isLoading: false,
+      };
+    });
+    listWorkoutSessionsMock
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'session-1',
+            startedAt: '2026-03-06T03:30:00.000Z',
+            durationSeconds: 600,
+            totalVolume: 1234,
+            status: 'FINISHED',
+            workoutTemplate: null,
+          },
+        ],
+        pagination: { page: 1, pageSize: 1, total: 2 },
+      })
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'session-2',
+            startedAt: '2026-03-05T03:30:00.000Z',
+            durationSeconds: 900,
+            totalVolume: 2345,
+            status: 'FINISHED',
+            workoutTemplate: {
+              id: 'template-1',
+              name: 'Pull Day',
+            },
+          },
+        ],
+        pagination: { page: 2, pageSize: 1, total: 2 },
+      });
+
+    useHistoryPageData();
+    const historyQuery = useQueryMock.mock.calls.find(
+      ([options]) => options.queryKey[0] === 'sessions',
+    )?.[0];
+
+    await expect(historyQuery?.queryFn()).resolves.toEqual({
+      items: [
+        expect.objectContaining({ id: 'session-1' }),
+        expect.objectContaining({ id: 'session-2' }),
+      ],
+      pagination: { page: 1, pageSize: 1, total: 2 },
+    });
+    expect(listWorkoutSessionsMock).toHaveBeenNthCalledWith(1, {
+      page: 1,
+      pageSize: 20,
+      status: 'FINISHED',
+    });
+    expect(listWorkoutSessionsMock).toHaveBeenNthCalledWith(2, {
+      page: 2,
+      pageSize: 1,
+      status: 'FINISHED',
+    });
+  });
+
   it('uses the server-backed workout streak query on dashboard instead of paged sessions', () => {
     useQueryMock.mockImplementation(({ queryKey }: { queryKey: unknown[] }) => {
       if (queryKey[0] === 'user') {
@@ -415,6 +495,95 @@ describe('web-data', () => {
         ([options]) => options.queryKey[0] === 'sessions',
       ),
     ).toBe(false);
+  });
+
+  it('starts the next dashboard workout directly instead of routing through preview', async () => {
+    const start = vi.fn();
+    useQueryMock.mockImplementation(({ queryKey }: { queryKey: unknown[] }) => {
+      if (queryKey[0] === 'user') {
+        return {
+          data: {
+            timezone: 'UTC',
+          },
+          error: undefined,
+          isLoading: false,
+        };
+      }
+
+      if (queryKey[0] === 'checklist') {
+        return {
+          data: [],
+          error: undefined,
+          isLoading: false,
+        };
+      }
+
+      if (queryKey[0] === 'templates') {
+        return {
+          data: [
+            {
+              id: 'template-42',
+              name: 'Push Day A',
+              exercises: [],
+            },
+          ],
+          error: undefined,
+          isLoading: false,
+        };
+      }
+
+      return {
+        data: {
+          currentStreakDays: 3,
+          longestStreakDays: 5,
+          lastCompletedDate: '2026-03-06',
+        },
+        error: undefined,
+        isLoading: false,
+      };
+    });
+    useMutationMock.mockImplementation(
+      ({
+        mutationFn,
+        onSuccess,
+      }: {
+        mutationFn: () => Promise<unknown>;
+        onSuccess?: (value: unknown) => Promise<void> | void;
+      }) => ({
+        error: undefined,
+        isPending: false,
+        mutateAsync: vi.fn(async () => {
+          const result = await mutationFn();
+          await onSuccess?.(result);
+          return result;
+        }),
+      }),
+    );
+    useActiveWorkoutStoreMock.mockImplementation(
+      (selector: (state: { start: typeof start }) => unknown) =>
+        selector({
+          start,
+        }),
+    );
+    startWorkoutSessionMock.mockResolvedValue({
+      id: 'session-42',
+      startedAt: '2026-03-07T12:00:00.000Z',
+      sessionExercises: [],
+    });
+
+    const data = useDashboardPageData();
+
+    await expect(data.onStartNextWorkout()).resolves.toBeUndefined();
+    expect(startWorkoutSessionMock).toHaveBeenCalledWith({
+      workoutTemplateId: 'template-42',
+    });
+    expect(start).toHaveBeenCalledWith('session-42', [], {
+      startedAt: '2026-03-07T12:00:00.000Z',
+    });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ['active-session'],
+    });
+    expect(navigateMock).toHaveBeenCalledWith('/workout/active');
   });
 
   it('blocks template builder advancement until the template name is present', () => {
@@ -542,6 +711,101 @@ describe('web-data', () => {
     expect(navigateMock).toHaveBeenCalledWith(
       '/workout/template-created/preview',
     );
+  });
+
+  it('reorders template-builder exercises without grouping all selected items at the top', () => {
+    const setFormState = vi.fn();
+    useQueryMock.mockReturnValue({
+      data: {
+        items: [],
+        pagination: {
+          page: 1,
+          pageSize: 20,
+          total: 0,
+        },
+      },
+      error: undefined,
+      isLoading: false,
+    });
+    useMutationMock.mockReturnValue({
+      error: undefined,
+      isPending: false,
+      mutateAsync: vi.fn(),
+    });
+    useStateMock
+      .mockReturnValueOnce([
+        {
+          description: '',
+          exercises: [
+            {
+              defaultSets: '',
+              id: 'exercise-a',
+              name: 'Exercise A',
+              repMax: '',
+              repMin: '',
+              selected: true,
+              supersetGroupKey: '',
+            },
+            {
+              defaultSets: '',
+              id: 'exercise-b',
+              name: 'Exercise B',
+              repMax: '',
+              repMin: '',
+              selected: false,
+              supersetGroupKey: '',
+            },
+            {
+              defaultSets: '',
+              id: 'exercise-c',
+              name: 'Exercise C',
+              repMax: '',
+              repMin: '',
+              selected: true,
+              supersetGroupKey: '',
+            },
+          ],
+          name: 'Push Day A',
+          step: 3,
+        },
+        setFormState,
+      ])
+      .mockReturnValueOnce([undefined, vi.fn()]);
+
+    const data = useTemplateBuilderPageData();
+
+    data.onMoveExercise('exercise-c', -1);
+
+    expect(setFormState).toHaveBeenCalledTimes(1);
+    const updater = setFormState.mock.calls[0]?.[0] as
+      | ((current: {
+          description: string;
+          exercises: Array<{ id: string; selected: boolean }>;
+          name: string;
+          step: number;
+        }) => unknown)
+      | undefined;
+    expect(
+      updater?.({
+        description: '',
+        exercises: [
+          { id: 'exercise-a', selected: true },
+          { id: 'exercise-b', selected: false },
+          { id: 'exercise-c', selected: true },
+        ],
+        name: 'Push Day A',
+        step: 3,
+      }),
+    ).toEqual({
+      description: '',
+      exercises: [
+        { id: 'exercise-a', selected: true, orderIndex: 0 },
+        { id: 'exercise-c', selected: true, orderIndex: 1 },
+        { id: 'exercise-b', selected: false, orderIndex: 2 },
+      ],
+      name: 'Push Day A',
+      step: 3,
+    });
   });
 
   it('normalizes invalid wizard step query params through the search params API', () => {
@@ -883,6 +1147,49 @@ describe('web-data', () => {
     ]);
   });
 
+  it('formats unknown exercise-type labels without stray plus separators', () => {
+    useQueryMock.mockImplementation(({ queryKey }: { queryKey: unknown[] }) => {
+      if (queryKey[0] === 'exercise' && queryKey[2] === 'detail') {
+        return {
+          data: {
+            id: 'exercise-cable-row',
+            name: 'Cable Row',
+            description: 'Pull to the torso.',
+            exerciseType: 'CABLE_MACHINE_REPS',
+            primaryMuscle: null,
+            secondaryMuscles: [],
+            equipment: [],
+            defaultSets: null,
+            repMin: null,
+            repMax: null,
+            defaultCues: null,
+            notes: [],
+          },
+          error: undefined,
+          isLoading: false,
+        };
+      }
+
+      return {
+        data: {
+          items: [],
+          pagination: {
+            page: 1,
+            pageSize: 20,
+            total: 0,
+          },
+          timezone: 'UTC',
+        },
+        error: undefined,
+        isLoading: false,
+      };
+    });
+
+    const data = useExerciseDetailPageData();
+
+    expect(data.exercise?.exerciseTypeLabel).toBe('Cable Machine Reps');
+  });
+
   it('reports a detail-page error when the exercise id is missing', () => {
     useParamsMock.mockReturnValue({ id: undefined } as unknown as {
       id: string;
@@ -936,6 +1243,44 @@ describe('web-data', () => {
     expect(logoutCurrentSessionMock).toHaveBeenCalledTimes(1);
     expect(clearAuthSessionMock).toHaveBeenCalledTimes(1);
     expect(navigateMock).toHaveBeenCalledWith('/register');
+  });
+
+  it('surfaces account-delete failures without clearing auth state or navigating away', async () => {
+    const setErrorMessage = vi.fn();
+    useStateMock
+      .mockReturnValueOnce(['Name', vi.fn()])
+      .mockReturnValueOnce(['UTC', vi.fn()])
+      .mockReturnValueOnce(['METRIC', vi.fn()])
+      .mockReturnValueOnce(['90', vi.fn()])
+      .mockReturnValueOnce([
+        {
+          name: 'Name',
+          timezone: 'UTC',
+          unitPreference: 'METRIC',
+          restTimerDefault: '90',
+        },
+        vi.fn(),
+      ])
+      .mockReturnValueOnce([undefined, setErrorMessage]);
+    useQueryMock.mockReturnValue({
+      data: undefined,
+      error: undefined,
+      isLoading: false,
+    });
+    useMutationMock.mockReturnValue({
+      error: undefined,
+      isPending: false,
+      mutateAsync: vi.fn(),
+    });
+    deleteCurrentUserMock.mockRejectedValue(new Error('Delete failed'));
+
+    const data = useSettingsPageData();
+
+    await expect(data.onDeleteAccount()).resolves.toBeUndefined();
+    expect(setErrorMessage).toHaveBeenCalledWith('Delete failed');
+    expect(logoutCurrentSessionMock).not.toHaveBeenCalled();
+    expect(clearAuthSessionMock).not.toHaveBeenCalled();
+    expect(navigateMock).not.toHaveBeenCalled();
   });
 
   it('swallows logout failures and reports the error instead of rejecting', async () => {
@@ -1273,6 +1618,79 @@ describe('web-data', () => {
     ).resolves.toBeUndefined();
     expect(setErrorMessage).toHaveBeenCalledWith('Swap failed');
     expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  it('preserves the active rest timer by syncing the swapped session back into the store', async () => {
+    const start = vi.fn();
+    const syncFromServer = vi.fn();
+    useStateMock.mockReturnValueOnce([undefined, vi.fn()]);
+    useSearchParamsMock.mockReturnValue([
+      new URLSearchParams('sessionExerciseId=se-1'),
+      vi.fn(),
+    ]);
+    useQueryMock.mockReturnValue({
+      data: {
+        items: [{ id: 'exercise-bench', name: 'Bench Press' }],
+        pagination: {
+          page: 1,
+          pageSize: 1,
+          total: 1,
+        },
+      },
+      error: undefined,
+      isLoading: false,
+    });
+    useActiveWorkoutStoreMock.mockImplementation(
+      (
+        selector: (state: {
+          sessionId?: string;
+          start: typeof start;
+          syncFromServer: typeof syncFromServer;
+        }) => unknown,
+      ) =>
+        selector({
+          sessionId: 'session-1',
+          start,
+          syncFromServer,
+        }),
+    );
+    swapWorkoutExerciseMock.mockResolvedValue({
+      id: 'session-exercise-2',
+    });
+    fetchActiveSessionMock.mockResolvedValue({
+      id: 'session-1',
+      startedAt: '2026-03-06T12:00:00.000Z',
+      sessionExercises: [
+        {
+          id: 'session-exercise-2',
+          exerciseTemplateId: 'exercise-bench',
+          orderIndex: 0,
+          notes: null,
+          supersetGroupKey: null,
+          exercise: { id: 'exercise-bench', name: 'Bench Press' },
+          sets: [],
+        },
+      ],
+    });
+
+    const data = useExerciseSelectPageData();
+
+    await expect(
+      data.onSelectExercise('exercise-bench'),
+    ).resolves.toBeUndefined();
+    expect(syncFromServer).toHaveBeenCalledWith(
+      'session-1',
+      [
+        expect.objectContaining({
+          id: 'session-exercise-2',
+          name: 'Bench Press',
+        }),
+      ],
+      {
+        startedAt: '2026-03-06T12:00:00.000Z',
+      },
+    );
+    expect(start).not.toHaveBeenCalled();
   });
 
   it('clears stale active workout state when the server no longer has an active session', () => {

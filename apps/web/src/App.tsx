@@ -33,7 +33,7 @@ function RequireCompletedWorkout({ children }: { children: ReactNode }) {
   const summary = useActiveWorkoutStore((store) => store.completeSummary);
 
   if (state !== 'COMPLETED' || !summary) {
-    return <Navigate to="/workout/active" replace />;
+    return <Navigate to="/" replace />;
   }
 
   return <>{children}</>;

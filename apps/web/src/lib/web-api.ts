@@ -312,13 +312,26 @@ export async function fetchWorkoutStreak() {
 }
 
 export async function fetchWorkoutTemplates() {
-  const payload = await requirePayload(
+  const firstPage = await requirePayload(
     apiFetch('/workout-templates', {
       schema: workoutTemplateListSchema,
     }),
   );
 
-  return payload.items;
+  const totalPages = Math.ceil(
+    firstPage.pagination.total / firstPage.pagination.pageSize,
+  );
+  if (totalPages <= 1) {
+    return firstPage.items;
+  }
+
+  const remainingPages = await Promise.all(
+    Array.from({ length: totalPages - 1 }, (_, index) =>
+      fetchWorkoutTemplateListPage(index + 2, firstPage.pagination.pageSize),
+    ),
+  );
+
+  return [...firstPage.items, ...remainingPages.flatMap((page) => page.items)];
 }
 
 export async function fetchWorkoutTemplateById(templateId: string) {
@@ -506,15 +519,18 @@ export async function listExercises() {
     return firstPage;
   }
 
-  const items = [...firstPage.items];
-  for (let page = 2; page <= totalPages; page += 1) {
-    const nextPage = await fetchExerciseListPage(page, 100);
-    items.push(...nextPage.items);
-  }
+  const remainingPages = await Promise.all(
+    Array.from({ length: totalPages - 1 }, (_, index) =>
+      fetchExerciseListPage(index + 2, firstPage.pagination.pageSize),
+    ),
+  );
 
   return {
     ...firstPage,
-    items,
+    items: [
+      ...firstPage.items,
+      ...remainingPages.flatMap((page) => page.items),
+    ],
     pagination: {
       ...firstPage.pagination,
       total: firstPage.pagination.total,
@@ -560,7 +576,38 @@ export async function fetchExerciseHistory(
     page?: number;
     pageSize?: number;
   },
-) {
+): Promise<ExerciseHistoryPayload> {
+  if (!input?.page && !input?.pageSize) {
+    const firstPage = await requirePayload(
+      apiFetch(`/exercises/${exerciseId}/history`, {
+        schema: exerciseHistorySchema,
+      }),
+    );
+    const totalPages = Math.ceil(
+      firstPage.pagination.total / firstPage.pagination.pageSize,
+    );
+    if (totalPages <= 1) {
+      return firstPage;
+    }
+
+    const remainingPages: ExerciseHistoryPayload[] = await Promise.all(
+      Array.from({ length: totalPages - 1 }, (_, index) =>
+        fetchExerciseHistory(exerciseId, {
+          page: index + 2,
+          pageSize: firstPage.pagination.pageSize,
+        }),
+      ),
+    );
+
+    return {
+      ...firstPage,
+      items: [
+        ...firstPage.items,
+        ...remainingPages.flatMap((page) => page.items),
+      ],
+    };
+  }
+
   const searchParams = new URLSearchParams();
   if (input?.page) {
     searchParams.set('page', String(input.page));
@@ -606,6 +653,14 @@ async function fetchExerciseListPage(page: number, pageSize: number) {
   return requirePayload(
     apiFetch(`/exercises?page=${page}&pageSize=${pageSize}`, {
       schema: exerciseListSchema,
+    }),
+  );
+}
+
+async function fetchWorkoutTemplateListPage(page: number, pageSize: number) {
+  return requirePayload(
+    apiFetch(`/workout-templates?page=${page}&pageSize=${pageSize}`, {
+      schema: workoutTemplateListSchema,
     }),
   );
 }

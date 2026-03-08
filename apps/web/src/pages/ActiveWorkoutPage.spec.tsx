@@ -311,6 +311,85 @@ describe('ActiveWorkoutPage', () => {
     );
   });
 
+  it('renders an overflow action for each exercise card', () => {
+    const openOverflow = vi.fn();
+    useActiveWorkoutPageDataMock.mockReturnValue({
+      state: 'IN_PROGRESS',
+      exercises: [
+        {
+          id: 'se-1',
+          name: 'Bench Press',
+          orderIndex: 0,
+          sets: [],
+        },
+        {
+          id: 'se-2',
+          name: 'Rows',
+          orderIndex: 1,
+          sets: [],
+        },
+      ],
+      totals: { completed: 0, total: 0 },
+      restTimerSeconds: 30,
+      errorMessage: undefined,
+      idleActionLabel: 'Choose Workout',
+      onIdleAction: vi.fn(),
+      onFinishWorkout: vi.fn(),
+      onToggleSet: vi.fn(),
+      overflow: {
+        open: false,
+        exerciseName: undefined,
+        onClose: vi.fn(),
+        onEditNotes: vi.fn(),
+        onSwapExercise: vi.fn(),
+        onDeleteExercise: vi.fn(),
+      },
+      reorder: {
+        open: false,
+        exercises: [],
+        onClose: vi.fn(),
+        onMoveUp: vi.fn(),
+        onMoveDown: vi.fn(),
+        onApply: vi.fn(),
+      },
+      superset: {
+        open: false,
+        exercises: [],
+        selectedExerciseIds: [],
+        onClose: vi.fn(),
+        onToggleExercise: vi.fn(),
+        onApply: vi.fn(),
+      },
+      incomplete: {
+        open: false,
+        onClose: vi.fn(),
+        onConfirm: vi.fn(),
+      },
+      notes: {
+        open: false,
+        exerciseName: undefined,
+        errorMessage: undefined,
+        isSaving: false,
+        notes: '',
+        onChange: vi.fn(),
+        onClose: vi.fn(),
+        onSave: vi.fn(),
+      },
+      openOverflow,
+      openReorder: vi.fn(),
+      openSuperset: vi.fn(),
+    });
+
+    const view = ActiveWorkoutPage();
+    const overflowButtons = findButtonsByTextIncludes(view, 'Overflow');
+
+    expect(overflowButtons).toHaveLength(3);
+    overflowButtons[1]?.props.onClick?.();
+    overflowButtons[2]?.props.onClick?.();
+    expect(openOverflow).toHaveBeenNthCalledWith(1, 'se-1');
+    expect(openOverflow).toHaveBeenNthCalledWith(2, 'se-2');
+  });
+
   it('renders idle errors and exercise-less active sessions', () => {
     const onIdleAction = vi.fn();
     useActiveWorkoutPageDataMock.mockReturnValue({

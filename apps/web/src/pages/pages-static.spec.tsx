@@ -25,6 +25,7 @@ const useCompletionFlowDataMock = vi.hoisted(() => vi.fn());
 const useActiveWorkoutStoreMock = vi.hoisted(() => vi.fn());
 const navigateMock = vi.hoisted(() => vi.fn());
 const useBeforeUnloadMock = vi.hoisted(() => vi.fn());
+const useBlockerMock = vi.hoisted(() => vi.fn(() => ({ reset: vi.fn() })));
 const usePromptMock = vi.hoisted(() => vi.fn());
 const routeLocationState = vi.hoisted(() => ({
   value: {
@@ -35,6 +36,16 @@ const routeLocationState = vi.hoisted(() => ({
 const routeParamsState = vi.hoisted(() => ({
   value: { templateId: 'tpl-42' } as { templateId?: string },
 }));
+
+type BlockerPredicate = (args: {
+  currentLocation: { pathname: string };
+  nextLocation: { pathname: string };
+}) => boolean;
+
+type BeforeUnloadHandler = (event: {
+  preventDefault: () => void;
+  returnValue?: string;
+}) => void;
 
 vi.mock('react-router-dom', () => ({
   Link: ({
@@ -54,19 +65,24 @@ vi.mock('react-router-dom', () => ({
   ),
   useLocation: () => routeLocationState.value,
   useNavigate: () => navigateMock,
+  useBlocker: useBlockerMock,
   unstable_usePrompt: usePromptMock,
   useBeforeUnload: useBeforeUnloadMock,
   useParams: () => routeParamsState.value,
 }));
 
-vi.mock('../lib/web-data', () => ({
-  useCompletionFlowData: useCompletionFlowDataMock,
-  useDashboardPageData: useDashboardPageDataMock,
-  useExerciseSelectPageData: useExerciseSelectPageDataMock,
-  useHistoryPageData: useHistoryPageDataMock,
-  useSettingsPageData: useSettingsPageDataMock,
-  useWorkoutPreviewPageData: useWorkoutPreviewPageDataMock,
-}));
+vi.mock('../lib/web-data', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/web-data')>();
+  return {
+    ...actual,
+    useCompletionFlowData: useCompletionFlowDataMock,
+    useDashboardPageData: useDashboardPageDataMock,
+    useExerciseSelectPageData: useExerciseSelectPageDataMock,
+    useHistoryPageData: useHistoryPageDataMock,
+    useSettingsPageData: useSettingsPageDataMock,
+    useWorkoutPreviewPageData: useWorkoutPreviewPageDataMock,
+  };
+});
 
 vi.mock('../stores/activeWorkoutStore', () => ({
   useActiveWorkoutStore: useActiveWorkoutStoreMock,
@@ -283,7 +299,7 @@ describe('static/simple pages', () => {
 
     const html = render(<SettingsPage />);
     expect(html).toContain('You have unsaved changes.');
-    expect(usePromptMock).toHaveBeenCalled();
+    expect(useBlockerMock).toHaveBeenCalled();
     expect(useBeforeUnloadMock).toHaveBeenCalled();
   });
 
@@ -291,7 +307,8 @@ describe('static/simple pages', () => {
     expect(render(<CompletionMotivationPage />)).toContain(
       'href="/workout/complete/summary"',
     );
-    expect(render(<CompletionSummaryPage />)).toContain('Volume: 9999');
+    expect(render(<CompletionSummaryPage />)).toContain('Volume: 9,999');
+    expect(render(<CompletionSummaryPage />)).toContain('Duration: 21m');
     expect(render(<CompletionSummaryPage />)).toContain('PRs: 3');
     expect(render(<CompletionProgressPage />)).toContain(
       'Muscle coverage: 71%',
@@ -326,6 +343,36 @@ describe('static/simple pages', () => {
     const html = render(<CompletionSummaryPage />);
     expect(html).toContain('No completed workout summary is available.');
     expect(html).toContain('href="/"');
+  });
+
+  it('renders longer completion durations with hour-level formatting', () => {
+    useActiveWorkoutStoreMock.mockImplementation(
+      (
+        selector: (state: {
+          clear: () => void;
+          completeSummary:
+            | {
+                totalVolume: number;
+                durationSeconds: number;
+                prs: number;
+              }
+            | undefined;
+        }) => unknown,
+      ) =>
+        selector({
+          clear: vi.fn(),
+          completeSummary: {
+            totalVolume: 12500,
+            durationSeconds: 3661,
+            prs: 2,
+          },
+        }),
+    );
+
+    const html = render(<CompletionSummaryPage />);
+
+    expect(html).toContain('Volume: 12,500');
+    expect(html).toContain('Duration: 1h 1m');
   });
 
   it('navigates from the streak page with a dashboard clear flag', () => {
@@ -417,20 +464,16 @@ describe('static/simple pages', () => {
   it('wires settings prompt and beforeunload guards for dirty and clean states', () => {
     render(<SettingsPage />);
 
-    let latestPrompt = usePromptMock.mock.calls.at(-1)?.[0] as
-      | {
-          when: (args: {
-            currentLocation: { pathname: string };
-            nextLocation: { pathname: string };
-          }) => boolean;
-        }
-      | undefined;
-    let beforeUnloadHandler = useBeforeUnloadMock.mock.calls.at(-1)?.[0] as
-      | ((event: { preventDefault: () => void; returnValue?: string }) => void)
-      | undefined;
+    const blockerCalls = useBlockerMock.mock.calls as unknown as Array<
+      [BlockerPredicate]
+    >;
+    const beforeUnloadCalls = useBeforeUnloadMock.mock
+      .calls as unknown as Array<[BeforeUnloadHandler]>;
+    let blockerPredicate = blockerCalls.at(-1)?.[0];
+    let beforeUnloadHandler = beforeUnloadCalls.at(-1)?.[0];
 
     expect(
-      latestPrompt?.when({
+      blockerPredicate?.({
         currentLocation: { pathname: '/settings' },
         nextLocation: { pathname: '/history' },
       }),
@@ -460,32 +503,23 @@ describe('static/simple pages', () => {
 
     render(<SettingsPage />);
 
-    latestPrompt = usePromptMock.mock.calls.at(-1)?.[0] as
-      | {
-          when: (args: {
-            currentLocation: { pathname: string };
-            nextLocation: { pathname: string };
-          }) => boolean;
-        }
-      | undefined;
-    beforeUnloadHandler = useBeforeUnloadMock.mock.calls.at(-1)?.[0] as
-      | ((event: { preventDefault: () => void; returnValue?: string }) => void)
-      | undefined;
+    blockerPredicate = blockerCalls.at(-1)?.[0];
+    beforeUnloadHandler = beforeUnloadCalls.at(-1)?.[0];
 
     expect(
-      latestPrompt?.when({
+      blockerPredicate?.({
         currentLocation: { pathname: '/settings' },
         nextLocation: { pathname: '/settings' },
       }),
     ).toBe(false);
     expect(
-      latestPrompt?.when({
+      blockerPredicate?.({
         currentLocation: { pathname: '/settings' },
         nextLocation: { pathname: '/login' },
       }),
     ).toBe(false);
     expect(
-      latestPrompt?.when({
+      blockerPredicate?.({
         currentLocation: { pathname: '/settings' },
         nextLocation: { pathname: '/history' },
       }),
@@ -495,6 +529,30 @@ describe('static/simple pages', () => {
     beforeUnloadHandler?.(dirtyEvent);
     expect(dirtyEvent.preventDefault).toHaveBeenCalledTimes(1);
     expect(dirtyEvent.returnValue).toBe('');
+  });
+
+  it('wires the stable settings blocker when the form is dirty', () => {
+    useSettingsPageDataMock.mockReturnValue({
+      errorMessage: undefined,
+      isDirty: true,
+      isSaving: false,
+      name: 'Iron Lifter',
+      timezone: 'America/New_York',
+      unitPreference: 'METRIC',
+      restTimerDefaultSeconds: '120',
+      timezones: ['UTC', 'America/New_York'],
+      onDeleteAccount: vi.fn(),
+      onLogout: vi.fn(),
+      onNameChange: vi.fn(),
+      onRestTimerDefaultSecondsChange: vi.fn(),
+      onSave: vi.fn(),
+      onTimezoneChange: vi.fn(),
+      onUnitPreferenceChange: vi.fn(),
+    });
+
+    render(<SettingsPage />);
+
+    expect(useBlockerMock).toHaveBeenCalledWith(expect.any(Function));
   });
 
   it('covers remaining static page fallback and click branches', () => {

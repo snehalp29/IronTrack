@@ -63,9 +63,9 @@ describe('VolumeService', () => {
       { weight: null, reps: null, durationSeconds: null },
     ]);
 
-    await expect(service.calculateSessionVolume('session-1')).resolves.toBe(
-      500,
-    );
+    await expect(
+      service.calculateSessionVolume('session-1', 'user-1'),
+    ).resolves.toBe(500);
     expect(prismaMock.set.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -74,6 +74,7 @@ describe('VolumeService', () => {
             deletedAt: null,
             session: {
               deletedAt: null,
+              userId: 'user-1',
             },
           },
         }),
@@ -89,9 +90,11 @@ describe('VolumeService', () => {
       count: 1,
     });
 
-    await expect(service.cacheSessionVolume('session-1')).resolves.toBe(500);
+    await expect(
+      service.cacheSessionVolume('session-1', 'user-1'),
+    ).resolves.toBe(500);
     expect(prismaMock.workoutSession.updateMany).toHaveBeenCalledWith({
-      where: { id: 'session-1', deletedAt: null },
+      where: { id: 'session-1', userId: 'user-1', deletedAt: null },
       data: { totalVolume: 500 },
     });
   });
@@ -104,11 +107,11 @@ describe('VolumeService', () => {
       count: 0,
     });
 
-    await expect(service.cacheSessionVolume('missing-session')).resolves.toBe(
-      320,
-    );
+    await expect(
+      service.cacheSessionVolume('missing-session', 'user-1'),
+    ).resolves.toBe(320);
     expect(prismaMock.workoutSession.updateMany).toHaveBeenCalledWith({
-      where: { id: 'missing-session', deletedAt: null },
+      where: { id: 'missing-session', userId: 'user-1', deletedAt: null },
       data: { totalVolume: 320 },
     });
   });
@@ -131,15 +134,89 @@ describe('VolumeService', () => {
       throw new Error('Unsupported transaction shape in test');
     });
 
-    await expect(service.cacheSessionVolume('session-2')).resolves.toBe(300);
+    await expect(
+      service.cacheSessionVolume('session-2', 'user-2'),
+    ).resolves.toBe(300);
 
     expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
     expect(tx.set.findMany).toHaveBeenCalledTimes(1);
     expect(tx.workoutSession.updateMany).toHaveBeenCalledWith({
-      where: { id: 'session-2', deletedAt: null },
+      where: { id: 'session-2', userId: 'user-2', deletedAt: null },
       data: { totalVolume: 300 },
     });
     expect(prismaMock.set.findMany).not.toHaveBeenCalled();
     expect(prismaMock.workoutSession.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('filters session-volume reads by owner when a user id is provided', async () => {
+    (prismaMock.set.findMany as jest.Mock).mockResolvedValue([
+      { weight: 100, reps: 5, durationSeconds: null },
+    ]);
+
+    await expect(
+      (
+        service as unknown as {
+          calculateSessionVolume: (
+            sessionId: string,
+            userId: string,
+          ) => Promise<number>;
+        }
+      ).calculateSessionVolume('session-1', 'user-1'),
+    ).resolves.toBe(500);
+
+    expect(prismaMock.set.findMany).toHaveBeenCalledWith({
+      where: {
+        deletedAt: null,
+        isCompleted: true,
+        sessionExercise: {
+          sessionId: 'session-1',
+          deletedAt: null,
+          session: {
+            deletedAt: null,
+            userId: 'user-1',
+          },
+        },
+      },
+      select: {
+        weight: true,
+        reps: true,
+        durationSeconds: true,
+      },
+    });
+  });
+
+  it('limits cached-volume writes to the owning session row', async () => {
+    const tx = {
+      set: {
+        findMany: jest.fn(async () => [
+          { weight: 60, reps: 5, durationSeconds: null },
+        ]),
+      },
+      workoutSession: {
+        updateMany: jest.fn(async () => ({ count: 1 })),
+      },
+    };
+    (prismaMock.$transaction as jest.Mock).mockImplementation(async (arg) => {
+      if (typeof arg === 'function') {
+        return arg(tx);
+      }
+      throw new Error('Unsupported transaction shape in test');
+    });
+
+    await expect(
+      (
+        service as unknown as {
+          cacheSessionVolume: (
+            sessionId: string,
+            userId: string,
+          ) => Promise<number>;
+        }
+      ).cacheSessionVolume('session-2', 'user-2'),
+    ).resolves.toBe(300);
+
+    expect(tx.workoutSession.updateMany).toHaveBeenCalledWith({
+      where: { id: 'session-2', userId: 'user-2', deletedAt: null },
+      data: { totalVolume: 300 },
+    });
   });
 });

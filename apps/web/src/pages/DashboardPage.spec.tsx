@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { findButtonByLabel } from '../testing/react-tree';
 import { DashboardPage } from './DashboardPage';
 
 const useEffectMock = vi.hoisted(() =>
@@ -69,6 +70,7 @@ describe('DashboardPage', () => {
       checklistTotalCount: 4,
       errorMessage: undefined,
       nextTemplate: { id: 'tpl-42', name: 'Push Day A' },
+      onStartNextWorkout: vi.fn(),
       workoutStreakDays: 5,
     });
   });
@@ -94,5 +96,26 @@ describe('DashboardPage', () => {
       replace: true,
       state: null,
     });
+  });
+
+  it('starts the next workout directly from the dashboard start action', () => {
+    const onStartNextWorkout = vi.fn();
+    useDashboardPageDataMock.mockReturnValue({
+      checklistCompleteCount: 3,
+      checklistTotalCount: 4,
+      errorMessage: undefined,
+      nextTemplate: { id: 'tpl-42', name: 'Push Day A' },
+      onStartNextWorkout,
+      workoutStreakDays: 5,
+    });
+
+    const view = DashboardPage();
+    const html = renderToStaticMarkup(view);
+
+    expect(html).toContain('Preview');
+    expect(html).toContain('Start');
+    findButtonByLabel(view, 'Start')?.props.onClick?.();
+
+    expect(onStartNextWorkout).toHaveBeenCalledTimes(1);
   });
 });

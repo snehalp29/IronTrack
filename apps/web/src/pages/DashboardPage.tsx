@@ -58,16 +58,13 @@ export function DashboardPage() {
           >
             Preview
           </Link>
-          <Link
-            to={
-              data.nextTemplate
-                ? `/workout/${data.nextTemplate.id}/preview`
-                : '/workout/template/new'
-            }
+          <button
+            type="button"
             className="button-link"
+            onClick={data.onStartNextWorkout}
           >
             Start
-          </Link>
+          </button>
         </div>
       </section>
     </div>

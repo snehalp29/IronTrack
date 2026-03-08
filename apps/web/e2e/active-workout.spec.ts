@@ -71,7 +71,10 @@ test('can edit workout notes through the notes modal and reload the saved value'
   await mockApi(page);
   await page.goto('/workout/active');
 
-  await page.getByRole('button', { name: 'Overflow' }).click();
+  const benchCard = page.locator('section.card').filter({
+    has: page.getByRole('heading', { name: 'Bench Press' }),
+  });
+  await benchCard.getByRole('button', { name: 'Overflow' }).click();
   await page.getByRole('button', { name: 'Edit Notes' }).click();
 
   const notesDialog = page.getByRole('dialog', { name: 'Edit Exercise Notes' });
@@ -83,7 +86,7 @@ test('can edit workout notes through the notes modal and reload the saved value'
 
   await expect(notesDialog).toBeHidden();
 
-  await page.getByRole('button', { name: 'Overflow' }).click();
+  await benchCard.getByRole('button', { name: 'Overflow' }).click();
   await page.getByRole('button', { name: 'Edit Notes' }).click();
   await expect(
     page
@@ -103,7 +106,10 @@ test('disables note actions while a notes save is in flight', async ({
   });
   await page.goto('/workout/active');
 
-  await page.getByRole('button', { name: 'Overflow' }).click();
+  const benchCard = page.locator('section.card').filter({
+    has: page.getByRole('heading', { name: 'Bench Press' }),
+  });
+  await benchCard.getByRole('button', { name: 'Overflow' }).click();
   await page.getByRole('button', { name: 'Edit Notes' }).click();
 
   const notesDialog = page.getByRole('dialog', { name: 'Edit Exercise Notes' });
@@ -159,7 +165,7 @@ test('navigates the full post-workout completion flow through summary, progress,
   await expect(page).toHaveURL(/\/workout\/complete$/);
   await page.getByRole('link', { name: 'View Summary' }).click();
   await expect(page).toHaveURL(/\/workout\/complete\/summary$/);
-  await expect(page.getByText('Volume: 10240')).toBeVisible();
+  await expect(page.getByText('Volume: 10,240')).toBeVisible();
 
   await page.getByRole('link', { name: 'Weekly Progress' }).click();
   await expect(page).toHaveURL(/\/workout\/complete\/progress$/);

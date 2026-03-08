@@ -12,8 +12,8 @@ type RouteNode = {
   index?: boolean;
   children?: RouteNode[];
   element?: {
-    props?: {
-      children?: {
+    props: {
+      children: {
         type?: unknown;
       };
     };
@@ -150,7 +150,7 @@ describe('App', () => {
       renderToStaticMarkup(
         blocked as Parameters<typeof renderToStaticMarkup>[0],
       ),
-    ).toContain('data-to="/workout/active"');
+    ).toContain('data-to="/"');
 
     activeWorkoutState.state = 'COMPLETED';
     activeWorkoutState.summary = { totalVolume: 1 };
@@ -158,8 +158,8 @@ describe('App', () => {
       completionElement.type as (props: { children: unknown }) => unknown
     )(completionElement.props);
     expect(
-      (allowed as { props?: { children?: { type?: unknown } } }).props?.children
-        ?.type,
+      (allowed as { props: { children: { type?: unknown } } }).props.children
+        .type,
     ).toBe(completionElement.props.children.type);
   });
 });

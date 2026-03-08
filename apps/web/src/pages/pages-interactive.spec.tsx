@@ -67,6 +67,28 @@ const useTemplateBuilderPageDataMock = vi.hoisted(() => vi.fn());
 const useExerciseWizardPageDataMock = vi.hoisted(() => vi.fn());
 const useSettingsPageDataMock = vi.hoisted(() => vi.fn());
 
+type ChangeTarget = {
+  value?: string;
+  selectedOptions?: Array<{ value: string }>;
+};
+
+function triggerChange(
+  node: unknown,
+  event: {
+    target: ChangeTarget;
+  },
+) {
+  (
+    node as
+      | {
+          props: {
+            onChange?: (nextEvent: { target: ChangeTarget }) => void;
+          };
+        }
+      | undefined
+  )?.props.onChange?.(event);
+}
+
 vi.mock('react', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react')>();
   return {
@@ -688,8 +710,8 @@ describe('interactive pages', () => {
       (element) => element.type === 'textarea',
     );
 
-    nameInput?.props.onChange?.({ target: { value: 'Bench Press' } });
-    descriptionInput?.props.onChange?.({
+    triggerChange(nameInput, { target: { value: 'Bench Press' } });
+    triggerChange(descriptionInput, {
       target: { value: 'Pause on the chest' },
     });
     findButtonByLabel(nameStep, 'Next')?.props.onClick?.();
@@ -732,10 +754,10 @@ describe('interactive pages', () => {
       totalSteps: 7,
     });
 
-    findElement(
-      ExerciseWizardPage(),
-      (element) => element.type === 'select',
-    )?.props.onChange?.({ target: { value: 'BODYWEIGHT' } });
+    triggerChange(
+      findElement(ExerciseWizardPage(), (element) => element.type === 'select'),
+      { target: { value: 'BODYWEIGHT' } },
+    );
     expect(onChangeField).toHaveBeenCalledWith('exerciseType', 'BODYWEIGHT');
 
     onChangeField.mockClear();
@@ -772,14 +794,14 @@ describe('interactive pages', () => {
       totalSteps: 7,
     });
 
-    findElement(
-      ExerciseWizardPage(),
-      (element) => element.type === 'select',
-    )?.props.onChange?.({
-      target: {
-        selectedOptions: [{ value: 'mg-2' }, { value: 'mg-3' }],
+    triggerChange(
+      findElement(ExerciseWizardPage(), (element) => element.type === 'select'),
+      {
+        target: {
+          selectedOptions: [{ value: 'mg-2' }, { value: 'mg-3' }],
+        },
       },
-    });
+    );
     expect(onChangeField).toHaveBeenCalledWith('secondaryMuscleGroupIds', [
       'mg-2',
       'mg-3',
@@ -818,14 +840,14 @@ describe('interactive pages', () => {
       totalSteps: 7,
     });
 
-    findElement(
-      ExerciseWizardPage(),
-      (element) => element.type === 'select',
-    )?.props.onChange?.({
-      target: {
-        selectedOptions: [{ value: 'eq-1' }, { value: 'eq-2' }],
+    triggerChange(
+      findElement(ExerciseWizardPage(), (element) => element.type === 'select'),
+      {
+        target: {
+          selectedOptions: [{ value: 'eq-1' }, { value: 'eq-2' }],
+        },
       },
-    });
+    );
     expect(onChangeField).toHaveBeenCalledWith('equipmentIds', [
       'eq-1',
       'eq-2',
@@ -884,14 +906,17 @@ describe('interactive pages', () => {
     ];
 
     inputs.forEach(({ expected, index, value }) => {
-      stepInputs[index]?.props.onChange?.({ target: { value } });
+      triggerChange(stepInputs[index], { target: { value } });
       expect(onChangeField).toHaveBeenCalledWith(expected[0], expected[1]);
     });
 
-    findElement(
-      defaultsStep,
-      (element) => element.type === 'textarea' && element.props.rows === 4,
-    )?.props.onChange?.({ target: { value: 'Brace the core' } });
+    triggerChange(
+      findElement(
+        defaultsStep,
+        (element) => element.type === 'textarea' && element.props.rows === 4,
+      ),
+      { target: { value: 'Brace the core' } },
+    );
     expect(onChangeField).toHaveBeenCalledWith('defaultCues', 'Brace the core');
   });
 
@@ -925,11 +950,14 @@ describe('interactive pages', () => {
     });
 
     const nameStep = TemplateBuilderPage();
-    findElement(
-      nameStep,
-      (element) =>
-        element.type === 'input' && element.props.id === 'template-name',
-    )?.props.onChange?.({ target: { value: 'Push Day A' } });
+    triggerChange(
+      findElement(
+        nameStep,
+        (element) =>
+          element.type === 'input' && element.props.id === 'template-name',
+      ),
+      { target: { value: 'Push Day A' } },
+    );
     findButtonByLabel(nameStep, 'Next')?.props.onClick?.();
 
     expect(onChangeName).toHaveBeenCalledWith('Push Day A');
@@ -969,11 +997,14 @@ describe('interactive pages', () => {
     });
 
     const selectionStep = TemplateBuilderPage();
-    findElement(
-      selectionStep,
-      (element) =>
-        element.type === 'input' && element.props.type === 'checkbox',
-    )?.props.onChange?.();
+    triggerChange(
+      findElement(
+        selectionStep,
+        (element) =>
+          element.type === 'input' && element.props.type === 'checkbox',
+      ),
+      { target: {} },
+    );
     const numericInputs = [
       findElement(
         selectionStep,
@@ -994,9 +1025,9 @@ describe('interactive pages', () => {
           element.props.id === 'template-rep-max-exercise-bench',
       ),
     ];
-    numericInputs[0]?.props.onChange?.({ target: { value: '5' } });
-    numericInputs[1]?.props.onChange?.({ target: { value: '7' } });
-    numericInputs[2]?.props.onChange?.({ target: { value: '9' } });
+    triggerChange(numericInputs[0], { target: { value: '5' } });
+    triggerChange(numericInputs[1], { target: { value: '7' } });
+    triggerChange(numericInputs[2], { target: { value: '9' } });
 
     expect(onToggleExercise).toHaveBeenCalledWith('exercise-bench');
     expect(onChangeExerciseField).toHaveBeenNthCalledWith(
@@ -1088,12 +1119,15 @@ describe('interactive pages', () => {
     const orderStep = TemplateBuilderPage();
     findButtonByLabel(orderStep, 'Move Bench Press Up')?.props.onClick?.();
     findButtonByLabel(orderStep, 'Move Bench Press Down')?.props.onClick?.();
-    findElement(
-      orderStep,
-      (element) =>
-        element.type === 'input' &&
-        element.props.id === 'template-superset-exercise-bench',
-    )?.props.onChange?.({ target: { value: 'A' } });
+    triggerChange(
+      findElement(
+        orderStep,
+        (element) =>
+          element.type === 'input' &&
+          element.props.id === 'template-superset-exercise-bench',
+      ),
+      { target: { value: 'A' } },
+    );
 
     expect(onMoveExercise).toHaveBeenNthCalledWith(1, 'exercise-bench', -1);
     expect(onMoveExercise).toHaveBeenNthCalledWith(2, 'exercise-bench', 1);
@@ -1160,12 +1194,15 @@ describe('interactive pages', () => {
     });
 
     const reviewStep = TemplateBuilderPage();
-    findElement(
-      reviewStep,
-      (element) =>
-        element.type === 'textarea' &&
-        element.props.id === 'template-description',
-    )?.props.onChange?.({ target: { value: 'Controlled tempo' } });
+    triggerChange(
+      findElement(
+        reviewStep,
+        (element) =>
+          element.type === 'textarea' &&
+          element.props.id === 'template-description',
+      ),
+      { target: { value: 'Controlled tempo' } },
+    );
     expect(onChangeDescription).toHaveBeenCalledWith('Controlled tempo');
     expect(
       findButtonByLabel(reviewStep, 'Create Template')?.props.disabled,
@@ -1352,10 +1389,10 @@ describe('interactive pages', () => {
       totalSteps: 7,
     });
 
-    findElement(
-      ExerciseWizardPage(),
-      (element) => element.type === 'select',
-    )?.props.onChange?.({ target: { value: 'mg-1' } });
+    triggerChange(
+      findElement(ExerciseWizardPage(), (element) => element.type === 'select'),
+      { target: { value: 'mg-1' } },
+    );
     expect(onChangeField).toHaveBeenCalledWith('primaryMuscleGroupId', 'mg-1');
 
     searchParamsState.value = new URLSearchParams('tab=guide');

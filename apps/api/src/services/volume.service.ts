@@ -11,6 +11,7 @@ export class VolumeService {
 
   async calculateSessionVolume(
     sessionId: string,
+    userId: string,
     client: VolumeClient = this.prisma,
   ): Promise<number> {
     const sets = await client.set.findMany({
@@ -22,6 +23,7 @@ export class VolumeService {
           deletedAt: null,
           session: {
             deletedAt: null,
+            userId,
           },
         },
       },
@@ -35,13 +37,18 @@ export class VolumeService {
     return sets.reduce((sum, set) => sum + calculateSetVolume(set), 0);
   }
 
-  async cacheSessionVolume(sessionId: string): Promise<number> {
+  async cacheSessionVolume(sessionId: string, userId: string): Promise<number> {
     return this.prisma.$transaction(async (tx) => {
-      const totalVolume = await this.calculateSessionVolume(sessionId, tx);
+      const totalVolume = await this.calculateSessionVolume(
+        sessionId,
+        userId,
+        tx,
+      );
 
       await tx.workoutSession.updateMany({
         where: {
           id: sessionId,
+          userId,
           deletedAt: null,
         },
         data: { totalVolume },

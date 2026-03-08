@@ -20,13 +20,25 @@ type NormalizedSupersetItem<T> = SupersetItem<T> & {
 @Injectable()
 export class SupersetService {
   interleave<T>(entries: SupersetItem<T>[]): T[] {
-    const normalizedEntries: NormalizedSupersetItem<T>[] = entries.map(
-      (entry, sequence) => ({
+    const normalizedEntries: NormalizedSupersetItem<T>[] = entries
+      .map((entry) => ({
+        ...entry,
+        supersetGroupKey: normalizeSupersetGroupKey(entry.supersetGroupKey),
+      }))
+      .sort((left, right) => {
+        if (left.orderIndex !== right.orderIndex) {
+          return left.orderIndex - right.orderIndex;
+        }
+
+        return compareNullableSupersetKeys(
+          left.supersetGroupKey,
+          right.supersetGroupKey,
+        );
+      })
+      .map((entry, sequence) => ({
         ...entry,
         sequence,
-        supersetGroupKey: normalizeSupersetGroupKey(entry.supersetGroupKey),
-      }),
-    );
+      }));
 
     const groups = new Map<string, NormalizedSupersetItem<T>[]>();
     const singleUnits: OrderedUnit<T>[] = normalizedEntries
@@ -80,4 +92,21 @@ function normalizeSupersetGroupKey(
 
   const trimmed = key.trim();
   return trimmed.length === 0 ? null : trimmed;
+}
+
+function compareNullableSupersetKeys(
+  left: string | null,
+  right: string | null,
+): number {
+  if (left === right) {
+    return 0;
+  }
+  if (left == null) {
+    return -1;
+  }
+  if (right == null) {
+    return 1;
+  }
+
+  return left.localeCompare(right);
 }

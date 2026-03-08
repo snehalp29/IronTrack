@@ -46,7 +46,23 @@ export function ActiveWorkoutPage() {
 
       {data.exercises.map((exercise) => (
         <section key={exercise.id} className="card">
-          <h3>{exercise.name}</h3>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: 8,
+            }}
+          >
+            <h3>{exercise.name}</h3>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => data.openOverflow(exercise.id)}
+            >
+              Overflow
+            </button>
+          </div>
           <div className="grid">
             {exercise.sets.map((set) => (
               <button

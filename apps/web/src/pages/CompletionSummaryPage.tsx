@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 
+import { formatDurationLabel, formatNumber } from '../lib/web-data';
 import { useActiveWorkoutStore } from '../stores/activeWorkoutStore';
 
 export function CompletionSummaryPage() {
@@ -20,8 +21,10 @@ export function CompletionSummaryPage() {
   return (
     <div className="card">
       <h1>Summary</h1>
-      <p className="meta">Volume: {summary.totalVolume}</p>
-      <p className="meta">Duration: {summary.durationSeconds}s</p>
+      <p className="meta">Volume: {formatNumber(summary.totalVolume)}</p>
+      <p className="meta">
+        Duration: {formatDurationLabel(summary.durationSeconds)}
+      </p>
       <p className="meta">PRs: {summary.prs}</p>
       <Link to="/workout/complete/progress" className="button-link">
         Weekly Progress

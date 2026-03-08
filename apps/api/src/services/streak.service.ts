@@ -54,7 +54,11 @@ export class StreakService {
     date: string,
     timezone?: string,
   ): Promise<void> {
-    const completedCount = await this.prisma.checklistItem.count({
+    const completedTypes = await this.prisma.checklistItem.findMany({
+      distinct: ['type'],
+      select: {
+        type: true,
+      },
       where: {
         userId,
         date: new Date(`${date}T00:00:00.000Z`),
@@ -63,7 +67,7 @@ export class StreakService {
       },
     });
 
-    if (completedCount >= REQUIRED_CHECKLIST_TYPES.length) {
+    if (completedTypes.length >= REQUIRED_CHECKLIST_TYPES.length) {
       await this.incrementStreak(userId, StreakType.CHECKLIST, date, timezone);
     }
   }

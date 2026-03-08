@@ -352,7 +352,10 @@ export class SessionsService {
       [];
     let completion: Awaited<ReturnType<CompletionService['calculate']>>;
     try {
-      totalVolume = await this.volumeService.cacheSessionVolume(sessionId);
+      totalVolume = await this.volumeService.cacheSessionVolume(
+        sessionId,
+        userId,
+      );
       newPrs = await this.prDetectionService.detectForSession(
         userId,
         sessionId,

@@ -18,6 +18,25 @@ function render(element: ReactElement): string {
   return renderToStaticMarkup(cloneElement(element));
 }
 
+function triggerEscape(element: ReactElement | null) {
+  const keyHandler = (
+    findElement(element, (node) => node.props.onKeyDown !== undefined) as
+      | {
+          props: {
+            onKeyDown?: (event: {
+              key: string;
+              preventDefault: () => void;
+            }) => void;
+          };
+        }
+      | undefined
+  )?.props.onKeyDown;
+  keyHandler?.({
+    key: 'Escape',
+    preventDefault: vi.fn(),
+  });
+}
+
 describe('workout modals', () => {
   it('ExerciseOverflowModal renders actionable controls and close semantics', () => {
     expect(
@@ -249,13 +268,7 @@ describe('workout modals', () => {
       onSwapExercise: vi.fn(),
       onDeleteExercise: vi.fn(),
     });
-    findElement(
-      overflowView,
-      (element) => element.props.onKeyDown !== undefined,
-    )?.props.onKeyDown?.({
-      key: 'Escape',
-      preventDefault: vi.fn(),
-    });
+    triggerEscape(overflowView as ReactElement | null);
     expect(render(overflowView as ReactElement)).not.toContain('meta');
     expect(overflowClose).toHaveBeenCalledTimes(1);
 
@@ -265,13 +278,7 @@ describe('workout modals', () => {
       onClose: incompleteClose,
       onConfirm: vi.fn(),
     });
-    findElement(
-      incompleteView,
-      (element) => element.props.onKeyDown !== undefined,
-    )?.props.onKeyDown?.({
-      key: 'Escape',
-      preventDefault: vi.fn(),
-    });
+    triggerEscape(incompleteView as ReactElement | null);
     expect(incompleteClose).toHaveBeenCalledTimes(1);
 
     const reorderClose = vi.fn();
@@ -288,13 +295,7 @@ describe('workout modals', () => {
     });
     findButtonsByTextIncludes(reorderView, 'Move ')[1]?.props.onClick?.();
     findButtonsByTextIncludes(reorderView, 'Move ')[2]?.props.onClick?.();
-    findElement(
-      reorderView,
-      (element) => element.props.onKeyDown !== undefined,
-    )?.props.onKeyDown?.({
-      key: 'Escape',
-      preventDefault: vi.fn(),
-    });
+    triggerEscape(reorderView as ReactElement | null);
     expect(reorderClose).toHaveBeenCalledTimes(1);
 
     const toggleExercise = vi.fn();
@@ -311,13 +312,7 @@ describe('workout modals', () => {
       onApply: vi.fn(),
     });
     findButtonsByTextIncludes(supersetView, 'Select ')[1]?.props.onClick?.();
-    findElement(
-      supersetView,
-      (element) => element.props.onKeyDown !== undefined,
-    )?.props.onKeyDown?.({
-      key: 'Escape',
-      preventDefault: vi.fn(),
-    });
+    triggerEscape(supersetView as ReactElement | null);
     expect(toggleExercise).toHaveBeenCalledWith('se-2');
     expect(supersetClose).toHaveBeenCalledTimes(1);
 
@@ -339,13 +334,7 @@ describe('workout modals', () => {
       true,
     );
     expect(findButtonByLabel(notesView, 'Cancel')?.props.disabled).toBe(true);
-    findElement(
-      notesView,
-      (element) => element.props.onKeyDown !== undefined,
-    )?.props.onKeyDown?.({
-      key: 'Escape',
-      preventDefault: vi.fn(),
-    });
+    triggerEscape(notesView as ReactElement | null);
     expect(notesClose).toHaveBeenCalledTimes(1);
   });
 });

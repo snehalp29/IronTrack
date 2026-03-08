@@ -107,6 +107,9 @@ const TEMPLATE_BUILDER_STEPS = [
 const SUPPORTED_TIMEZONES = resolveSupportedTimezones();
 
 export function useDashboardPageData() {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const start = useActiveWorkoutStore((state) => state.start);
   const userQuery = useQuery({
     queryKey: ['user', 'me'],
     queryFn: fetchCurrentUser,
@@ -125,27 +128,60 @@ export function useDashboardPageData() {
     queryKey: ['streak', 'workout'],
     queryFn: fetchWorkoutStreak,
   });
+  const nextTemplate = templatesQuery.data?.[0]
+    ? {
+        id: templatesQuery.data[0].id,
+        name: templatesQuery.data[0].name,
+      }
+    : undefined;
+  const startMutation = useMutation({
+    mutationFn: async () => {
+      if (!nextTemplate) {
+        throw new Error('Template not found.');
+      }
+
+      return startWorkoutSession({
+        workoutTemplateId: nextTemplate.id,
+      });
+    },
+    onSuccess: async (session) => {
+      start(session.id, mapSessionExercises(session), {
+        startedAt: session.startedAt,
+      });
+      await queryClient.invalidateQueries({ queryKey: ['active-session'] });
+      navigate('/workout/active');
+    },
+  });
 
   return {
     isLoading:
       userQuery.isLoading ||
       checklistQuery.isLoading ||
       templatesQuery.isLoading ||
-      streakQuery.isLoading,
+      streakQuery.isLoading ||
+      startMutation.isPending,
     errorMessage:
       asErrorMessage(userQuery.error) ??
       asErrorMessage(checklistQuery.error) ??
       asErrorMessage(templatesQuery.error) ??
-      asErrorMessage(streakQuery.error),
+      asErrorMessage(streakQuery.error) ??
+      asErrorMessage(startMutation.error),
     checklistCompleteCount:
       checklistQuery.data?.filter((item) => item.isCompleted).length ?? 0,
     checklistTotalCount: checklistQuery.data?.length ?? 0,
-    nextTemplate: templatesQuery.data?.[0]
-      ? {
-          id: templatesQuery.data[0].id,
-          name: templatesQuery.data[0].name,
-        }
-      : undefined,
+    nextTemplate,
+    onStartNextWorkout: async () => {
+      if (!nextTemplate) {
+        navigate('/workout/template/new');
+        return;
+      }
+
+      try {
+        await startMutation.mutateAsync();
+      } catch {
+        return;
+      }
+    },
     workoutStreakDays: streakQuery.data?.currentStreakDays ?? 0,
   };
 }
@@ -157,8 +193,37 @@ export function useHistoryPageData() {
   });
   const sessionsQuery = useQuery({
     queryKey: ['sessions', 'history'],
-    queryFn: () =>
-      listWorkoutSessions({ page: 1, pageSize: 20, status: 'FINISHED' }),
+    queryFn: async () => {
+      const firstPage = await listWorkoutSessions({
+        page: 1,
+        pageSize: 20,
+        status: 'FINISHED',
+      });
+      const totalPages = Math.ceil(
+        firstPage.pagination.total / firstPage.pagination.pageSize,
+      );
+      if (totalPages <= 1) {
+        return firstPage;
+      }
+
+      const remainingPages = await Promise.all(
+        Array.from({ length: totalPages - 1 }, (_, index) =>
+          listWorkoutSessions({
+            page: index + 2,
+            pageSize: firstPage.pagination.pageSize,
+            status: 'FINISHED',
+          }),
+        ),
+      );
+
+      return {
+        ...firstPage,
+        items: [
+          ...firstPage.items,
+          ...remainingPages.flatMap((page) => page.items),
+        ],
+      };
+    },
   });
 
   return {
@@ -331,15 +396,21 @@ export function useSettingsPageData() {
       }
     },
     onDeleteAccount: async () => {
-      await deleteCurrentUser();
+      try {
+        await deleteCurrentUser();
+      } catch (error) {
+        setErrorMessage(asErrorMessage(error) ?? 'Failed to delete account');
+        return;
+      }
+
       try {
         await logoutCurrentSession();
       } catch {
         // Delete succeeded; clear any remaining local auth state anyway.
-      } finally {
-        clearAuthSession();
-        navigate('/register');
       }
+
+      clearAuthSession();
+      navigate('/register');
     },
   };
 }
@@ -495,18 +566,9 @@ export function useTemplateBuilderPageData() {
     },
     onMoveExercise: (exerciseId: string, direction: -1 | 1) => {
       setFormValues((current) => {
-        const selectedExercises = current.exercises.filter(
-          (exercise) => exercise.selected,
-        );
-        const moved = moveItem(selectedExercises, exerciseId, direction);
-        const movedIds = new Set(moved.map((exercise) => exercise.id));
-        const remaining = current.exercises.filter(
-          (exercise) => !movedIds.has(exercise.id),
-        );
-
         return {
           ...current,
-          exercises: [...moved, ...remaining],
+          exercises: moveItem(current.exercises, exerciseId, direction),
         };
       });
     },
@@ -611,7 +673,7 @@ export function useExerciseSelectPageData() {
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const sessionId = useActiveWorkoutStore((state) => state.sessionId);
-  const start = useActiveWorkoutStore((state) => state.start);
+  const syncFromServer = useActiveWorkoutStore((state) => state.syncFromServer);
   const [errorMessage, setErrorMessage] = useState<string>();
   const exercisesQuery = useQuery({
     queryKey: ['exercises'],
@@ -640,9 +702,13 @@ export function useExerciseSelectPageData() {
           const activeSession = await fetchActiveSession();
           queryClient.setQueryData(['active-session'], activeSession ?? null);
           if (activeSession) {
-            start(activeSession.id, mapSessionExercises(activeSession), {
-              startedAt: activeSession.startedAt,
-            });
+            syncFromServer(
+              activeSession.id,
+              mapSessionExercises(activeSession),
+              {
+                startedAt: activeSession.startedAt,
+              },
+            );
             await queryClient.invalidateQueries({
               queryKey: ['active-session'],
             });
@@ -1308,18 +1374,29 @@ function asErrorMessage(error: unknown): string | undefined {
   return error instanceof Error ? error.message : undefined;
 }
 
-function formatNumber(value: number): string {
+export function formatNumber(value: number): string {
   return new Intl.NumberFormat('en-US', {
     maximumFractionDigits: 0,
   }).format(value);
 }
 
-function formatDurationLabel(totalSeconds: number): string {
+export function formatDurationLabel(totalSeconds: number): string {
   if (!totalSeconds) {
     return '0m';
   }
 
-  return `${Math.max(1, Math.round(totalSeconds / 60))}m`;
+  if (totalSeconds < 60) {
+    return `${Math.max(1, Math.round(totalSeconds))}s`;
+  }
+
+  const totalMinutes = Math.round(totalSeconds / 60);
+  if (totalMinutes < 60) {
+    return `${totalMinutes}m`;
+  }
+
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
 }
 
 function formatDateInTimezone(value: Date | string, timezone: string): string {
@@ -1397,16 +1474,16 @@ function buildPerformanceLabel(item: {
 }
 
 function formatExerciseTypeLabel(exerciseType: string): string {
+  const explicitLabel = EXERCISE_TYPE_LABELS[exerciseType];
+  if (explicitLabel) {
+    return explicitLabel;
+  }
+
   return exerciseType
     .split('_')
-    .map((segment) =>
-      segment.length
-        ? `${segment[0]}${segment.slice(1).toLowerCase()}`
-        : segment,
-    )
-    .join(' + ')
-    .replace('Reps + Only', 'Reps Only')
-    .replace('Bodyweight + Plus + Weight', 'Bodyweight + Weight');
+    .filter((segment) => segment.length > 0)
+    .map((segment) => `${segment[0]}${segment.slice(1).toLowerCase()}`)
+    .join(' ');
 }
 
 function buildRecommendationReason(
@@ -1511,6 +1588,13 @@ function resolveSupportedTimezones(): string[] {
 }
 
 const SUPPORTED_TIMEZONE_CACHE = new Map<string, string[]>();
+const EXERCISE_TYPE_LABELS: Record<string, string> = {
+  BODYWEIGHT: 'Bodyweight',
+  BODYWEIGHT_PLUS_WEIGHT: 'Bodyweight + Weight',
+  DURATION: 'Duration',
+  REPS_ONLY: 'Reps Only',
+  WEIGHT_REPS: 'Weight + Reps',
+};
 
 function createDateFormatter(timezone: string) {
   try {
