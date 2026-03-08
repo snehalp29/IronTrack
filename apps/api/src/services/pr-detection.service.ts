@@ -21,6 +21,8 @@ export class PrDetectionService {
   constructor(private readonly prisma: PrismaService) {}
 
   async detectForSession(userId: string, sessionId: string) {
+    let lastSerializableConflict: unknown;
+
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
         return await this.prisma.$transaction(
@@ -30,13 +32,17 @@ export class PrDetectionService {
           },
         );
       } catch (error) {
-        if (!isSerializableTransactionConflict(error) || attempt === 2) {
+        if (!isSerializableTransactionConflict(error)) {
           throw error;
         }
+
+        lastSerializableConflict = error;
       }
     }
 
-    return [];
+    throw lastSerializableConflict instanceof Error
+      ? lastSerializableConflict
+      : new Error('Serializable transaction failed');
   }
 
   private async detectForSessionInTransaction(

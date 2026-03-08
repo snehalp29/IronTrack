@@ -316,10 +316,7 @@ function validateSetPayload(payload: unknown): string | undefined {
   ];
 
   while (stack.length > 0) {
-    const current = stack.pop();
-    if (!current) {
-      continue;
-    }
+    const current = stack.pop() as { value: unknown; depth: number };
 
     if (current.depth > MAX_SET_PAYLOAD_DEPTH) {
       return `payload nesting must not exceed ${MAX_SET_PAYLOAD_DEPTH} levels`;

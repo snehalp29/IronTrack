@@ -994,4 +994,100 @@ describe('ExercisesService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prismaMock.exerciseNote.upsert).not.toHaveBeenCalled();
   });
+
+  it('rethrows unexpected create errors that are not exercise-name conflicts', async () => {
+    const { service, prismaMock } = createService();
+    const failure = new Error('insert failed');
+    (prismaMock.exerciseTemplate.findFirst as jest.Mock).mockResolvedValueOnce(
+      null,
+    );
+    (prismaMock.exerciseTemplate.create as jest.Mock).mockRejectedValueOnce(
+      failure,
+    );
+
+    await expect(
+      service.create('user-1', {
+        name: 'Custom Curl',
+        exerciseType: 'WEIGHT_REPS',
+        primaryMuscleGroupId: '11111111-1111-4111-8111-111111111111',
+        secondaryMuscleGroupIds: [],
+        equipmentIds: [],
+      }),
+    ).rejects.toBe(failure);
+  });
+
+  it('rethrows non-name uniqueness violations during create', async () => {
+    const { service, prismaMock } = createService();
+    const failure = Object.assign(new Error('Unique constraint failed'), {
+      code: 'P2002',
+      meta: {
+        target: 'ExerciseTemplate_ownerUserId_key',
+      },
+    });
+    (prismaMock.exerciseTemplate.findFirst as jest.Mock).mockResolvedValueOnce(
+      null,
+    );
+    (prismaMock.exerciseTemplate.create as jest.Mock).mockRejectedValueOnce(
+      failure,
+    );
+
+    await expect(
+      service.create('user-1', {
+        name: 'Custom Curl',
+        exerciseType: 'WEIGHT_REPS',
+        primaryMuscleGroupId: '11111111-1111-4111-8111-111111111111',
+        secondaryMuscleGroupIds: [],
+        equipmentIds: [],
+      }),
+    ).rejects.toBe(failure);
+  });
+
+  it('rethrows unexpected update errors that are not exercise-name conflicts', async () => {
+    const { service, prismaMock, tx } = createService();
+    const failure = new Error('update failed');
+    (prismaMock.exerciseTemplate.findFirst as jest.Mock).mockResolvedValueOnce({
+      id: 'exercise-1',
+      name: 'Current',
+    });
+    (tx.exerciseTemplate.updateMany as jest.Mock).mockRejectedValueOnce(
+      failure,
+    );
+
+    await expect(
+      service.update('user-1', 'exercise-1', { description: 'Updated' }),
+    ).rejects.toBe(failure);
+  });
+
+  it('throws when the edited exercise disappears before the final refetch', async () => {
+    const { service, prismaMock, tx } = createService();
+    (prismaMock.exerciseTemplate.findFirst as jest.Mock).mockResolvedValueOnce({
+      id: 'exercise-1',
+      name: 'Current',
+    });
+    (tx.exerciseTemplate.findFirst as jest.Mock).mockResolvedValueOnce(null);
+
+    await expect(
+      service.update('user-1', 'exercise-1', { description: 'Updated' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('rethrows nullish create errors without treating them as name conflicts', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.exerciseTemplate.findFirst as jest.Mock).mockResolvedValueOnce(
+      null,
+    );
+    (prismaMock.exerciseTemplate.create as jest.Mock).mockRejectedValueOnce(
+      null,
+    );
+
+    await expect(
+      service.create('user-1', {
+        name: 'Custom Curl',
+        exerciseType: 'WEIGHT_REPS',
+        primaryMuscleGroupId: '11111111-1111-4111-8111-111111111111',
+        secondaryMuscleGroupIds: [],
+        equipmentIds: [],
+      }),
+    ).rejects.toBeNull();
+  });
 });

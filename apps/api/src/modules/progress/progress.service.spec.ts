@@ -329,4 +329,22 @@ describe('ProgressService', () => {
       }),
     );
   });
+
+  it('clears the cached muscle count when count loading fails so a retry can succeed', async () => {
+    (prismaMock.set.findMany as jest.Mock).mockResolvedValue([]);
+    (prismaMock.muscleGroup.count as jest.Mock)
+      .mockRejectedValueOnce(new Error('count failed'))
+      .mockResolvedValueOnce(6);
+
+    await expect(service.weekly('user-1', '2024-01-01')).rejects.toThrow(
+      'count failed',
+    );
+    await expect(service.weekly('user-1', '2024-01-08')).resolves.toMatchObject(
+      {
+        totalMuscles: 6,
+      },
+    );
+
+    expect(prismaMock.muscleGroup.count).toHaveBeenCalledTimes(2);
+  });
 });

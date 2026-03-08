@@ -110,6 +110,7 @@ export class WorkoutTemplatesService {
   async create(userId: string, input: CreateWorkoutTemplateDto) {
     const name = normalizeTemplateNameOrThrow(input.name);
     assertUniqueTemplateExerciseOrderIndexes(input.exercises);
+    let lastSerializableConflict: unknown;
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
@@ -152,15 +153,18 @@ export class WorkoutTemplatesService {
       } catch (error) {
         if (
           !isSerializableTransactionConflict(error) ||
-          attempt === 2 ||
           input.orderIndex !== undefined
         ) {
           throw error;
         }
+
+        lastSerializableConflict = error;
       }
     }
 
-    throw new Error('Failed to create template');
+    throw lastSerializableConflict instanceof Error
+      ? lastSerializableConflict
+      : new Error('Failed to create template');
   }
 
   async update(

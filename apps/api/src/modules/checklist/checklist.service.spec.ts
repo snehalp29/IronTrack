@@ -321,4 +321,69 @@ describe('ChecklistService', () => {
     expect(prismaMock.checklistItem.findUnique).toHaveBeenCalledTimes(1);
     expect(prismaMock.checklistItem.updateMany).not.toHaveBeenCalled();
   });
+
+  it('backfills completedAt when a completed checklist row exists without a timestamp', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.checklistItem.findUnique as jest.Mock).mockResolvedValue({
+      id: 'item-1',
+    });
+    (prismaMock.checklistItem.upsert as jest.Mock).mockResolvedValue({
+      id: 'item-1',
+      userId: 'user-1',
+      date: new Date('2024-01-10T00:00:00.000Z'),
+      type: 'WORKOUT',
+      isCompleted: true,
+      completedAt: null,
+      user: {
+        timezone: 'UTC',
+      },
+    });
+    (prismaMock.checklistItem.update as jest.Mock).mockResolvedValue({
+      id: 'item-1',
+      userId: 'user-1',
+      date: new Date('2024-01-10T00:00:00.000Z'),
+      type: 'WORKOUT',
+      isCompleted: true,
+      completedAt: new Date('2024-01-10T10:00:00.000Z'),
+      user: {
+        timezone: 'UTC',
+      },
+    });
+
+    await service.upsert('user-1', {
+      date: '2024-01-10',
+      type: 'WORKOUT',
+      isCompleted: true,
+    });
+
+    expect(prismaMock.checklistItem.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          userId_date_type: {
+            userId: 'user-1',
+            date: new Date('2024-01-10T00:00:00.000Z'),
+            type: 'WORKOUT',
+          },
+        },
+        data: {
+          completedAt: expect.any(Date),
+        },
+      }),
+    );
+  });
+
+  it('throws when the checklist transaction returns no item', async () => {
+    const { service, prismaMock, streakServiceMock } = createService();
+    (prismaMock.$transaction as jest.Mock).mockResolvedValueOnce(null);
+
+    await expect(
+      service.upsert('user-1', {
+        date: '2024-01-10',
+        type: 'WORKOUT',
+        isCompleted: false,
+      }),
+    ).rejects.toThrow('Checklist item upsert failed unexpectedly');
+
+    expect(streakServiceMock.onChecklistCompleted).not.toHaveBeenCalled();
+  });
 });

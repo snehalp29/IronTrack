@@ -38,4 +38,20 @@ describe('createPlaywrightConfig', () => {
       ' preview ',
     );
   });
+
+  it('disables the managed web server when targeting docker', () => {
+    const config = createPlaywrightConfig({ E2E_TARGET: 'docker' });
+
+    expect(config.use?.baseURL).toBe('http://127.0.0.1:3001');
+    expect(config.webServer).toBeUndefined();
+  });
+
+  it('uses the configured docker web base url when provided', () => {
+    const config = createPlaywrightConfig({
+      E2E_TARGET: 'docker',
+      E2E_WEB_BASE_URL: 'http://127.0.0.1:4401',
+    });
+
+    expect(config.use?.baseURL).toBe('http://127.0.0.1:4401');
+  });
 });

@@ -972,4 +972,156 @@ describe('PrDetectionService', () => {
     expect(prismaMock.pRRecord.upsert).toHaveBeenCalled();
     expect(maxInFlight).toBeLessThanOrEqual(25);
   });
+
+  it('rethrows the last serialization failure after detectForSession exhausts retries', async () => {
+    const serializationFailure = Object.assign(
+      new Error('serialization failure'),
+      {
+        code: 'P2034',
+      },
+    );
+    const prismaMock = {
+      set: {
+        findMany: jest.fn(),
+      },
+      $transaction: jest.fn().mockRejectedValue(serializationFailure),
+      pRRecord: {
+        findMany: jest.fn(),
+        upsert: jest.fn(),
+      },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        PrDetectionService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(PrDetectionService);
+    await expect(service.detectForSession('user-1', 'session-1')).rejects.toBe(
+      serializationFailure,
+    );
+    expect(prismaMock.$transaction).toHaveBeenCalledTimes(3);
+  });
+
+  it('rethrows non-serializable transaction errors without retrying detectForSession', async () => {
+    const failure = new Error('database unavailable');
+    const prismaMock = {
+      set: {
+        findMany: jest.fn(),
+      },
+      $transaction: jest.fn().mockRejectedValue(failure),
+      pRRecord: {
+        findMany: jest.fn(),
+        upsert: jest.fn(),
+      },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        PrDetectionService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(PrDetectionService);
+    await expect(service.detectForSession('user-1', 'session-1')).rejects.toBe(
+      failure,
+    );
+    expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('executes recalculation operations directly when given a transaction client', async () => {
+    const tx = {
+      set: {
+        findMany: jest.fn(async () => [
+          {
+            id: 'set-1',
+            weight: 100,
+            reps: 5,
+            completedAt: new Date('2024-01-01T10:00:00.000Z'),
+            sessionExercise: { sessionId: 'session-1' },
+          },
+        ]),
+      },
+      pRRecord: {
+        upsert: jest.fn(async () => undefined),
+        deleteMany: jest.fn(async () => ({ count: 0 })),
+      },
+    };
+    const prismaMock = {
+      set: {
+        findMany: jest.fn(),
+      },
+      $transaction: jest.fn(),
+      pRRecord: {
+        upsert: jest.fn(),
+        deleteMany: jest.fn(),
+      },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        PrDetectionService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(PrDetectionService);
+    await service.recalculateForExercise('user-1', 'exercise-1', tx as never);
+
+    expect(tx.pRRecord.upsert).toHaveBeenCalled();
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('rethrows primitive detectForSession transaction failures without treating them as serializable conflicts', async () => {
+    const prismaMock = {
+      set: {
+        findMany: jest.fn(),
+      },
+      $transaction: jest.fn().mockRejectedValue('plain failure'),
+      pRRecord: {
+        findMany: jest.fn(),
+        upsert: jest.fn(),
+      },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        PrDetectionService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(PrDetectionService);
+    await expect(service.detectForSession('user-1', 'session-1')).rejects.toBe(
+      'plain failure',
+    );
+  });
+
+  it('falls back to a generic detectForSession error when serialization conflicts are non-Error values', async () => {
+    const prismaMock = {
+      set: {
+        findMany: jest.fn(),
+      },
+      $transaction: jest.fn().mockRejectedValue({ code: 'P2034' }),
+      pRRecord: {
+        findMany: jest.fn(),
+        upsert: jest.fn(),
+      },
+    } as unknown as PrismaService;
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        PrDetectionService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
+    }).compile();
+
+    const service = moduleRef.get(PrDetectionService);
+    await expect(
+      service.detectForSession('user-1', 'session-1'),
+    ).rejects.toThrow('Serializable transaction failed');
+  });
 });

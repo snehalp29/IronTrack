@@ -340,6 +340,11 @@ export class SessionsService {
       if (current.status !== 'IN_PROGRESS') {
         this.throwSessionAlreadyFinished();
       }
+
+      throw new ConflictException({
+        code: 'SESSION_FINISH_CONFLICT',
+        message: 'Session could not be finished because its state changed',
+      });
     }
 
     let totalVolume: number;
@@ -1401,7 +1406,7 @@ export class SessionsService {
   private async assertWorkoutTemplateOwnership(
     userId: string,
     workoutTemplateId: string,
-    client: Pick<PrismaService, 'workoutTemplate'> = this.prisma,
+    client: Pick<PrismaService, 'workoutTemplate'>,
   ) {
     const template = await client.workoutTemplate.findFirst({
       where: {
@@ -1448,7 +1453,7 @@ export class SessionsService {
   private async assertSessionExerciseOwnership(
     userId: string,
     sessionExerciseId: string,
-    client: SetMutationClient = this.prisma,
+    client: SetMutationClient,
     options?: { requireInProgress?: boolean },
   ) {
     const sessionExercise = await client.sessionExercise.findFirst({

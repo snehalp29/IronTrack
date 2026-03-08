@@ -445,4 +445,103 @@ describe('session set schemas', () => {
 
     expect(result.success).toBe(false);
   });
+
+  it('accepts session list queries whose date range stays within the max window', () => {
+    const result = listSessionsQuerySchema.safeParse({
+      startDate: '2024-01-01T00:00:00.000Z',
+      endDate: '2024-12-31T00:00:00.000Z',
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects session list queries whose endDate is before startDate', () => {
+    const result = listSessionsQuerySchema.safeParse({
+      startDate: '2024-01-02T00:00:00.000Z',
+      endDate: '2024-01-01T00:00:00.000Z',
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects non-object set payloads', () => {
+    expect(
+      createSetSchema.safeParse({
+        orderIndex: 0,
+        type: 'WEIGHT_REPS',
+        payload: [],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects set payloads with non-finite numbers', () => {
+    expect(
+      createSetSchema.safeParse({
+        orderIndex: 0,
+        type: 'WEIGHT_REPS',
+        payload: { load: Number.POSITIVE_INFINITY },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects oversized arrays inside set payloads', () => {
+    expect(
+      createSetSchema.safeParse({
+        orderIndex: 0,
+        type: 'WEIGHT_REPS',
+        payload: { reps: Array.from({ length: 10_001 }, () => 1) },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects set payloads with non-JSON-safe values', () => {
+    expect(
+      createSetSchema.safeParse({
+        orderIndex: 0,
+        type: 'WEIGHT_REPS',
+        payload: { invalid: () => 1 },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects circular set payloads', () => {
+    const payload: Record<string, unknown> = {};
+    payload.self = payload;
+
+    expect(
+      createSetSchema.safeParse({
+        orderIndex: 0,
+        type: 'WEIGHT_REPS',
+        payload,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('accepts nested set payload arrays and null values when they stay within limits', () => {
+    expect(
+      createSetSchema.safeParse({
+        orderIndex: 0,
+        type: 'WEIGHT_REPS',
+        payload: {
+          notes: [1, null, { tags: ['a', 'b'] }],
+        },
+      }).success,
+    ).toBe(true);
+  });
+
+  it('rejects set payloads whose custom toJSON throws during serialization', () => {
+    const payload = Object.create({
+      toJSON() {
+        throw new Error('cannot serialize');
+      },
+    }) as Record<string, unknown>;
+
+    expect(
+      createSetSchema.safeParse({
+        orderIndex: 0,
+        type: 'WEIGHT_REPS',
+        payload,
+      }).success,
+    ).toBe(false);
+  });
 });

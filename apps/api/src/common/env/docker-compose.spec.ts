@@ -28,4 +28,15 @@ describe('Docker compose migration contracts', () => {
       'GOOGLE_CALLBACK_URL: http://localhost:${API_PORT:-3000}/${API_PREFIX:-api/v1}/auth/google/callback',
     );
   });
+
+  it('allows the docker-served web origin through local api CORS', () => {
+    const composeFile = readFileSync(
+      resolve(__dirname, '../../../../../infra/docker/docker-compose.yml'),
+      'utf8',
+    );
+
+    expect(composeFile).toContain(
+      'CORS_ORIGINS: http://localhost:${WEB_PORT:-3001},http://127.0.0.1:${WEB_PORT:-3001},http://localhost:5173,http://localhost:8081',
+    );
+  });
 });

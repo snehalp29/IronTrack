@@ -18,6 +18,7 @@
     "test:cov": "jest --config ./jest.config.cjs --coverage",
     "pretest:e2e": "pnpm prisma:generate",
     "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test:e2e:docker": "jest --config ./test/jest-docker-e2e.json",
     "test:watch": "jest --config ./jest.config.cjs --watch",
     "pretypecheck": "pnpm prisma:generate",
     "typecheck": "tsc --noEmit -p tsconfig.json"

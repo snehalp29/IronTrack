@@ -3,8 +3,7 @@
   "rootDir": "..",
   "testEnvironment": "node",
   "setupFiles": ["<rootDir>/test/jest.setup.ts"],
-  "testPathIgnorePatterns": [".docker-e2e-spec.ts$"],
-  "testRegex": ".e2e-spec.ts$",
+  "testRegex": ".docker-e2e-spec.ts$",
   "transform": {
     "^.+\\.(t|j)s$": "ts-jest"
   }

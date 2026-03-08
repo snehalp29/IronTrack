@@ -1,7 +1,14 @@
 import type { Page, Route } from '@playwright/test';
 
-const API_ORIGIN = 'http://localhost:3000';
-const API_PREFIX = '/api/v1';
+const DEFAULT_API_BASE_URL = 'http://localhost:3000';
+const DEFAULT_API_PREFIX = '/api/v1';
+const RESOLVED_API_BASE_URL =
+  process.env.E2E_API_BASE_URL ?? DEFAULT_API_BASE_URL;
+const API_ORIGIN = new URL(RESOLVED_API_BASE_URL).origin;
+const API_PREFIX = new URL(
+  process.env.E2E_API_PREFIX ?? DEFAULT_API_PREFIX,
+  RESOLVED_API_BASE_URL,
+).pathname.replace(/\/$/, '');
 
 type WorkoutStreakResponse = {
   currentStreakDays: number;

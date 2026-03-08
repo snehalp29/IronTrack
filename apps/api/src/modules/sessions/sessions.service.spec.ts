@@ -3716,4 +3716,462 @@ describe('SessionsService', () => {
       }),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
+
+  it('rethrows unexpected startSession write errors', async () => {
+    const { service, prismaMock } = createService();
+    const failure = new Error('insert failed');
+    (prismaMock.workoutSession.findFirst as jest.Mock).mockResolvedValue(null);
+    (prismaMock.workoutSession.create as jest.Mock).mockRejectedValueOnce(
+      failure,
+    );
+
+    await expect(
+      service.startSession('user-1', {
+        notes: 'inline',
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            orderIndex: 0,
+          },
+        ],
+      }),
+    ).rejects.toBe(failure);
+  });
+
+  it('throws when session disappears during stale updateSession conflict resolution', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.workoutSession.findFirst as jest.Mock)
+      .mockResolvedValueOnce({
+        id: 'session-1',
+        version: 2,
+      })
+      .mockResolvedValueOnce(null);
+    (prismaMock.workoutSession.updateMany as jest.Mock).mockResolvedValue({
+      count: 0,
+    });
+
+    await expect(
+      service.updateSession('user-1', 'session-1', {
+        version: 2,
+        notes: 'updated',
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('throws when the refreshed session row is missing after updateSession writes', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.workoutSession.findFirst as jest.Mock)
+      .mockResolvedValueOnce({
+        id: 'session-1',
+        version: 2,
+      })
+      .mockResolvedValueOnce(null);
+    (prismaMock.workoutSession.updateMany as jest.Mock).mockResolvedValue({
+      count: 1,
+    });
+
+    await expect(
+      service.updateSession('user-1', 'session-1', {
+        version: 2,
+        notes: 'updated',
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('throws when the finished session row cannot be refetched after finishSession side effects', async () => {
+    const {
+      service,
+      prismaMock,
+      volumeMock,
+      prDetectionMock,
+      completionMock,
+      streakMock,
+    } = createService();
+    (prismaMock.workoutSession.findFirst as jest.Mock)
+      .mockResolvedValueOnce({
+        id: 'session-1',
+        userId: 'user-1',
+        startedAt: new Date(Date.now() - 2000),
+        status: 'IN_PROGRESS',
+        endedReason: null,
+        user: {
+          timezone: 'UTC',
+        },
+      })
+      .mockResolvedValueOnce(null);
+    (prismaMock.workoutSession.updateMany as jest.Mock).mockResolvedValue({
+      count: 1,
+    });
+    (volumeMock.cacheSessionVolume as jest.Mock).mockResolvedValue(900);
+    (prDetectionMock.detectForSession as jest.Mock).mockResolvedValue([]);
+    (streakMock.onSessionFinished as jest.Mock).mockResolvedValue(undefined);
+    (completionMock.calculate as jest.Mock).mockResolvedValue({
+      totalSets: 1,
+      completedSets: 1,
+      isIncomplete: false,
+    });
+
+    await expect(
+      service.finishSession('user-1', 'session-1'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('throws conflict when finishSession loses the in-progress guard and sees a finished current row', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.workoutSession.findFirst as jest.Mock)
+      .mockResolvedValueOnce({
+        id: 'session-1',
+        userId: 'user-1',
+        startedAt: new Date(Date.now() - 2000),
+        status: 'IN_PROGRESS',
+        endedReason: null,
+        user: {
+          timezone: 'UTC',
+        },
+      })
+      .mockResolvedValueOnce({
+        status: 'FINISHED',
+      });
+    (prismaMock.workoutSession.updateMany as jest.Mock).mockResolvedValue({
+      count: 0,
+    });
+
+    await expect(
+      service.finishSession('user-1', 'session-1'),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('throws conflict when finishSession misses the guarded write but the session still reads as in progress', async () => {
+    const { service, prismaMock, volumeMock, prDetectionMock, completionMock } =
+      createService();
+    (prismaMock.workoutSession.findFirst as jest.Mock)
+      .mockResolvedValueOnce({
+        id: 'session-1',
+        userId: 'user-1',
+        startedAt: new Date(Date.now() - 2000),
+        status: 'IN_PROGRESS',
+        endedReason: null,
+        user: {
+          timezone: 'UTC',
+        },
+      })
+      .mockResolvedValueOnce({
+        status: 'IN_PROGRESS',
+      });
+    (prismaMock.workoutSession.updateMany as jest.Mock).mockResolvedValue({
+      count: 0,
+    });
+
+    await expect(
+      service.finishSession('user-1', 'session-1'),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'SESSION_FINISH_CONFLICT',
+      },
+    });
+
+    expect(volumeMock.cacheSessionVolume).not.toHaveBeenCalled();
+    expect(prDetectionMock.detectForSession).not.toHaveBeenCalled();
+    expect(completionMock.calculate).not.toHaveBeenCalled();
+  });
+
+  it('throws when applying a superset to a missing session', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.workoutSession.findFirst as jest.Mock).mockResolvedValue(null);
+
+    await expect(
+      service.applySessionSuperset('user-1', 'session-1', {
+        exerciseIds: ['se-1', 'se-2'],
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('returns null when there is no active session', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.workoutSession.findFirst as jest.Mock).mockResolvedValue(null);
+
+    await expect(service.getActiveSession('user-1')).resolves.toBeNull();
+  });
+
+  it('rethrows unexpected updateSessionExercise errors', async () => {
+    const { service, prismaMock } = createService();
+    const failure = new Error('update failed');
+    (prismaMock.sessionExercise.findFirst as jest.Mock).mockResolvedValue({
+      id: 'se1',
+      version: 2,
+      session: {
+        status: 'IN_PROGRESS',
+      },
+    });
+    (prismaMock.sessionExercise.updateMany as jest.Mock).mockRejectedValueOnce(
+      failure,
+    );
+
+    await expect(
+      service.updateSessionExercise('user-1', 'session-1', 'se1', {
+        orderIndex: 4,
+      }),
+    ).rejects.toBe(failure);
+  });
+
+  it('throws when updateSessionExercise loses the row during stale-write resolution', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.sessionExercise.findFirst as jest.Mock)
+      .mockResolvedValueOnce({
+        id: 'se1',
+        version: 2,
+        session: {
+          status: 'IN_PROGRESS',
+        },
+      })
+      .mockResolvedValueOnce(null);
+    (prismaMock.sessionExercise.updateMany as jest.Mock).mockResolvedValue({
+      count: 0,
+    });
+
+    await expect(
+      service.updateSessionExercise('user-1', 'session-1', 'se1', {
+        version: 2,
+        orderIndex: 4,
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('throws when updateSessionExercise detects the session finished during stale-write resolution', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.sessionExercise.findFirst as jest.Mock)
+      .mockResolvedValueOnce({
+        id: 'se1',
+        version: 2,
+        session: {
+          status: 'IN_PROGRESS',
+        },
+      })
+      .mockResolvedValueOnce({
+        version: 3,
+        session: {
+          status: 'FINISHED',
+        },
+      });
+    (prismaMock.sessionExercise.updateMany as jest.Mock).mockResolvedValue({
+      count: 0,
+    });
+
+    await expect(
+      service.updateSessionExercise('user-1', 'session-1', 'se1', {
+        version: 2,
+        orderIndex: 4,
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('throws when the refreshed session exercise row is missing after updateSessionExercise writes', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.sessionExercise.findFirst as jest.Mock)
+      .mockResolvedValueOnce({
+        id: 'se1',
+        version: 2,
+        session: {
+          status: 'IN_PROGRESS',
+        },
+      })
+      .mockResolvedValueOnce(null);
+    (prismaMock.sessionExercise.updateMany as jest.Mock).mockResolvedValue({
+      count: 1,
+    });
+
+    await expect(
+      service.updateSessionExercise('user-1', 'session-1', 'se1', {
+        version: 2,
+        orderIndex: 4,
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('throws when reorderSessionExercises loses a row during the temporary write phase', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.workoutSession.findFirst as jest.Mock).mockResolvedValue({
+      id: 'session-1',
+      status: 'IN_PROGRESS',
+    });
+    (prismaMock.sessionExercise.count as jest.Mock).mockResolvedValue(2);
+    (prismaMock.sessionExercise.updateMany as jest.Mock)
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 });
+
+    await expect(
+      service.reorderSessionExercises('user-1', 'session-1', {
+        items: [
+          { id: 'se1', orderIndex: 1 },
+          { id: 'se2', orderIndex: 0 },
+        ],
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('throws when reorderSessionExercises loses a row during the final write phase', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.workoutSession.findFirst as jest.Mock).mockResolvedValue({
+      id: 'session-1',
+      status: 'IN_PROGRESS',
+    });
+    (prismaMock.sessionExercise.count as jest.Mock).mockResolvedValue(2);
+    (prismaMock.sessionExercise.updateMany as jest.Mock)
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 });
+
+    await expect(
+      service.reorderSessionExercises('user-1', 'session-1', {
+        items: [
+          { id: 'se1', orderIndex: 1 },
+          { id: 'se2', orderIndex: 0 },
+        ],
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('rethrows unexpected reorderSessionExercises transaction errors', async () => {
+    const { service, prismaMock } = createService();
+    const failure = new Error('transaction failed');
+    (prismaMock.workoutSession.findFirst as jest.Mock).mockResolvedValue({
+      id: 'session-1',
+      status: 'IN_PROGRESS',
+    });
+    (prismaMock.sessionExercise.count as jest.Mock).mockResolvedValue(1);
+    (prismaMock.$transaction as jest.Mock).mockRejectedValueOnce(failure);
+
+    await expect(
+      service.reorderSessionExercises('user-1', 'session-1', {
+        items: [{ id: 'se1', orderIndex: 1 }],
+      }),
+    ).rejects.toBe(failure);
+  });
+
+  it('maps duplicate session-exercise order collisions during reorder to a conflict error', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.workoutSession.findFirst as jest.Mock).mockResolvedValue({
+      id: 'session-1',
+      status: 'IN_PROGRESS',
+    });
+    (prismaMock.sessionExercise.count as jest.Mock).mockResolvedValue(1);
+    (prismaMock.sessionExercise.updateMany as jest.Mock).mockRejectedValueOnce({
+      code: 'P2002',
+      meta: {
+        target: ['sessionId', 'orderIndex'],
+      },
+    });
+
+    await expect(
+      service.reorderSessionExercises('user-1', 'session-1', {
+        items: [{ id: 'se1', orderIndex: 1 }],
+      }),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'SESSION_EXERCISE_ORDER_CONFLICT',
+      },
+    });
+  });
+
+  it('throws when the swapped session exercise cannot be refetched', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.sessionExercise.findFirst as jest.Mock)
+      .mockResolvedValueOnce({
+        id: 'se1',
+        exerciseTemplateId: 'exercise-old',
+        session: {
+          status: 'IN_PROGRESS',
+        },
+      })
+      .mockResolvedValueOnce(null);
+    (prismaMock.sessionExercise.updateMany as jest.Mock).mockResolvedValue({
+      count: 1,
+    });
+
+    await expect(
+      service.swapSessionExercise('user-1', 'session-1', {
+        fromExerciseId: 'se1',
+        toExerciseTemplateId: 'exercise-new',
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('rethrows unexpected updateSet errors', async () => {
+    const { service, prismaMock } = createService();
+    const failure = new Error('update failed');
+    (prismaMock.set.findFirst as jest.Mock).mockResolvedValue({
+      id: 'set-1',
+      isCompleted: false,
+      completedAt: null,
+      sessionExercise: {
+        exerciseTemplateId: 'exercise-1',
+        session: {
+          status: 'IN_PROGRESS',
+        },
+      },
+    });
+    (prismaMock.set.updateMany as jest.Mock).mockRejectedValueOnce(failure);
+
+    await expect(
+      service.updateSet('user-1', 'se1', 'set-1', {
+        payload: {},
+        reps: 8,
+      }),
+    ).rejects.toBe(failure);
+  });
+
+  it('throws when the refreshed set row is missing after updateSet writes', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.set.findFirst as jest.Mock)
+      .mockResolvedValueOnce({
+        id: 'set-1',
+        isCompleted: false,
+        completedAt: null,
+        sessionExercise: {
+          exerciseTemplateId: 'exercise-1',
+          session: {
+            status: 'IN_PROGRESS',
+          },
+        },
+      })
+      .mockResolvedValueOnce(null);
+    (prismaMock.set.updateMany as jest.Mock).mockResolvedValue({
+      count: 1,
+    });
+
+    await expect(
+      service.updateSet('user-1', 'se1', 'set-1', {
+        payload: {},
+        reps: 8,
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('throws when the refreshed set row is missing after toggleSetCompletion writes', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.set.findFirst as jest.Mock)
+      .mockResolvedValueOnce({
+        id: 'set-1',
+        isCompleted: false,
+        completedAt: null,
+        sessionExercise: {
+          exerciseTemplateId: 'exercise-1',
+          session: {
+            id: 'session-1',
+            status: 'IN_PROGRESS',
+          },
+        },
+      })
+      .mockResolvedValueOnce(null);
+    (prismaMock.set.updateMany as jest.Mock).mockResolvedValue({
+      count: 1,
+    });
+
+    await expect(
+      service.toggleSetCompletion('user-1', 'se1', 'set-1', {
+        isCompleted: true,
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
 });

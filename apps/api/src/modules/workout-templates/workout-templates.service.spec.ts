@@ -811,4 +811,112 @@ describe('WorkoutTemplatesService', () => {
     });
     expect(prismaMock.workoutTemplate.updateMany).not.toHaveBeenCalled();
   });
+
+  it('rethrows non-serializable create errors immediately', async () => {
+    const { service, tx } = createService();
+    const failure = new Error('insert failed');
+    (tx.workoutTemplate.findFirst as jest.Mock).mockRejectedValueOnce(failure);
+
+    await expect(
+      service.create('user-1', {
+        name: 'Leg Day',
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            orderIndex: 0,
+          },
+        ],
+      }),
+    ).rejects.toBe(failure);
+  });
+
+  it('rethrows the final serialization failure after exhausting create retries without an explicit order index', async () => {
+    const { service, prismaMock } = createService();
+    const serializationFailure = Object.assign(
+      new Error('serialization failure'),
+      { code: 'P2034' },
+    );
+    (prismaMock.$transaction as jest.Mock).mockRejectedValue(
+      serializationFailure,
+    );
+
+    await expect(
+      service.create('user-1', {
+        name: 'Leg Day',
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            orderIndex: 0,
+          },
+        ],
+      }),
+    ).rejects.toBe(serializationFailure);
+
+    expect(prismaMock.$transaction).toHaveBeenCalledTimes(3);
+  });
+
+  it('throws when a template disappears before update returns the refreshed row', async () => {
+    const { service, prismaMock, tx } = createService();
+    (prismaMock.workoutTemplate.findFirst as jest.Mock).mockResolvedValue({
+      id: 'template-1',
+    });
+    (tx.workoutTemplate.findFirst as jest.Mock).mockResolvedValueOnce(null);
+
+    await expect(
+      service.update('user-1', 'template-1', {
+        name: 'Updated Name',
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('throws when a template disappears during reorder writes', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.workoutTemplate.count as jest.Mock).mockResolvedValue(2);
+    (prismaMock.workoutTemplate.updateMany as jest.Mock)
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 });
+
+    await expect(
+      service.reorder('user-1', {
+        items: [
+          { id: 'template-1', orderIndex: 10 },
+          { id: 'template-2', orderIndex: 11 },
+        ],
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('rethrows nullish create errors instead of treating them as serializable conflicts', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.$transaction as jest.Mock).mockRejectedValueOnce(null);
+
+    await expect(
+      service.create('user-1', {
+        name: 'Leg Day',
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            orderIndex: 0,
+          },
+        ],
+      }),
+    ).rejects.toBeNull();
+  });
+
+  it('falls back to a generic create error when serialization conflicts are non-Error values', async () => {
+    const { service, prismaMock } = createService();
+    (prismaMock.$transaction as jest.Mock).mockRejectedValue({ code: 'P2034' });
+
+    await expect(
+      service.create('user-1', {
+        name: 'Leg Day',
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            orderIndex: 0,
+          },
+        ],
+      }),
+    ).rejects.toThrow('Failed to create template');
+  });
 });

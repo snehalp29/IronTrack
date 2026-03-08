@@ -175,4 +175,31 @@ describe('MlClientService', () => {
       GatewayTimeoutException,
     );
   });
+
+  it('maps upstream 5xx Axios-style errors to bad gateway responses', async () => {
+    const { service, httpService } = createService('https://ml.example.com');
+    httpService.post.mockReturnValue(
+      throwError(() => ({
+        isAxiosError: true,
+        response: {
+          status: 503,
+        },
+      })),
+    );
+
+    await expect(service.painPattern({ x: 1 })).rejects.toMatchObject({
+      response: {
+        code: 'ML_UPSTREAM_ERROR',
+      },
+    });
+  });
+
+  it('rethrows primitive non-Axios errors instead of treating them as ML transport failures', async () => {
+    const { service, httpService } = createService('https://ml.example.com');
+    httpService.post.mockReturnValue(throwError(() => 'plain failure'));
+
+    await expect(service.sessionRecommender({ x: 1 })).rejects.toBe(
+      'plain failure',
+    );
+  });
 });

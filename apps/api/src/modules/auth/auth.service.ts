@@ -40,7 +40,7 @@ export class AuthService {
 
   async register(input: RegisterDto): Promise<AuthTokens> {
     const normalizedEmail = normalizeEmail(input.email);
-    const timezone = normalizeTimezoneOrThrow(input.timezone, 'UTC') ?? 'UTC';
+    const timezone = normalizeTimezoneOrThrow(input.timezone, 'UTC')!;
     const existingUser = await this.prisma.user.findFirst({
       where: {
         email: normalizedEmail,
