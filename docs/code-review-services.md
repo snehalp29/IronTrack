@@ -4,21 +4,10 @@ Scope: `apps/api/src/services/*.service.ts` and module services in sessions, che
 
 Status: `0 open`
 
-Fixed:
+Fixed: `#1–#120` foundational correctness, deleted-row filtering, ordering, ownership guards, optimistic concurrency, and early coverage gaps; `#121–#206` session finish hardening, volume recache, transactional batch set creation, bounded payload/query windows, idempotency safety, ML client hardening, validation alignment, and Prisma/service safety fixes; `#208–#265` DB hardening, rollback/PR fixes, explicit module wiring, HTTP semantics, logger/catalog/timezone/volume hardening, finished-session-only history/progress, paginated template-list metadata, checklist future-date guards, and web contract fixes; `#266–#278` and `#280–#285` DELETE 204 semantics, exercise/checklist/progress/web invalidation fixes, ML error narrowing, version-aware workout-store migration, checklist upsert query reduction, dead client streak helper removal, and 204 delete-account client cleanup.
 
-- `#1–#120`: foundational correctness, deleted-row filtering, ordering, ownership guards, optimistic concurrency, and early coverage gaps.
-- `#121–#206`: session finish hardening, volume recache, transactional batch set creation, bounded payload/query windows, idempotency safety, ML client hardening, validation alignment, and Prisma/service safety fixes.
-- `#208–#265`: DB hardening, rollback/PR fixes, explicit module wiring, HTTP semantics, logger/catalog/timezone/volume hardening, finished-session-only history, paginated template-list metadata, checklist future-date guards, finished-session-only weekly progress, and web client contract fixes for user timezone/delete-account handling.
-- `#266–#278`, `#280–#285`: DELETE 204 semantics, exercise/checklist/progress/web invalidation fixes, ML error narrowing, version-aware workout-store migration, checklist upsert query reduction, dead client streak helper removal, and 204 delete-account client cleanup.
-- `#159`, `#207`, `#279`, `#283`: verified non-defects / informational only.
+Non-defects: `#159`, `#207`, `#279`, and `#283`.
 
-Outcomes:
+Outcomes: reviewed service paths now enforce active-row ownership and soft-delete semantics much more consistently; session mutation flows are materially safer around ordering conflicts, optimistic concurrency, rollback behavior, PR recomputation, and cached volume updates; the documented service backlog is closed.
 
-- Most reviewed service paths now enforce active-row ownership and soft-delete semantics consistently.
-- Session mutation flows are materially safer around ordering conflicts, optimistic concurrency, rollback behavior, PR recomputation, and cached volume updates.
-- The reviewed service backlog is closed; remaining risk is now untracked/unknown rather than in the documented queue.
-
-Validation:
-
-- Targeted API service/controller specs, Prisma schema guards, shared sync/math utilities, and full API unit/e2e reruns.
-- `pnpm --filter @irontrack/api typecheck`, `pnpm --filter @irontrack/shared typecheck`, `pnpm lint:code`, and `pnpm format:check`.
+Validation: targeted API service/controller specs, Prisma schema guards, shared sync/math utilities, full API unit/e2e reruns, `pnpm --filter @irontrack/api typecheck`, `pnpm --filter @irontrack/shared typecheck`, `pnpm lint:code`, and `pnpm format:check`.

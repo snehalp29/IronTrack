@@ -4,17 +4,8 @@ Scope: `env.schema.ts`, its specs, shared normalization helpers, API-prefix util
 
 Status: `87 total` | `87 fixed` | `0 open`
 
-Fixed:
+Fixed: `#1–#42` normalization, secret handling, duration parsing, URL validation, cross-field checks, and API-prefix invariants; `#43–#87` boundary/permutation coverage, stricter HTTPS and CORS semantics, helper hardening, and defensive `superRefine` behavior.
 
-- `#1–#42`: normalization, secret handling, duration parsing, URL validation, cross-field checks, and API-prefix invariants.
-- `#43–#87`: boundary/permutation coverage, stricter HTTPS and CORS semantics, helper hardening, and defensive `superRefine` behavior.
+Outcomes: env parsing is normalized at the schema boundary, JWT expiry config has format/bound/cross-field safety checks, and production HTTPS/CORS requirements are explicit and hardened.
 
-Outcomes:
-
-- Env parsing is normalized at the schema boundary instead of downstream.
-- JWT expiry config has format, bound, and cross-field safety checks.
-- Production HTTPS and CORS requirements are explicit and hardened.
-
-Validation:
-
-- `pnpm --filter @irontrack/api typecheck` and `pnpm --filter @irontrack/api test:cov`.
+Validation: `pnpm --filter @irontrack/api typecheck` and `pnpm --filter @irontrack/api test:cov`.
