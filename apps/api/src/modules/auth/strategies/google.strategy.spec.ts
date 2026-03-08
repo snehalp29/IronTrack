@@ -110,6 +110,35 @@ describe('GoogleStrategy', () => {
     );
   });
 
+  it('trims NODE_ENV from config service before evaluating production requirements', () => {
+    process.env.NODE_ENV = 'development';
+
+    expect(
+      () =>
+        new GoogleStrategy({
+          get: jest.fn((key: string) => {
+            if (key === 'NODE_ENV') {
+              return ' production ';
+            }
+            return undefined;
+          }),
+        } as never),
+    ).toThrow(
+      'GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_CALLBACK_URL are required in production.',
+    );
+  });
+
+  it('falls back to development when NODE_ENV is missing from config and process env', () => {
+    delete process.env.NODE_ENV;
+
+    expect(
+      () =>
+        new GoogleStrategy({
+          get: jest.fn().mockReturnValue(undefined),
+        } as never),
+    ).not.toThrow();
+  });
+
   it('passes tokens and profile to done callback', async () => {
     process.env.NODE_ENV = 'test';
 

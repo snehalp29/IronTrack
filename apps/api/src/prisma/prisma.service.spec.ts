@@ -119,4 +119,39 @@ describe('PrismaService', () => {
     );
     expect(onceSpy).toHaveBeenCalledTimes(3);
   });
+
+  it('reuses the in-flight close promise when shutdown runs more than once', async () => {
+    process.env.DATABASE_URL = 'postgresql://user:pass@localhost:5432/db';
+
+    const service = new PrismaService();
+    let resolveClose: (() => void) | undefined;
+    const app = {
+      close: jest.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveClose = resolve;
+          }),
+      ),
+    } as unknown as INestApplication;
+
+    let beforeExitHandler: (() => Promise<void>) | undefined;
+    jest.spyOn(process, 'once').mockImplementation(((
+      event: string,
+      handler: () => Promise<void>,
+    ) => {
+      if (event === 'beforeExit') {
+        beforeExitHandler = handler;
+      }
+      return process;
+    }) as never);
+
+    await service.enableShutdownHooks(app);
+
+    const first = beforeExitHandler?.();
+    const second = beforeExitHandler?.();
+    expect(app.close).toHaveBeenCalledTimes(1);
+
+    resolveClose?.();
+    await Promise.all([first, second]);
+  });
 });

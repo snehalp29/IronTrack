@@ -21,6 +21,12 @@ type TokenClaims = {
   sub: string;
 };
 
+type PrivateGoogleTokenVerifierService = {
+  jwksCache?: { keys: unknown[]; expiresAtMs: number };
+  resolveSigningKey: (kid: string) => Promise<unknown>;
+  getGoogleSigningKeys: (forceRefresh?: boolean) => Promise<unknown[]>;
+};
+
 describe('GoogleTokenVerifierService', () => {
   let fetchSpy: jest.SpiedFunction<typeof fetch>;
   let privateKeyPem: string;
@@ -400,6 +406,25 @@ describe('GoogleTokenVerifierService', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
+  it('returns the refreshed signing key when a valid cached keyset misses the requested kid', async () => {
+    const privateService = createService(
+      CLIENT_ID,
+    ) as unknown as PrivateGoogleTokenVerifierService;
+    privateService.jwksCache = {
+      keys: [createSigningJwk()],
+      expiresAtMs: Date.now() + 60_000,
+    };
+    const rotatedKey = createSigningJwk(ALT_KID, alternateKeyN, alternateKeyE);
+    jest
+      .spyOn(privateService, 'getGoogleSigningKeys')
+      .mockResolvedValueOnce([createSigningJwk()])
+      .mockResolvedValueOnce([rotatedKey]);
+
+    await expect(privateService.resolveSigningKey(ALT_KID)).resolves.toEqual(
+      rotatedKey,
+    );
+  });
+
   it('rejects JWKS keys that are not marked for signature use', async () => {
     fetchSpy.mockResolvedValue(
       createJwksResponse({
@@ -627,6 +652,33 @@ describe('GoogleTokenVerifierService', () => {
     await service.verifyIdToken(createToken({ sub: 'max-age-zero-a' }));
     await service.verifyIdToken(createToken({ sub: 'max-age-zero-b' }));
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects when a refresh after a cached kid miss still does not produce a usable signing key', async () => {
+    const privateService = createService(
+      CLIENT_ID,
+    ) as unknown as PrivateGoogleTokenVerifierService;
+    privateService.jwksCache = {
+      keys: [createSigningJwk()],
+      expiresAtMs: Date.now() + 60_000,
+    };
+    jest
+      .spyOn(privateService, 'getGoogleSigningKeys')
+      .mockResolvedValueOnce([createSigningJwk()])
+      .mockResolvedValueOnce([
+        {
+          ...createSigningJwk(ALT_KID, alternateKeyN, alternateKeyE),
+          use: 'enc',
+        },
+      ]);
+
+    await expect(
+      privateService.resolveSigningKey(ALT_KID),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'INVALID_GOOGLE_TOKEN',
+      },
+    });
   });
 
   function createService(

@@ -119,4 +119,13 @@ describe('WinstonLoggerService', () => {
       fatal: true,
     });
   });
+
+  it('defaults to debug logging when NODE_ENV is invalid', () => {
+    process.env.NODE_ENV = 'qa';
+    const service = new WinstonLoggerService() as unknown as {
+      logger: { level: string };
+    };
+
+    expect(service.logger.level).toBe('debug');
+  });
 });

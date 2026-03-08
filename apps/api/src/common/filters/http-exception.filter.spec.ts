@@ -409,4 +409,96 @@ describe('HttpExceptionFilter', () => {
       },
     });
   });
+
+  it('preserves primitive detail payloads without serializing them', () => {
+    const filter = new HttpExceptionFilter();
+    const { host, response } = createHost({ method: 'POST', url: '/items' });
+
+    filter.catch(
+      new HttpException(
+        {
+          code: 'BAD_INPUT',
+          message: 'Invalid',
+          details: false,
+        },
+        HttpStatus.BAD_REQUEST,
+      ),
+      host as never,
+    );
+
+    expect(response.json).toHaveBeenCalledWith({
+      error: {
+        code: 'BAD_INPUT',
+        message: 'Invalid',
+        details: false,
+      },
+    });
+  });
+
+  it('prefers request.path when logging handled server errors', () => {
+    const filter = new HttpExceptionFilter();
+    const loggerError = jest
+      .spyOn(
+        (filter as never as { logger: { error: (...args: unknown[]) => void } })
+          .logger,
+        'error',
+      )
+      .mockImplementation();
+
+    const { host, response } = createHost({
+      method: 'GET',
+      path: '/preferred-path',
+      url: '/fallback-path?token=secret',
+    } as never);
+
+    filter.catch(
+      new HttpException('failed', HttpStatus.INTERNAL_SERVER_ERROR),
+      host as never,
+    );
+
+    expect(loggerError).toHaveBeenCalledWith(
+      'Handled 500 error for GET /preferred-path',
+      expect.any(String),
+    );
+    expect(response.status).toHaveBeenCalledWith(
+      HttpStatus.INTERNAL_SERVER_ERROR,
+    );
+  });
+
+  it('falls back to the raw request url when query splitting yields no path segment', () => {
+    const filter = new HttpExceptionFilter();
+    const loggerError = jest
+      .spyOn(
+        (filter as never as { logger: { error: (...args: unknown[]) => void } })
+          .logger,
+        'error',
+      )
+      .mockImplementation();
+    const fakeUrl = {
+      split: jest.fn().mockReturnValue([undefined]),
+      toString: () => '/fallback-path',
+    } as unknown as string;
+    const response = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+      setHeader: jest.fn(),
+    };
+    const host = {
+      switchToHttp: () => ({
+        getRequest: () => ({
+          method: 'GET',
+          url: fakeUrl,
+          headers: {},
+        }),
+        getResponse: () => response,
+      }),
+    };
+
+    filter.catch(new Error('boom'), host as never);
+
+    expect(loggerError).toHaveBeenCalledWith(
+      'Unhandled error for GET /fallback-path',
+      expect.any(String),
+    );
+  });
 });

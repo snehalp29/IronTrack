@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { IsEmail, MinLength } from 'class-validator';
+import type { ValidationError } from 'class-validator';
 
 import { createAppValidationPipe } from './app-validation.pipe';
 
@@ -54,5 +55,75 @@ describe('createAppValidationPipe', () => {
         ]),
       });
     }
+  });
+
+  it('returns an empty shared validation envelope when exceptionFactory receives no errors', () => {
+    const pipe = createAppValidationPipe() as unknown as {
+      exceptionFactory: (errors?: ValidationError[]) => BadRequestException;
+    };
+
+    expect(pipe.exceptionFactory().getResponse()).toEqual({
+      code: 'VALIDATION_ERROR',
+      message: 'Validation failed',
+      details: [],
+    });
+  });
+
+  it('flattens nested child validation errors into dotted paths', () => {
+    const pipe = createAppValidationPipe() as unknown as {
+      exceptionFactory: (errors?: ValidationError[]) => BadRequestException;
+    };
+
+    const nestedErrors: ValidationError[] = [
+      {
+        property: 'profile',
+        children: [
+          {
+            property: 'timezone',
+            constraints: {
+              isTimeZone: 'timezone must be valid',
+            },
+            children: [],
+          },
+        ],
+      } as ValidationError,
+    ];
+
+    expect(pipe.exceptionFactory(nestedErrors).getResponse()).toEqual({
+      code: 'VALIDATION_ERROR',
+      message: 'Validation failed',
+      details: [
+        {
+          path: 'profile.timezone',
+          message: 'timezone must be valid',
+        },
+      ],
+    });
+  });
+
+  it('treats missing child arrays as empty when flattening validation errors', () => {
+    const pipe = createAppValidationPipe() as unknown as {
+      exceptionFactory: (errors?: ValidationError[]) => BadRequestException;
+    };
+
+    const nestedErrors: ValidationError[] = [
+      {
+        property: 'timezone',
+        constraints: {
+          isTimeZone: 'timezone must be valid',
+        },
+      } as ValidationError,
+    ];
+
+    expect(pipe.exceptionFactory(nestedErrors).getResponse()).toEqual({
+      code: 'VALIDATION_ERROR',
+      message: 'Validation failed',
+      details: [
+        {
+          path: 'timezone',
+          message: 'timezone must be valid',
+        },
+      ],
+    });
   });
 });

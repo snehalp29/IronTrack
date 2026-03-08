@@ -136,6 +136,19 @@ describe('AuthController', () => {
     expect(authServiceMock.refresh).not.toHaveBeenCalled();
   });
 
+  it('rejects refresh when the request cookies bag is missing entirely', async () => {
+    const response = createResponseMock();
+
+    await expect(
+      controller.refresh({}, {} as unknown as Request, response),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'INVALID_REFRESH_TOKEN',
+      }),
+    });
+    expect(authServiceMock.refresh).not.toHaveBeenCalled();
+  });
+
   it('delegates google auth', async () => {
     const response = createResponseMock();
     (authServiceMock.googleLogin as jest.Mock).mockResolvedValue({
@@ -202,5 +215,63 @@ describe('AuthController', () => {
         Reflect.getMetadata(IS_PUBLIC_KEY, AuthController.prototype[method]),
       ).toBe(true);
     }
+  });
+
+  it('clears the refresh cookie even when logout is called without a cookie token', async () => {
+    const response = createResponseMock();
+
+    await expect(
+      controller.logout(
+        {},
+        {
+          cookies: {},
+        } as unknown as Request,
+        response,
+      ),
+    ).resolves.toEqual({ success: true });
+    expect(authServiceMock.logout).not.toHaveBeenCalled();
+    expect(response.clearCookie).toHaveBeenCalledWith(
+      'irontrack_refresh_token',
+      expect.objectContaining({
+        path: '/api/v1/auth',
+      }),
+    );
+  });
+
+  it('uses the root auth cookie path and secure cookies in production when API_PREFIX is blank', async () => {
+    const response = createResponseMock();
+    const productionController = new AuthController(authServiceMock, {
+      getOrThrow: jest.fn((key: string) => {
+        switch (key) {
+          case 'API_PREFIX':
+            return ' / ';
+          case 'JWT_REFRESH_EXPIRY':
+            return '7d';
+          case 'NODE_ENV':
+            return 'production';
+          default:
+            throw new Error(`Unexpected config key ${key}`);
+        }
+      }),
+    } as unknown as ConfigService);
+    (authServiceMock.login as jest.Mock).mockResolvedValue({
+      accessToken: 'access-token-123',
+      refreshToken: 'refresh-token-123',
+    });
+
+    await expect(
+      productionController.login(
+        { email: 'user@example.com', password: '12345678' },
+        response,
+      ),
+    ).resolves.toEqual({ accessToken: 'access-token-123' });
+    expect(response.cookie).toHaveBeenCalledWith(
+      'irontrack_refresh_token',
+      'refresh-token-123',
+      expect.objectContaining({
+        path: '/auth',
+        secure: true,
+      }),
+    );
   });
 });
