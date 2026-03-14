@@ -1,0 +1,11 @@
+#!/usr/bin/env sh
+set -e
+
+if command -v npx >/dev/null 2>&1; then
+	npx --no-install lint-staged
+elif [ -x "./node_modules/.bin/lint-staged" ]; then
+	./node_modules/.bin/lint-staged
+else
+	echo "lint-staged not found. Run: pnpm install"
+	exit 1
+fi

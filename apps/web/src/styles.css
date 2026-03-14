@@ -1,0 +1,154 @@
+:root {
+  --bg: #f7f2e7;
+  --panel: #fff8ef;
+  --ink: #1f1c17;
+  --muted: #756a5b;
+  --accent: #d54d16;
+  --accent-2: #0f766e;
+  --danger: #9a3412;
+  --modal-border-accent: #c27f56;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'Space Grotesk', 'Avenir Next', sans-serif;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at top right, #f4d9b6 0, var(--bg) 40%), var(--bg);
+  min-height: 100vh;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.layout {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid #e6d9c7;
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.05);
+}
+
+.grid {
+  display: grid;
+  gap: 16px;
+}
+
+.grid.two {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  border: 1px solid #d9cab5;
+  border-radius: 10px;
+  padding: 10px;
+  background: #fff;
+}
+
+button {
+  border: 0;
+  background: var(--accent);
+  color: white;
+  border-radius: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+button.secondary {
+  background: var(--accent-2);
+}
+
+button.danger,
+a.button-link.danger {
+  background: var(--danger);
+}
+
+a.button-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: var(--accent);
+  color: white;
+  border-radius: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+a.button-link.secondary {
+  background: var(--accent-2);
+}
+
+small,
+.meta {
+  color: var(--muted);
+}
+
+nav.nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+nav.nav a {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #e5d6c4;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+h1,
+h2,
+h3 {
+  margin: 0 0 12px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #f8dbc9;
+}
+
+.modal {
+  border-color: var(--modal-border-accent);
+}
+
+.modal--accent {
+  border-color: var(--modal-border-accent);
+}
+
+.modal--warning {
+  border-color: var(--danger);
+}
+
+.modal__actions {
+  display: flex;
+  gap: 8px;
+}

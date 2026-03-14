@@ -1,83 +1,138 @@
 # IronTrack
 
-Production-ready workout tracking application built as an Nx monorepo.
+IronTrack is a full-stack workout tracking monorepo with:
 
-## Architecture
+- NestJS + Prisma API (`apps/api`)
+- React web app (`apps/web`)
+- Shared TypeScript library (`libs/shared`)
 
-| App / Lib | Tech Stack | Port |
-|-----------|-----------|------|
-| `apps/api` | NestJS + Prisma + PostgreSQL | 3000 |
-| `apps/web` | React + Vite + TailwindCSS | 5173 |
-| `apps/mobile` | React Native (Expo) + SQLite | — |
-| `apps/ml` | FastAPI + scikit-learn | 8000 |
-| `libs/shared` | TypeScript DTOs, types, constants | — |
+## Monorepo Structure
+
+- `apps/api`: REST API (`/api/v1`)
+- `apps/web`: React web client
+- `libs/shared`: shared enums/types/validation/utils
+- `infra/docker`: Dockerfiles and compose definitions
+- `tools/scripts`: one-command setup and DB reset scripts
 
 ## Prerequisites
 
-- **Node.js** ≥ 20 (see `.nvmrc`)
-- **pnpm** ≥ 9
-- **Docker** & Docker Compose (for PostgreSQL)
-- **Python** ≥ 3.11 (for ML service)
+- Node.js 20+
+- pnpm 9+
+- Docker + Docker Compose
 
 ## Quick Start
 
 ```bash
-# 1. Clone & install
 pnpm install
-
-# 2. Copy env file and edit values
 cp .env.example .env
-
-# 3. Start database
-pnpm docker:up
-
-# 4. Run migrations & generate Prisma client
-pnpm db:migrate
 pnpm db:generate
-
-# 5. Seed database (optional)
+pnpm db:migrate
 pnpm db:seed
-
-# 6. Start services
-pnpm serve:api   # NestJS API  → http://localhost:3000
-pnpm serve:web   # React web   → http://localhost:5173
-pnpm serve:ml    # FastAPI ML  → http://localhost:8000
+pnpm serve:api
+pnpm serve:web
 ```
 
-## Project Structure
+## Local API + Demo Data
 
-```
-├── apps/
-│   ├── api/          # NestJS REST API
-│   ├── web/          # React + Vite web app
-│   ├── mobile/       # Expo React Native app
-│   └── ml/           # FastAPI ML service
-├── libs/
-│   └── shared/       # Shared types, DTOs, constants
-├── infra/
-│   └── docker/       # Docker Compose & Dockerfiles
-├── tools/
-│   └── scripts/      # Utility scripts
-└── mock-screens/     # UI mockups (26 screens)
+Run this on your machine:
+
+```bash
+pnpm docker:up
+pnpm db:generate
+pnpm db:migrate
+pnpm db:seed
+pnpm db:seed:demo
+pnpm serve:api
+curl -s http://localhost:3000/api/v1/health
 ```
 
-## Scripts
+Demo login after seed:
 
-| Command | Description |
-|---------|-------------|
-| `pnpm build` | Build all projects |
-| `pnpm test` | Run all tests |
-| `pnpm lint` | Lint all projects |
-| `pnpm serve:api` | Start NestJS API (dev) |
-| `pnpm serve:web` | Start React web app (dev) |
-| `pnpm serve:ml` | Start FastAPI ML service (dev) |
-| `pnpm db:migrate` | Run Prisma migrations |
-| `pnpm db:seed` | Seed database |
-| `pnpm db:studio` | Open Prisma Studio |
-| `pnpm db:generate` | Generate Prisma client |
-| `pnpm docker:up` | Start Docker services |
-| `pnpm docker:down` | Stop Docker services |
+```bash
+curl -s http://localhost:3000/api/v1/auth/login \
+  -H 'content-type: application/json' \
+  -d '{"email":"demo@irontrack.local","password":"DemoPass123!"}'
+```
 
-## License
+If Docker fails with `bind: address already in use` on `3000`, set
+`WEB_PORT=3001` in your root `.env`, then run:
 
-MIT
+```bash
+pnpm docker:up
+```
+
+## Docker
+
+```bash
+cp infra/docker/.env.docker.example infra/docker/.env.docker
+docker compose -f infra/docker/docker-compose.yml up -d --build
+```
+
+One-command setup:
+
+```bash
+./tools/scripts/setup.sh
+```
+
+`setup.sh` installs dependencies, starts Docker services, waits for health checks,
+applies Prisma migrations, and seeds the database. If `infra/docker/.env.docker`
+is missing, it is created from `infra/docker/.env.docker.example`.
+
+Reset DB:
+
+```bash
+./tools/scripts/reset-db.sh
+```
+
+## Testing
+
+```bash
+pnpm test:api
+pnpm test:e2e:api
+pnpm test:web
+pnpm test:e2e:web
+pnpm test:shared
+```
+
+Docker-backed e2e:
+
+```bash
+pnpm test:e2e:docker
+```
+
+Run the Docker-backed API and web e2e suites separately:
+
+```bash
+pnpm docker:up
+pnpm docker:wait
+pnpm test:e2e:api:docker
+pnpm test:e2e:web:docker
+```
+
+Optional overrides:
+
+```bash
+E2E_API_BASE_URL=http://127.0.0.1:3000 \
+E2E_WEB_BASE_URL=http://127.0.0.1:3001 \
+pnpm test:e2e:docker
+```
+
+## Branch Protection (Recommended)
+
+Configure GitHub branch protection for `main` with:
+
+1. Require pull request before merging.
+2. Require status checks to pass before merging (`CI / lint-test-build`).
+3. Require branches to be up to date before merging.
+4. Include administrators.
+5. Restrict force pushes and branch deletion.
+
+## CI/CD
+
+- `.github/workflows/ci.yml`: installs dependencies, runs lint/typecheck, API unit + e2e tests, web unit + Playwright tests, shared tests, and builds API/web.
+- `.github/workflows/docker.yml`: builds API/web Docker images on pushes to `main`.
+
+## Notes
+
+- API soft-delete is enabled via Prisma middleware for core entities.
+- Workout business logic includes PR detection, volume caching, streak updates, completion %, and superset ordering.

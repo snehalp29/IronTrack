@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  lint-test-build:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: irontrack_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/irontrack_test?schema=public
+      JWT_ACCESS_SECRET: ci-access-secret-1234567890
+      JWT_REFRESH_SECRET: ci-refresh-secret-1234567890
+      JWT_ACCESS_EXPIRY: 15m
+      JWT_REFRESH_EXPIRY: 7d
+      API_PORT: 3000
+      API_PREFIX: api/v1
+      CORS_ORIGINS: http://localhost:3000,http://localhost:8081
+      PLAYWRIGHT_BROWSERS_PATH: /home/runner/.cache/ms-playwright
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm run lint:code && pnpm run format:check
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Run API tests with coverage thresholds
+        run: pnpm --filter @irontrack/api test:cov
+
+      - name: Run API e2e tests
+        run: pnpm test:e2e:api
+
+      - name: Run web tests with coverage thresholds
+        run: pnpm --filter @irontrack/web test:cov
+
+      - name: Build web (for Playwright preview)
+        run: pnpm build:web
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: /home/runner/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml', 'apps/web/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
+      - name: Install Playwright OS dependencies
+        run: pnpm --filter @irontrack/web exec playwright install-deps chromium
+
+      - name: Install Playwright browser (cache miss only)
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: pnpm --filter @irontrack/web exec playwright install chromium
+
+      - name: Run web Playwright tests
+        run: pnpm test:e2e:web
+
+      - name: Run shared tests
+        run: pnpm test:shared
+
+      - name: Build API
+        run: pnpm build:api

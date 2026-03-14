@@ -3,8 +3,7 @@
 // ─────────────────────────────────────────────────────────────
 
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
@@ -49,7 +48,7 @@ enum StreakType {
   CHECKLIST
 }
 
-enum ChecklistItemType {
+enum ChecklistType {
   WORKOUT
   WARMUP
   MOBILITY
@@ -72,16 +71,17 @@ enum AuthProvider {
 
 model User {
   id             String         @id @default(uuid()) @db.Uuid
-  email          String         @unique
-  passwordHash   String
-  name           String?
-  avatarUrl      String?
-  timezone       String?        @default("UTC")
+  email          String         @unique @db.VarChar(320)
+  passwordHash   String         @db.VarChar(255)
+  name           String?        @db.VarChar(120)
+  avatarUrl      String?        @db.VarChar(2048)
+  timezone       String?        @default("UTC") @db.VarChar(120)
   unitPreference UnitPreference @default(METRIC)
   authProvider   AuthProvider   @default(LOCAL)
-  googleId       String?        @unique
+  googleId       String?        @unique @db.VarChar(255)
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
+  deletedAt      DateTime?
 
   // Relations
   exercises        ExerciseTemplate[]
@@ -92,6 +92,8 @@ model User {
   streaks          UserStreak[]
   checklistItems   ChecklistItem[]
   refreshTokens    RefreshToken[]
+
+  @@index([deletedAt])
 }
 
 // ─── RefreshToken (D7 — DB-stored refresh tokens) ──────
@@ -99,24 +101,25 @@ model User {
 model RefreshToken {
   id        String    @id @default(uuid()) @db.Uuid
   userId    String    @db.Uuid
-  tokenHash String
+  tokenHash String    @db.Char(64)
   expiresAt DateTime
   revokedAt DateTime?
   createdAt DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([tokenHash])
   @@index([userId])
-  @@index([tokenHash])
+  @@index([expiresAt])
 }
 
 // ─── Catalog: MuscleGroup ──────────────────────────────
 
 model MuscleGroup {
   id        String   @id @default(uuid()) @db.Uuid
-  name      String   @unique
-  imageUrl  String?
-  iconUrl   String?
+  name      String   @unique @db.VarChar(120)
+  imageUrl  String?  @db.VarChar(2048)
+  iconUrl   String?  @db.VarChar(2048)
   sortOrder Int?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -130,8 +133,8 @@ model MuscleGroup {
 
 model Equipment {
   id        String   @id @default(uuid()) @db.Uuid
-  name      String   @unique
-  iconUrl   String?
+  name      String   @unique @db.VarChar(120)
+  iconUrl   String?  @db.VarChar(2048)
   sortOrder Int?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -144,8 +147,8 @@ model Equipment {
 
 model ExerciseTemplate {
   id                   String       @id @default(uuid()) @db.Uuid
-  name                 String
-  description          String?      @db.Text
+  name                 String       @db.VarChar(120)
+  description          String?      @db.VarChar(4000)
   exerciseType         ExerciseType
   isGlobal             Boolean      @default(false)
   ownerUserId          String?      @db.Uuid
@@ -153,13 +156,13 @@ model ExerciseTemplate {
   defaultSets          Int?
   repMin               Int?
   repMax               Int?
-  defaultCues          String?      @db.Text
+  defaultCues          String?      @db.VarChar(4000)
   deletedAt            DateTime?
   createdAt            DateTime     @default(now())
   updatedAt            DateTime     @updatedAt
 
   // Relations
-  owner            User?                             @relation(fields: [ownerUserId], references: [id])
+  owner            User?                             @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
   primaryMuscle    MuscleGroup                       @relation(fields: [primaryMuscleGroupId], references: [id])
   secondaryMuscles ExerciseTemplateSecondaryMuscle[]
   equipment        ExerciseTemplateEquipment[]
@@ -169,10 +172,12 @@ model ExerciseTemplate {
   notes            ExerciseNote[]
   prRecords        PRRecord[]
 
-  // Index: expression index for unique lower(name) per user via raw SQL migration (D12)
+  // Indexes: raw SQL expression indexes enforce active lower(name) uniqueness
+  // for global exercises and separately per owner (D12 migration).
   @@index([ownerUserId])
   @@index([primaryMuscleGroupId])
   @@index([exerciseType])
+  @@index([deletedAt])
 }
 
 // ─── Join: ExerciseTemplate ↔ MuscleGroup (secondary) ──
@@ -205,9 +210,9 @@ model ExerciseVideo {
   id                 String        @id @default(uuid()) @db.Uuid
   exerciseTemplateId String        @db.Uuid
   provider           VideoProvider
-  url                String
-  title              String?
-  thumbnailUrl       String?
+  url                String        @db.VarChar(2048)
+  title              String?       @db.VarChar(255)
+  thumbnailUrl       String?       @db.VarChar(2048)
   isPrimary          Boolean       @default(false)
   sortOrder          Int           @default(0)
   createdAt          DateTime      @default(now())
@@ -223,8 +228,8 @@ model ExerciseVideo {
 model WorkoutTemplate {
   id          String    @id @default(uuid()) @db.Uuid
   userId      String    @db.Uuid
-  name        String
-  description String?   @db.Text
+  name        String    @db.VarChar(120)
+  description String?   @db.VarChar(4000)
   orderIndex  Int?
   deletedAt   DateTime?
   createdAt   DateTime  @default(now())
@@ -235,6 +240,7 @@ model WorkoutTemplate {
   sessions  WorkoutSession[]
 
   @@index([userId])
+  @@index([deletedAt])
 }
 
 // ─── WorkoutTemplateExercise (join w/ extra fields) ────
@@ -247,7 +253,7 @@ model WorkoutTemplateExercise {
   defaultSets        Int?
   repMin             Int?
   repMax             Int?
-  supersetGroupKey   String?
+  supersetGroupKey   String?  @db.VarChar(64)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -269,7 +275,7 @@ model WorkoutSession {
   finishedAt        DateTime?
   status            SessionStatus @default(IN_PROGRESS)
   endedReason       EndedReason?
-  notes             String?       @db.Text
+  notes             String?       @db.VarChar(4000)
   totalVolume       Float?
   durationSeconds   Int?
   version           Int           @default(1)
@@ -284,7 +290,10 @@ model WorkoutSession {
   prRecords        PRRecord[]
 
   @@index([userId, startedAt])
+  @@index([userId, status])
   @@index([userId, workoutTemplateId])
+  @@index([userId, finishedAt])
+  @@index([deletedAt])
 }
 
 // ─── SessionExercise ───────────────────────────────────
@@ -294,8 +303,8 @@ model SessionExercise {
   sessionId          String    @db.Uuid
   exerciseTemplateId String    @db.Uuid
   orderIndex         Int
-  supersetGroupKey   String?
-  notes              String?   @db.Text
+  supersetGroupKey   String?   @db.VarChar(64)
+  notes              String?   @db.VarChar(4000)
   version            Int       @default(1)
   deletedAt          DateTime?
   createdAt          DateTime  @default(now())
@@ -307,6 +316,8 @@ model SessionExercise {
 
   @@unique([sessionId, orderIndex])
   @@index([sessionId])
+  @@index([exerciseTemplateId])
+  @@index([deletedAt])
 }
 
 // ─── Set ───────────────────────────────────────────────
@@ -319,7 +330,7 @@ model Set {
   payload           Json
   isCompleted       Boolean      @default(false)
   completedAt       DateTime?
-  idempotencyKey    String?
+  idempotencyKey    String?      @db.VarChar(128)
 
   // Denormalized columns for SQL aggregation (D3)
   weight          Float?
@@ -336,7 +347,9 @@ model Set {
 
   @@unique([sessionExerciseId, orderIndex])
   @@unique([sessionExerciseId, idempotencyKey])
+  @@index([completedAt])
   @@index([sessionExerciseId])
+  @@index([deletedAt])
 }
 
 // ─── ExerciseNote ──────────────────────────────────────
@@ -345,7 +358,7 @@ model ExerciseNote {
   id                 String   @id @default(uuid()) @db.Uuid
   userId             String   @db.Uuid
   exerciseTemplateId String   @db.Uuid
-  note               String   @db.Text
+  note               String   @db.VarChar(4000)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -361,7 +374,7 @@ model ExerciseNote {
 model SessionNote {
   id        String   @id @default(uuid()) @db.Uuid
   sessionId String   @db.Uuid
-  note      String   @db.Text
+  note      String   @db.VarChar(4000)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -379,6 +392,8 @@ model PRRecord {
   prType             PrType
   value              Float
   achievedAt         DateTime @default(now())
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   // Provenance tracking
   setId     String? @db.Uuid
@@ -391,6 +406,9 @@ model PRRecord {
 
   @@unique([userId, exerciseTemplateId, prType])
   @@index([userId, exerciseTemplateId])
+  @@index([userId, achievedAt])
+  @@index([sessionId])
+  @@index([setId])
 }
 
 // ─── UserStreak ────────────────────────────────────────
@@ -402,6 +420,7 @@ model UserStreak {
   currentStreakDays Int        @default(0)
   longestStreakDays Int        @default(0)
   lastCompletedDate DateTime?  @db.Date
+  updatedAt         DateTime   @updatedAt
 
   user User @relation(fields: [userId], references: [id])
 
@@ -412,12 +431,13 @@ model UserStreak {
 // ─── ChecklistItem ─────────────────────────────────────
 
 model ChecklistItem {
-  id          String            @id @default(uuid()) @db.Uuid
-  userId      String            @db.Uuid
-  date        DateTime          @db.Date
-  type        ChecklistItemType
-  isCompleted Boolean           @default(false)
+  id          String        @id @default(uuid()) @db.Uuid
+  userId      String        @db.Uuid
+  date        DateTime      @db.Date
+  type        ChecklistType
+  isCompleted Boolean       @default(false)
   completedAt DateTime?
+  updatedAt   DateTime      @updatedAt
 
   user User @relation(fields: [userId], references: [id])
 

@@ -21,7 +21,9 @@ Build a containerized, production-ready system with:
 - Deployment: Docker Compose (local homelab ready)
 
 Prioritize: clean architecture, scalability, security, testability, and fast development for a solo developer using AI assistance.
-***
+
+---
+
 ## 🏗 1️⃣ MONOREPO STRUCTURE using NX
 
 Use Nx for monorepo management with pnpm workspaces. Nx provides better tooling for large monorepos, caching, and task orchestration.
@@ -49,12 +51,14 @@ repo/
   nx.json
   pnpm-workspace.yaml
 ```
-***
+
+---
+
 ## 🧠 2️⃣ BACKEND: API (NestJS + Prisma)
 
 ### Tech Stack
 
-- Node 20
+- Node 24
 - NestJS
 - Prisma ORM
 - PostgreSQL
@@ -107,6 +111,7 @@ repo/
 ### Prisma Schema Details (with Markdown comment syntax)
 
 IMPORTANT:
+
 - Inline html style comments starting with `<!-- -->` are explanations only.
 - They MUST NOT become schema fields.
 - Generate a complete Prisma schema with models, relations, enums, constraints, and indexes based strictly on the structured bullets below.
@@ -115,9 +120,10 @@ IMPORTANT:
 ---
 
 ## User
+
 <!-- (Pages: common top header) -->
 
-- id (uuid) 
+- id (uuid)
 <!-- (Primary identifier) -->
 - email (string, unique)
 <!-- (Login identity for authentication) -->
@@ -133,7 +139,9 @@ IMPORTANT:
 ---
 
 ## MuscleGroup (catalog)
+
 <!-- (Pages: 2 Workout Preview Screen Header (target muscles), 8 Exercise Detail – Form Guide Tab (Muscle Groups section) 13 Workout Completion –Up Next Screen (Focus Area),15 Create Exercise (pickers)) -->
+
 - id
   <!-- (Primary identifier) -->
 - name (string, unique)
@@ -147,13 +155,15 @@ IMPORTANT:
 - createdAt (datetime)
   <!-- (Audit) -->
 - updatedAt (datetime)
-  <!-- (Audit) -->
-<!-- (Why: images enable muscle group pickers and body-map visualizations without hardcoding assets in clients.) -->
+    <!-- (Audit) -->
+  <!-- (Why: images enable muscle group pickers and body-map visualizations without hardcoding assets in clients.) -->
 
 ---
 
 ## Equipment (catalog)
+
 <!-- (Pages: Create Exercise equipment picker, Exercise Library filters, Exercise Detail) -->
+
 - id
   <!-- (Primary identifier) -->
 - name (string, unique)
@@ -166,10 +176,13 @@ IMPORTANT:
   <!-- (Audit) -->
 - updatedAt (datetime)
   <!-- (Audit) -->
+
 ---
 
 ## ExerciseTemplate (global + user custom)
+
 <!-- (Pages: Exercise Library, Create Exercise, Exercise Detail Form Guide/History, Active Workout, Workout Preview) -->
+
 - id
   <!-- (Primary identifier for exercise definition) -->
 - name (string)
@@ -198,6 +211,7 @@ IMPORTANT:
   <!-- (Audit) -->
 
 Constraints:
+
 - If ownerUserId is NOT null (custom exercise), enforce unique (ownerUserId, lower(name))
   <!-- (Prevents duplicate custom exercise names per user) -->
 - If isGlobal = true then ownerUserId must be null
@@ -206,32 +220,36 @@ Constraints:
 ---
 
 ## ExerciseTemplateSecondaryMuscle (join: exercise → secondary muscles)
+
 <!-- (Pages: Exercise Detail Form Guide, Weekly Progress coverage, Create Exercise secondary selection) -->
+
 - exerciseTemplateId (FK → ExerciseTemplate)
 <!-- (Which exercise the association belongs to) -->
 - muscleGroupId (FK → MuscleGroup)
-<!-- (Which secondary muscle is involved) -->
-<!-- (Purpose: supports multiple muscle groups per exercise (e.g., Deadlift hits glutes, hamstrings, back).) -->
-Constraints:
+  <!-- (Which secondary muscle is involved) -->
+  <!-- (Purpose: supports multiple muscle groups per exercise (e.g., Deadlift hits glutes, hamstrings, back).) -->
+  Constraints:
 - Unique (exerciseTemplateId, muscleGroupId)
 <!-- (Prevent duplicate associations) -->
 
 ---
 
 ## ExerciseTemplateEquipment (join: exercise → equipment tags)
+
 <!-- (Pages: Exercise Library filters, Create Exercise, Exercise Detail) -->
 
 - exerciseTemplateId (FK → ExerciseTemplate)
 <!-- (Which exercise) -->
 - equipmentId (FK → Equipment)
-<!-- (Which equipment tag applies) -->
-Constraints:
+  <!-- (Which equipment tag applies) -->
+  Constraints:
 - Unique (exerciseTemplateId, equipmentId)
 <!-- (Prevent duplicate associations) -->
 
 ---
 
 ## ExerciseVideo (exercise → multiple instructional videos)
+
 <!-- (Pages: Exercise Detail Form Guide, Active Workout video tile, Workout Preview optional) -->
 
 - id
@@ -256,16 +274,19 @@ Constraints:
 <!-- (Audit) -->
 
 Constraints:
+
 - Unique (exerciseTemplateId, sortOrder)
 <!-- (Stable ordering per exercise) -->
 - Optional: enforce only one isPrimary per exercise
-<!-- (Prefer exactly one “primary” video) -->
-<!-- (Do NOT store videos in WorkoutSession; videos are reusable exercise-level assets.) -->
+  <!-- (Prefer exactly one “primary” video) -->
+  <!-- (Do NOT store videos in WorkoutSession; videos are reusable exercise-level assets.) -->
 
 ---
 
 ## WorkoutTemplate (planned workout/program day)
+
 <!-- (Pages: Dashboard program card, Workout Preview, Up Next) -->
+
 - id
 <!-- (Primary identifier) -->
 - userId (FK → User)
@@ -282,6 +303,7 @@ Constraints:
 ---
 
 ## WorkoutTemplateExercise (join: ordered template exercises + defaults + supersets)
+
 <!-- (Pages: Workout Preview, Reorder modal, Superset setup, Session generation) -->
 
 - id
@@ -306,6 +328,7 @@ Constraints:
 <!-- (Audit) -->
 
 Constraints / Indexes:
+
 - Unique (workoutTemplateId, orderIndex)
 <!-- (Stable ordering) -->
 - Index (workoutTemplateId)
@@ -318,7 +341,9 @@ Constraints / Indexes:
 ---
 
 ## WorkoutSession (performed workout instance)
+
 <!-- (Pages: Active Workout, Completion, Summary, History, Dashboard rings, Streak) -->
+
 - id
 <!-- (Primary identifier) -->
 - userId (FK → User)
@@ -345,6 +370,7 @@ Constraints / Indexes:
 <!-- (Audit) -->
 
 Indexes:
+
 - Index (userId, startedAt)
 <!-- (Dashboard/history queries) -->
 - Index (userId, workoutTemplateId)
@@ -353,7 +379,9 @@ Indexes:
 ---
 
 ## SessionExercise (exercise instance inside a session)
+
 <!-- (Pages: Active Workout cards, exercise menu actions, reorder in-session, superset in-session) -->
+
 - id
 <!-- (Primary identifier) -->
 - sessionId (FK → WorkoutSession)
@@ -378,6 +406,7 @@ Indexes:
 <!-- (Audit) -->
 
 Constraints / Indexes:
+
 - Unique (sessionId, orderIndex)
 <!-- (Stable in-session ordering) -->
 - Index (sessionId)
@@ -386,6 +415,7 @@ Constraints / Indexes:
 ---
 
 ## Set (logged set inside a session exercise)
+
 <!-- (Pages: Active Workout sets table, Exercise History, PR detection, Summary calculations) -->
 
 - id
@@ -419,6 +449,7 @@ Constraints / Indexes:
 <!-- (Audit) -->
 
 Constraints / Indexes:
+
 - Unique (sessionExerciseId, orderIndex)
 <!-- (Stable set ordering) -->
 - Optional Unique (sessionExerciseId, idempotencyKey)
@@ -427,6 +458,7 @@ Constraints / Indexes:
 <!-- (Fast load for exercise history) -->
 
 Payload validation examples (Zod-enforced):
+
 <!-- (WEIGHT_REPS: { weight: number, reps: number, rpe?: number }) -->
 <!-- (BODYWEIGHT: { reps: number, rpe?: number }) -->
 <!-- (BODYWEIGHT_PLUS_WEIGHT: { addedWeight: number, reps: number, rpe?: number }) -->
@@ -436,6 +468,7 @@ Payload validation examples (Zod-enforced):
 ---
 
 ## ExerciseNote (persistent personal cues per user/exercise)
+
 <!-- (Pages: Exercise Detail personal cues, Active Workout reference, Form Guide) -->
 
 - id
@@ -457,12 +490,14 @@ Payload validation examples (Zod-enforced):
 <!-- (Audit) -->
 
 Constraints:
+
 - Unique (userId, exerciseTemplateId)
 <!-- (One current persistent note per user/exercise) -->
 
 ---
 
 ## SessionNote (session-level notes)
+
 <!-- (Pages: Workout Summary, Post-workout reflection, future Notes hub) -->
 
 - id
@@ -481,12 +516,14 @@ Constraints:
 <!-- (Audit) -->
 
 Indexes:
+
 - Index (sessionId)
 <!-- (Fast retrieval) -->
 
 ---
 
 ## PRRecord (derived performance records)
+
 <!-- (Pages: Exercise History tab PR cards, workout completion highlights) -->
 
 - id
@@ -508,6 +545,7 @@ Indexes:
 <!-- (When PR occurred) -->
 
 Constraints / Indexes:
+
 - Unique (userId, exerciseTemplateId, prType)
 <!-- (One PR per type per exercise per user) -->
 - Index (userId, exerciseTemplateId)
@@ -516,6 +554,7 @@ Constraints / Indexes:
 ---
 
 ## UserStreak (habit streaks)
+
 <!-- (Pages: Streak screen, Dashboard badge) -->
 
 - id
@@ -537,15 +576,18 @@ Constraints / Indexes:
 <!-- (Used to compute next streak increment) -->
 
 MVP rule:
+
 <!-- (WORKOUT streak increments if user has >= 1 WorkoutSession FINISHED on that date, based on finishedAt local date) -->
 
 Constraints:
+
 - Unique (userId, streakType)
 <!-- (One streak record per type per user) -->
 
 ---
 
 ## ChecklistItem (daily checklist completion)
+
 <!-- (Pages: Dashboard checklist, weekly rings, streak if CHECKLIST enabled) -->
 
 - id
@@ -567,12 +609,14 @@ Constraints:
 <!-- (Optional timestamp for analytics) -->
 
 Constraints / Indexes:
+
 - Unique (userId, date, type)
 <!-- (No duplicates) -->
 - Index (userId, date)
 <!-- (Fast dashboard/week queries) -->
 
 ## Safe deletes
+
 <!-- (Avoid cascading deletes that remove history; prefer soft-delete flags if needed.) -->
 <!-- (Deleting ExerciseTemplate should be restricted if referenced by WorkoutSession/SessionExercise.) -->
 
@@ -580,31 +624,33 @@ Constraints / Indexes:
 
 #### Progress:
 
-  - GET /progress/weekly
+- GET /progress/weekly
 
 #### Business Logic to Implement
 
-  - Volume calculation
-  - PR detection
-  - Muscle coverage %
-  - Streak calculation
-  - Completion %
-  - Superset grouping
-  - Incomplete workout detection
+- Volume calculation
+- PR detection
+- Muscle coverage %
+- Streak calculation
+- Completion %
+- Superset grouping
+- Incomplete workout detection
 
-  ### Validation & Error Handling
+### Validation & Error Handling
 
 - Use Zod for all input validation
 - Return standardized error responses (e.g., { error: { code, message } })
 - HTTP status codes: 200, 201, 400, 401, 403, 404, 409, 422, 500
 - Input sanitization and SQL injection prevention via Prisma
 - Rate limiting for auth endpoints
-***
+
+---
+
 ## 🤖 3️⃣ ML SERVICE (FastAPI)
 
 ### Create a separate service in apps/ml.
 
-####  Tech:
+#### Tech:
 
 - Python 3.11
 - FastAPI
@@ -613,57 +659,59 @@ Constraints / Indexes:
 
 #### Endpoints:
 
-  - POST /predict/next-load
-  - POST /predict/rest-time
-  - POST /risk/pain-pattern
-  - POST /recommendations/session
+- POST /predict/next-load
+- POST /predict/rest-time
+- POST /risk/pain-pattern
+- POST /recommendations/session
 
 #### For now:
 
-  - Implement rule-based logic (no heavy ML yet).
-  - Design so real ML models can be plugged in later.
+- Implement rule-based logic (no heavy ML yet).
+- Design so real ML models can be plugged in later.
 
 ####ML service must:
 
-  - Be stateless
-  - Not write directly to DB
-  - Accept structured input from API
-***
+- Be stateless
+- Not write directly to DB
+- Accept structured input from API
+
+---
+
 ## 🌐 4️⃣ WEB (React)
 
-  - Vite + React + TypeScript
-  - TanStack Query for data fetching
-  - Zustand for local state
-  - Tailwind CSS
-  - React Router for navigation
-  - Form handling with React Hook Form + Zod
+- Vite + React + TypeScript
+- TanStack Query for data fetching
+- Zustand for local state
+- Tailwind CSS
+- React Router for navigation
+- Form handling with React Hook Form + Zod
 
 ### Pages:
 
-  - 1 Dashboard : Header (weekly rings, User logo), Body (checklist, streak entry), Footer (resume/start workout CTA, Lessons, Nutitions, Dashboard, workout, Progress )
-  - 2 Workout Preview: Header (target muscles), Body (exercise list), Footer (warmup CTA, start workout)
-  - 3 Active Workout: Header (live logging), Body (sets table, rest timer, notes), Footer (finish)
-  - 4 Exercise Detail:
-    - Form Guide tab (Header: video/placeholder, instructions, cues)
-    - History tab (Header: PRs, volume stats, set history)
-  - 5 Post-Workout Flow:
-    - Workout Completion (celebration, share, CTA to summary)
-    - Workout Summary
-    - Weekly Progress (muscle map/coverage, workouts/week)
-    - Up Next
-    - Streak
-  - 6 Exercise Library:
-    - Select Exercise (search, filters, muscle groups)
-    - Create Exercise (full flow: name → equipment → type →       primary/secondary     mscles → defaults)
+- 1 Dashboard : Header (weekly rings, User logo), Body (checklist, streak entry), Footer (resume/start workout CTA, Lessons, Nutitions, Dashboard, workout, Progress )
+- 2 Workout Preview: Header (target muscles), Body (exercise list), Footer (warmup CTA, start workout)
+- 3 Active Workout: Header (live logging), Body (sets table, rest timer, notes), Footer (finish)
+- 4 Exercise Detail:
+  - Form Guide tab (Header: video/placeholder, instructions, cues)
+  - History tab (Header: PRs, volume stats, set history)
+- 5 Post-Workout Flow:
+  - Workout Completion (celebration, share, CTA to summary)
+  - Workout Summary
+  - Weekly Progress (muscle map/coverage, workouts/week)
+  - Up Next
+  - Streak
+- 6 Exercise Library:
+  - Select Exercise (search, filters, muscle groups)
+  - Create Exercise (full flow: name → equipment → type → primary/secondary mscles → defaults)
 
 ### Modals/Bottom Sheets (MVP)
 
-  - Exercise overflow menu: swap / form guide / reorder / superset / history / remove
-  - Reorder exercises modal
-  - Superset modal
-  - Incomplete sets modal
-  - Pickers for create exercise (equipment/type/muscles)
-    
+- Exercise overflow menu: swap / form guide / reorder / superset / history / remove
+- Reorder exercises modal
+- Superset modal
+- Incomplete sets modal
+- Pickers for create exercise (equipment/type/muscles)
+
 Use shared types from libs/shared.
 
 ## 📦 SHARED PACKAGE / libs
@@ -673,24 +721,24 @@ Create libs/shared with:
 - TypeScript types for all API DTOs (requests/responses)
 - Enums for exercise types, muscle groups, equipment
 - Utility functions (date formatting, validation helpers)
-- Constants (API endpoints, default values)  
+- Constants (API endpoints, default values)
 
 ## 📱 5️⃣ MOBILE (React Native + Expo)
 
-  - Expo SDK 50+
-  - TypeScript
-  - React Navigation (stack + tab)
-  - Same API contracts as web
-  - AsyncStorage for local persistence
-  - Offline support for workout sessions
-    - store in AsyncStorage/SQLite
-    - when online: sync session + sets with idempotency keys
-    - optimistic locking on SessionExercise reorder/swap
-  - Push notifications (optional, mock)
+- Expo SDK 50+
+- TypeScript
+- React Navigation (stack + tab)
+- Same API contracts as web
+- AsyncStorage for local persistence
+- Offline support for workout sessions
+  - store in AsyncStorage/SQLite
+  - when online: sync session + sets with idempotency keys
+  - optimistic locking on SessionExercise reorder/swap
+- Push notifications (optional, mock)
 
 Use shared DTO types
 
-***  
+---
 
 ## 🐳 6️⃣ DOCKER SETUP
 
@@ -698,18 +746,19 @@ Create docker-compose.yml with:
 
 #### Services:
 
-  - postgres (PostgreSQL 15, persistent volume)
-  - api (NestJS app, expose 4000)
-  - ml (FastAPI app, expose 5000)
-  - web (Vite dev server, optional, expose 3000)
-  - mobile (Expo dev server, optional, expose 8081)
+- postgres (PostgreSQL 15, persistent volume)
+- api (NestJS app, expose 4000)
+- ml (FastAPI app, expose 5000)
+- web (Vite dev server, optional, expose 3000)
+- mobile (Expo dev server, optional, expose 8081)
 
 #### Features:
 
-  - Environment variables from .env file
-  - Health checks for all services
-  - Proper networking between services
-  - Volume mounts for hot reload in dev
+- Environment variables from .env file
+- Health checks for all services
+- Proper networking between services
+- Volume mounts for hot reload in dev
+
 ## 🧪 9️⃣ TESTING STRATEGY
 
 - Unit tests for all services, controllers, utilities
@@ -729,47 +778,51 @@ Create docker-compose.yml with:
 - Database migrations on deploy
 - Health checks and graceful shutdown
 - Monitoring: basic logging, prepare for metrics (Prometheus) port.
-***
+
+---
+
 ## 🔐 7️⃣ NON-FUNCTIONAL REQUIREMENTS
 
-  - Idempotent set creation 
-    - idempotencyKey on Set (unique per user or per session)
-  - Optimistic locking on session updates
-  - Proper logging (Winston for NestJS, built-in for FastAPI)
-  - Health check endpoints (/health for all services)
-  - Seed script for muscle groups, equipment, and sample exercises
-  - Input validation and error handling
-  - CORS configuration
-  - API versioning (v1 prefix)
-***
+- Idempotent set creation
+  - idempotencyKey on Set (unique per user or per session)
+- Optimistic locking on session updates
+- Proper logging (Winston for NestJS, built-in for FastAPI)
+- Health check endpoints (/health for all services)
+- Seed script for muscle groups, equipment, and sample exercises
+- Input validation and error handling
+- CORS configuration
+- API versioning (v1 prefix)
+
+---
+
 ## 📄 8️⃣ OUTPUT REQUIREMENTS
- 
+
 ### Generate:
 
-  - Full folder scaffolding with Nx setup
-  - Complete Prisma schema with all models and relations
-  - NestJS modules with controllers, services, DTOs, guards
-  - FastAPI service with endpoints and Pydantic models
-  - React web app with components, hooks, routing
-  - Expo mobile app with screens and navigation
-  - Shared TypeScript types and utilities
-  - Dockerfiles and docker-compose.yml
-  - Environment configuration files
-  - Basic tests for each service
-  - README with setup, run, and deployment instructions
-  - nx.json and pnpm-workspace.yaml
+- Full folder scaffolding with Nx setup
+- Complete Prisma schema with all models and relations
+- NestJS modules with controllers, services, DTOs, guards
+- FastAPI service with endpoints and Pydantic models
+- React web app with components, hooks, routing
+- Expo mobile app with screens and navigation
+- Shared TypeScript types and utilities
+- Dockerfiles and docker-compose.yml
+- Environment configuration files
+- Basic tests for each service
+- README with setup, run, and deployment instructions
+- nx.json and pnpm-workspace.yaml
 
 Do not ask clarifying questions unless absolutely necessary for critical decisions.
 Make reasonable defaults for all implementation details, but ensure the architecture is clean and scalable for future enhancements.
 
 Generate:
 
-  - Full folder scaffolding
-  - Prisma schema
-  - NestJS modules
-  - FastAPI service
-  - Dockerfiles
-  - docker-compose.yml
-  - README with local run instructions
+- Full folder scaffolding
+- Prisma schema
+- NestJS modules
+- FastAPI service
+- Dockerfiles
+- docker-compose.yml
+- README with local run instructions
 
 Ask clarifying questions only if a decision is blocking the implementation (e.g., set modeling strategy, auth approach). Otherwise, make reasonable defaults.

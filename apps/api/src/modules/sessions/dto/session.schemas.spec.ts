@@ -1,0 +1,547 @@
+import {
+  addSessionExerciseSchema,
+  applySessionSupersetSchema,
+  batchCreateSetsSchema,
+  createSetSchema,
+  listSessionsQuerySchema,
+  reorderSessionExercisesSchema,
+  startSessionSchema,
+  updateSessionExerciseSchema,
+  updateSetSchema,
+} from './session.schemas';
+
+describe('session set schemas', () => {
+  it('allows inline exercises without orderIndex for append-style session creation', () => {
+    const result = startSessionSchema.safeParse({
+      notes: 'quick workout',
+      exercises: [
+        {
+          exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+        },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects oversized session-exercise notes across start/add/update payloads', () => {
+    expect(
+      startSessionSchema.safeParse({
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            notes: 'x'.repeat(4001),
+          },
+        ],
+      }).success,
+    ).toBe(false);
+
+    expect(
+      addSessionExerciseSchema.safeParse({
+        exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+        orderIndex: 0,
+        notes: 'x'.repeat(4001),
+      }).success,
+    ).toBe(false);
+
+    expect(
+      updateSessionExerciseSchema.safeParse({
+        notes: 'x'.repeat(4001),
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects oversized superset group keys and idempotency keys', () => {
+    const oversizedSupersetGroupKey = 'g'.repeat(65);
+    const oversizedIdempotencyKey = 'i'.repeat(129);
+
+    expect(
+      startSessionSchema.safeParse({
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            supersetGroupKey: oversizedSupersetGroupKey,
+          },
+        ],
+      }).success,
+    ).toBe(false);
+
+    expect(
+      addSessionExerciseSchema.safeParse({
+        exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+        orderIndex: 0,
+        supersetGroupKey: oversizedSupersetGroupKey,
+      }).success,
+    ).toBe(false);
+
+    expect(
+      updateSessionExerciseSchema.safeParse({
+        supersetGroupKey: oversizedSupersetGroupKey,
+      }).success,
+    ).toBe(false);
+
+    expect(
+      createSetSchema.safeParse({
+        orderIndex: 0,
+        type: 'WEIGHT_REPS',
+        payload: {},
+        idempotencyKey: oversizedIdempotencyKey,
+      }).success,
+    ).toBe(false);
+
+    expect(
+      updateSetSchema.safeParse({
+        idempotencyKey: oversizedIdempotencyKey,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects payloads that mix a workout template with inline exercises', () => {
+    const result = startSessionSchema.safeParse({
+      workoutTemplateId: '11111111-1111-4111-8111-111111111111',
+      exercises: [
+        {
+          exerciseTemplateId: '22222222-2222-4222-8222-222222222222',
+          orderIndex: 0,
+        },
+      ],
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects negative numeric set values on create', () => {
+    const result = createSetSchema.safeParse({
+      orderIndex: 0,
+      type: 'WEIGHT_REPS',
+      payload: {},
+      weight: -5,
+      reps: -1,
+      durationSeconds: -10,
+      rpe: -0.5,
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects out-of-range RPE on create', () => {
+    const result = createSetSchema.safeParse({
+      orderIndex: 0,
+      type: 'WEIGHT_REPS',
+      payload: {},
+      rpe: 11,
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects invalid numeric updates', () => {
+    const result = updateSetSchema.safeParse({
+      weight: -1,
+      reps: 0,
+      durationSeconds: 0,
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects implausibly large durationSeconds values on create and update', () => {
+    expect(
+      createSetSchema.safeParse({
+        orderIndex: 0,
+        type: 'DURATION',
+        payload: {},
+        durationSeconds: 86_401,
+      }).success,
+    ).toBe(false);
+
+    expect(
+      updateSetSchema.safeParse({
+        durationSeconds: 86_401,
+        payload: {},
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects completedAt when isCompleted is false', () => {
+    const result = createSetSchema.safeParse({
+      orderIndex: 0,
+      type: 'WEIGHT_REPS',
+      payload: {},
+      isCompleted: false,
+      completedAt: '2026-03-03T12:00:00.000Z',
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects completedAt when isCompleted is omitted on create', () => {
+    const result = createSetSchema.safeParse({
+      orderIndex: 0,
+      type: 'WEIGHT_REPS',
+      payload: {},
+      completedAt: '2026-03-03T12:00:00.000Z',
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects completedAt when isCompleted is omitted on update', () => {
+    const result = updateSetSchema.safeParse({
+      completedAt: '2026-03-03T12:00:00.000Z',
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts completedAt only when isCompleted is true', () => {
+    const result = updateSetSchema.safeParse({
+      isCompleted: true,
+      completedAt: '2026-03-03T12:00:00.000Z',
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('requires payload when weight, reps, or durationSeconds are patched', () => {
+    expect(
+      updateSetSchema.safeParse({
+        weight: 50,
+      }).success,
+    ).toBe(false);
+    expect(
+      updateSetSchema.safeParse({
+        reps: 8,
+      }).success,
+    ).toBe(false);
+    expect(
+      updateSetSchema.safeParse({
+        durationSeconds: 45,
+      }).success,
+    ).toBe(false);
+    expect(
+      updateSetSchema.safeParse({
+        weight: 50,
+        payload: { weight: 50 },
+      }).success,
+    ).toBe(true);
+  });
+
+  it('rejects duplicate idempotency keys within one batch create payload', () => {
+    const result = batchCreateSetsSchema.safeParse({
+      sets: [
+        {
+          orderIndex: 0,
+          type: 'WEIGHT_REPS',
+          payload: {},
+          idempotencyKey: 'same-key',
+        },
+        {
+          orderIndex: 1,
+          type: 'WEIGHT_REPS',
+          payload: {},
+          idempotencyKey: 'same-key',
+        },
+      ],
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects future completedAt timestamps on create and update', () => {
+    const futureCompletedAt = new Date(Date.now() + 60_000).toISOString();
+
+    expect(
+      createSetSchema.safeParse({
+        orderIndex: 0,
+        type: 'WEIGHT_REPS',
+        payload: {},
+        isCompleted: true,
+        completedAt: futureCompletedAt,
+      }).success,
+    ).toBe(false);
+
+    expect(
+      updateSetSchema.safeParse({
+        isCompleted: true,
+        completedAt: futureCompletedAt,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects oversized set payloads', () => {
+    const result = createSetSchema.safeParse({
+      orderIndex: 0,
+      type: 'WEIGHT_REPS',
+      payload: {
+        notes: 'x'.repeat(5000),
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects deeply nested set payloads before recursive parsing can blow the stack', () => {
+    const nestedPayload: Record<string, unknown> = {};
+    let cursor: Record<string, unknown> = nestedPayload;
+    for (let index = 0; index < 40; index += 1) {
+      const next: Record<string, unknown> = {};
+      cursor.child = next;
+      cursor = next;
+    }
+
+    const result = createSetSchema.safeParse({
+      orderIndex: 0,
+      type: 'WEIGHT_REPS',
+      payload: nestedPayload,
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects reorder payloads with no items', () => {
+    const result = reorderSessionExercisesSchema.safeParse({
+      items: [],
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects reorder payloads with duplicate exercise ids', () => {
+    const result = reorderSessionExercisesSchema.safeParse({
+      items: [
+        { id: '11111111-1111-4111-8111-111111111111', orderIndex: 0 },
+        { id: '11111111-1111-4111-8111-111111111111', orderIndex: 1 },
+      ],
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects reorder payloads with duplicate order indexes', () => {
+    const result = reorderSessionExercisesSchema.safeParse({
+      items: [
+        { id: '11111111-1111-4111-8111-111111111111', orderIndex: 0 },
+        { id: '22222222-2222-4222-8222-222222222222', orderIndex: 0 },
+      ],
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('allows filtering session listings by status', () => {
+    expect(
+      listSessionsQuerySchema.parse({
+        status: 'FINISHED',
+      }).status,
+    ).toBe('FINISHED');
+  });
+
+  it('rejects superset payloads with duplicate exercise ids', () => {
+    const result = applySessionSupersetSchema.safeParse({
+      exerciseIds: [
+        '11111111-1111-4111-8111-111111111111',
+        '11111111-1111-4111-8111-111111111111',
+      ],
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('normalizes empty or whitespace superset group keys to undefined', () => {
+    expect(
+      startSessionSchema.parse({
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            supersetGroupKey: '',
+          },
+        ],
+      }).exercises[0]?.supersetGroupKey,
+    ).toBeUndefined();
+
+    expect(
+      startSessionSchema.parse({
+        exercises: [
+          {
+            exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+            supersetGroupKey: '   ',
+          },
+        ],
+      }).exercises[0]?.supersetGroupKey,
+    ).toBeUndefined();
+
+    expect(
+      addSessionExerciseSchema.parse({
+        exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+        orderIndex: 0,
+        supersetGroupKey: '',
+      }).supersetGroupKey,
+    ).toBeUndefined();
+
+    expect(
+      addSessionExerciseSchema.parse({
+        exerciseTemplateId: '11111111-1111-4111-8111-111111111111',
+        orderIndex: 0,
+        supersetGroupKey: '\n\t ',
+      }).supersetGroupKey,
+    ).toBeUndefined();
+
+    expect(
+      updateSessionExerciseSchema.parse({
+        supersetGroupKey: '',
+      }).supersetGroupKey,
+    ).toBeUndefined();
+
+    expect(
+      updateSessionExerciseSchema.parse({
+        supersetGroupKey: 'A',
+      }).supersetGroupKey,
+    ).toBe('A');
+
+    expect(
+      updateSessionExerciseSchema.parse({
+        supersetGroupKey: ' group-1 ',
+      }).supersetGroupKey,
+    ).toBe('group-1');
+
+    expect(
+      updateSessionExerciseSchema.parse({
+        supersetGroupKey: null,
+      }).supersetGroupKey,
+    ).toBeNull();
+  });
+
+  it('rejects startSession payloads with more than 200 inline exercises', () => {
+    const result = startSessionSchema.safeParse({
+      exercises: Array.from({ length: 201 }, (_, index) => ({
+        exerciseTemplateId: `11111111-1111-4111-8111-${String(index)
+          .padStart(12, '0')
+          .slice(-12)}`,
+        orderIndex: index,
+      })),
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects batch set payloads with more than 100 sets', () => {
+    const result = batchCreateSetsSchema.safeParse({
+      sets: Array.from({ length: 101 }, (_, index) => ({
+        orderIndex: index,
+        type: 'WEIGHT_REPS' as const,
+        payload: {},
+      })),
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects session list queries that span more than 366 days', () => {
+    const result = listSessionsQuerySchema.safeParse({
+      startDate: '2024-01-01T00:00:00.000Z',
+      endDate: '2025-01-02T00:00:00.000Z',
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts session list queries whose date range stays within the max window', () => {
+    const result = listSessionsQuerySchema.safeParse({
+      startDate: '2024-01-01T00:00:00.000Z',
+      endDate: '2024-12-31T00:00:00.000Z',
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects session list queries whose endDate is before startDate', () => {
+    const result = listSessionsQuerySchema.safeParse({
+      startDate: '2024-01-02T00:00:00.000Z',
+      endDate: '2024-01-01T00:00:00.000Z',
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects non-object set payloads', () => {
+    expect(
+      createSetSchema.safeParse({
+        orderIndex: 0,
+        type: 'WEIGHT_REPS',
+        payload: [],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects set payloads with non-finite numbers', () => {
+    expect(
+      createSetSchema.safeParse({
+        orderIndex: 0,
+        type: 'WEIGHT_REPS',
+        payload: { load: Number.POSITIVE_INFINITY },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects oversized arrays inside set payloads', () => {
+    expect(
+      createSetSchema.safeParse({
+        orderIndex: 0,
+        type: 'WEIGHT_REPS',
+        payload: { reps: Array.from({ length: 10_001 }, () => 1) },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects set payloads with non-JSON-safe values', () => {
+    expect(
+      createSetSchema.safeParse({
+        orderIndex: 0,
+        type: 'WEIGHT_REPS',
+        payload: { invalid: () => 1 },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects circular set payloads', () => {
+    const payload: Record<string, unknown> = {};
+    payload.self = payload;
+
+    expect(
+      createSetSchema.safeParse({
+        orderIndex: 0,
+        type: 'WEIGHT_REPS',
+        payload,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('accepts nested set payload arrays and null values when they stay within limits', () => {
+    expect(
+      createSetSchema.safeParse({
+        orderIndex: 0,
+        type: 'WEIGHT_REPS',
+        payload: {
+          notes: [1, null, { tags: ['a', 'b'] }],
+        },
+      }).success,
+    ).toBe(true);
+  });
+
+  it('rejects set payloads whose custom toJSON throws during serialization', () => {
+    const payload = Object.create({
+      toJSON() {
+        throw new Error('cannot serialize');
+      },
+    }) as Record<string, unknown>;
+
+    expect(
+      createSetSchema.safeParse({
+        orderIndex: 0,
+        type: 'WEIGHT_REPS',
+        payload,
+      }).success,
+    ).toBe(false);
+  });
+});
