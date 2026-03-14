@@ -74,6 +74,8 @@ type TemplateBuilderFormValues = {
   exercises: TemplateBuilderExerciseForm[];
 };
 
+type UnitPreference = 'METRIC' | 'IMPERIAL';
+
 const WIZARD_STEPS = [
   'Name and description',
   'Exercise type',
@@ -239,7 +241,10 @@ export function useHistoryPageData() {
         ),
         templateName: item.workoutTemplate?.name ?? 'Ad-hoc Workout',
         durationLabel: formatDurationLabel(item.durationSeconds ?? 0),
-        volumeLabel: formatNumber(item.totalVolume ?? 0),
+        volumeLabel: formatVolumeLabel(
+          item.totalVolume ?? 0,
+          userQuery.data?.unitPreference ?? 'METRIC',
+        ),
       })) ?? [],
   };
 }
@@ -837,7 +842,10 @@ export function useExerciseDetailPageData() {
     historyItems:
       historyQuery.data?.items.map((item) => ({
         id: item.id,
-        performanceLabel: buildPerformanceLabel(item),
+        performanceLabel: buildPerformanceLabel(
+          item,
+          userQuery.data?.unitPreference ?? 'METRIC',
+        ),
         startedAt: formatDateInTimezone(
           item.sessionExercise.session.startedAt,
           userQuery.data?.timezone ?? 'UTC',
@@ -1001,6 +1009,10 @@ export function useActiveWorkoutPageData() {
   useRestTimer();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const userQuery = useQuery({
+    queryKey: ['user', 'me'],
+    queryFn: fetchCurrentUser,
+  });
   const state = useActiveWorkoutStore((store) => store.state);
   const clearWorkout = useActiveWorkoutStore((store) => store.clear);
   const sessionId = useActiveWorkoutStore((store) => store.sessionId);
@@ -1175,6 +1187,7 @@ export function useActiveWorkoutPageData() {
           totalVolume: summary.totalVolume,
           durationSeconds: summary.durationSeconds ?? 0,
           prs: summary.newPrs.length,
+          unitPreference: userQuery.data?.unitPreference ?? 'METRIC',
         });
         await invalidateFinishedWorkoutQueries();
         navigate('/workout/complete');
@@ -1182,8 +1195,8 @@ export function useActiveWorkoutPageData() {
         setErrorMessage(asErrorMessage(error) ?? 'Failed to finish workout');
       }
     },
-    openOverflow: (exerciseId?: string) => {
-      setOverflowExerciseId(exerciseId ?? exercises[0]?.id);
+    openOverflow: (exerciseId: string) => {
+      setOverflowExerciseId(exerciseId);
       setShowOverflow(true);
     },
     openReorder: () => {
@@ -1352,6 +1365,7 @@ export function useActiveWorkoutPageData() {
               totalVolume: summary.totalVolume,
               durationSeconds: summary.durationSeconds ?? 0,
               prs: summary.newPrs.length,
+              unitPreference: userQuery.data?.unitPreference ?? 'METRIC',
             });
             await invalidateFinishedWorkoutQueries();
             navigate('/workout/complete');
@@ -1378,6 +1392,20 @@ export function formatNumber(value: number): string {
   return new Intl.NumberFormat('en-US', {
     maximumFractionDigits: 0,
   }).format(value);
+}
+
+export function formatWeightLabel(
+  value: number,
+  unitPreference: UnitPreference = 'METRIC',
+): string {
+  return `${formatNumber(value)} ${getWeightUnitLabel(unitPreference)}`;
+}
+
+export function formatVolumeLabel(
+  value: number,
+  unitPreference: UnitPreference = 'METRIC',
+): string {
+  return `${formatNumber(value)} ${getWeightUnitLabel(unitPreference)}-reps`;
 }
 
 export function formatDurationLabel(totalSeconds: number): string {
@@ -1455,19 +1483,22 @@ function buildRepRangeLabel(
   return 'Rep range not set';
 }
 
-function buildPerformanceLabel(item: {
-  reps?: number | null;
-  weight?: number | null;
-  durationSeconds?: number | null;
-}): string {
+function buildPerformanceLabel(
+  item: {
+    reps?: number | null;
+    weight?: number | null;
+    durationSeconds?: number | null;
+  },
+  unitPreference: UnitPreference = 'METRIC',
+): string {
   if (typeof item.weight === 'number' && typeof item.reps === 'number') {
-    return `${item.weight} x ${item.reps}`;
+    return `${formatWeightLabel(item.weight, unitPreference)} x ${item.reps}`;
   }
   if (typeof item.reps === 'number') {
     return `${item.reps} reps`;
   }
   if (typeof item.durationSeconds === 'number') {
-    return `${item.durationSeconds}s`;
+    return formatDurationLabel(item.durationSeconds);
   }
 
   return 'Logged set';
@@ -1611,6 +1642,10 @@ function createDateFormatter(timezone: string) {
 
 function isValidTimezone(timezone: string): boolean {
   return Boolean(createDateFormatter(timezone));
+}
+
+function getWeightUnitLabel(unitPreference: UnitPreference): 'kg' | 'lb' {
+  return unitPreference === 'IMPERIAL' ? 'lb' : 'kg';
 }
 
 function mapSessionExercises(session: ActiveSessionPayload) {

@@ -593,6 +593,9 @@ export class SessionsService {
         where: {
           sessionId,
           deletedAt: null,
+          session: {
+            userId,
+          },
         },
         select: {
           exerciseTemplateId: true,
@@ -602,13 +605,15 @@ export class SessionsService {
         new Set(sessionExercises.map((row) => row.exerciseTemplateId)),
       );
 
-      for (const exerciseTemplateId of exerciseTemplateIds) {
-        await this.prDetectionService.recalculateForExercise(
-          userId,
-          exerciseTemplateId,
-          tx,
-        );
-      }
+      await Promise.all(
+        exerciseTemplateIds.map((exerciseTemplateId) =>
+          this.prDetectionService.recalculateForExercise(
+            userId,
+            exerciseTemplateId,
+            tx,
+          ),
+        ),
+      );
     });
 
     return { success: true };

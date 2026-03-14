@@ -58,7 +58,7 @@ test.describe('Onboarding Flow', () => {
     ).toBeVisible();
 
     await page.getByRole('button', { name: 'History' }).click();
-    await expect(page.getByText(/100 x 8/)).toBeVisible();
+    await expect(page.getByText(/100 (kg|lb) x 8/)).toBeVisible();
   });
 
   test('template builder preserves entered values across step navigation', async ({

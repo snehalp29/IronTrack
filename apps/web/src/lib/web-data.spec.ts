@@ -153,6 +153,7 @@ describe('web-data', () => {
         return {
           data: {
             timezone: 'America/New_York',
+            unitPreference: 'METRIC',
           },
           error: undefined,
           isLoading: false,
@@ -364,6 +365,7 @@ describe('web-data', () => {
     )?.[0];
 
     expect(data.items[0]?.startedAt).toBe('2026-03-05');
+    expect(data.items[0]?.volumeLabel).toBe('1,234 kg-reps');
     await expect(historyQuery?.queryFn()).resolves.toEqual({
       items: [],
       pagination: { page: 1, pageSize: 20, total: 0 },
@@ -446,6 +448,43 @@ describe('web-data', () => {
       pageSize: 1,
       status: 'FINISHED',
     });
+  });
+
+  it('formats history volume with the current unit preference', () => {
+    useQueryMock.mockImplementation(({ queryKey }: { queryKey: unknown[] }) => {
+      if (queryKey[0] === 'user') {
+        return {
+          data: {
+            timezone: 'UTC',
+            unitPreference: 'IMPERIAL',
+          },
+          error: undefined,
+          isLoading: false,
+        };
+      }
+
+      return {
+        data: {
+          items: [
+            {
+              id: 'session-1',
+              startedAt: '2026-03-06T03:30:00.000Z',
+              durationSeconds: 600,
+              totalVolume: 1234,
+              status: 'FINISHED',
+              workoutTemplate: null,
+            },
+          ],
+          pagination: { page: 1, pageSize: 20, total: 1 },
+        },
+        error: undefined,
+        isLoading: false,
+      };
+    });
+
+    const data = useHistoryPageData();
+
+    expect(data.items[0]?.volumeLabel).toBe('1,234 lb-reps');
   });
 
   it('uses the server-backed workout streak query on dashboard instead of paged sessions', () => {
@@ -1119,6 +1158,7 @@ describe('web-data', () => {
       return {
         data: {
           timezone: 'UTC',
+          unitPreference: 'METRIC',
         },
         error: undefined,
         isLoading: false,
@@ -1141,7 +1181,80 @@ describe('web-data', () => {
     expect(data.historyItems).toEqual([
       {
         id: 'set-1',
-        performanceLabel: '100 x 8',
+        performanceLabel: '100 kg x 8',
+        startedAt: '2026-03-05',
+      },
+    ]);
+  });
+
+  it('formats duration-based performance labels without raw second counts', () => {
+    useQueryMock.mockImplementation(({ queryKey }: { queryKey: unknown[] }) => {
+      if (queryKey[0] === 'exercise' && queryKey[2] === 'detail') {
+        return {
+          data: {
+            id: 'exercise-plank',
+            name: 'Plank',
+            description: null,
+            exerciseType: 'DURATION',
+            primaryMuscle: null,
+            secondaryMuscles: [],
+            equipment: [],
+            defaultSets: null,
+            repMin: null,
+            repMax: null,
+            defaultCues: null,
+            notes: [],
+          },
+          error: undefined,
+          isLoading: false,
+        };
+      }
+
+      if (queryKey[0] === 'exercise' && queryKey[2] === 'history') {
+        return {
+          data: {
+            items: [
+              {
+                id: 'set-1',
+                reps: null,
+                weight: null,
+                durationSeconds: 3661,
+                sessionExercise: {
+                  session: {
+                    id: 'session-1',
+                    startedAt: '2026-03-05T12:00:00.000Z',
+                    finishedAt: '2026-03-05T13:01:01.000Z',
+                  },
+                },
+              },
+            ],
+            pagination: {
+              page: 1,
+              pageSize: 20,
+              total: 1,
+            },
+          },
+          error: undefined,
+          isLoading: false,
+        };
+      }
+
+      return {
+        data: {
+          timezone: 'UTC',
+          unitPreference: 'METRIC',
+        },
+        error: undefined,
+        isLoading: false,
+      };
+    });
+
+    const data = useExerciseDetailPageData();
+
+    expect(data.historyItems).toEqual([
+      {
+        id: 'set-1',
+        performanceLabel: '1h 1m',
         startedAt: '2026-03-05',
       },
     ]);
@@ -2208,6 +2321,105 @@ describe('web-data', () => {
       queryKey: ['progress'],
     });
     expect(navigateMock).toHaveBeenCalledWith('/workout/complete');
+  });
+
+  it('stores the current unit preference in the completion summary after finishing', async () => {
+    const finish = vi.fn();
+    useStateMock
+      .mockReturnValueOnce([undefined, vi.fn()])
+      .mockReturnValueOnce([undefined, vi.fn()])
+      .mockReturnValueOnce([false, vi.fn()])
+      .mockReturnValueOnce([false, vi.fn()])
+      .mockReturnValueOnce([false, vi.fn()])
+      .mockReturnValueOnce([false, vi.fn()])
+      .mockReturnValueOnce([[], vi.fn()])
+      .mockReturnValueOnce([[], vi.fn()])
+      .mockReturnValueOnce([false, vi.fn()])
+      .mockReturnValueOnce([undefined, vi.fn()])
+      .mockReturnValueOnce([false, vi.fn()])
+      .mockReturnValueOnce(['', vi.fn()]);
+    useQueryMock.mockImplementation(({ queryKey }: { queryKey: unknown[] }) => {
+      if (queryKey[0] === 'user') {
+        return {
+          data: {
+            timezone: 'UTC',
+            unitPreference: 'IMPERIAL',
+          },
+          error: undefined,
+          isLoading: false,
+        };
+      }
+
+      return {
+        data: null,
+        error: undefined,
+        isLoading: false,
+        isSuccess: false,
+      };
+    });
+    useActiveWorkoutStoreMock.mockImplementation(
+      (
+        selector: (state: {
+          state: string;
+          sessionId?: string;
+          startedAt?: string;
+          exercises: Array<{
+            id: string;
+            name: string;
+            orderIndex: number;
+            sets: Array<{
+              id: string;
+              orderIndex: number;
+              isCompleted: boolean;
+            }>;
+          }>;
+          updateSet: () => void;
+          removeExercise: () => void;
+          reorderExercises: () => void;
+          finish: typeof finish;
+          restTimerSeconds: number;
+          start: () => void;
+          clear: () => void;
+          syncFromServer: () => void;
+        }) => unknown,
+      ) =>
+        selector({
+          exercises: [
+            {
+              id: 'se-1',
+              name: 'Bench Press',
+              orderIndex: 0,
+              sets: [{ id: 'set-1', orderIndex: 0, isCompleted: true }],
+            },
+          ],
+          finish,
+          removeExercise: vi.fn(),
+          reorderExercises: vi.fn(),
+          restTimerSeconds: 0,
+          sessionId: 'session-1',
+          start: vi.fn(),
+          startedAt: '2026-03-06T12:00:00.000Z',
+          state: 'IN_PROGRESS',
+          updateSet: vi.fn(),
+          clear: vi.fn(),
+          syncFromServer: vi.fn(),
+        }),
+    );
+    finishWorkoutSessionMock.mockResolvedValue({
+      durationSeconds: 1200,
+      newPrs: [],
+      totalVolume: 3200,
+    });
+
+    const data = useActiveWorkoutPageData();
+
+    await expect(data.onFinishWorkout()).resolves.toBeUndefined();
+    expect(finish).toHaveBeenCalledWith({
+      durationSeconds: 1200,
+      prs: 0,
+      totalVolume: 3200,
+      unitPreference: 'IMPERIAL',
+    });
   });
 
   it('does not invalidate finish-related queries when incomplete confirmation fails', async () => {

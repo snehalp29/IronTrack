@@ -29,12 +29,6 @@ export function ActiveWorkoutPage() {
         {data.errorMessage ? <p className="meta">{data.errorMessage}</p> : null}
         <p className="badge">Rest Timer: {data.restTimerSeconds}s</p>
         <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-          <button
-            className="secondary"
-            onClick={() => data.openOverflow(data.exercises[0]?.id)}
-          >
-            Overflow
-          </button>
           <button className="secondary" onClick={data.openReorder}>
             Reorder
           </button>

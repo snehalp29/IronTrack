@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 
-import { formatDurationLabel, formatNumber } from '../lib/web-data';
+import { formatDurationLabel, formatVolumeLabel } from '../lib/web-data';
 import { useActiveWorkoutStore } from '../stores/activeWorkoutStore';
 
 export function CompletionSummaryPage() {
@@ -21,7 +21,13 @@ export function CompletionSummaryPage() {
   return (
     <div className="card">
       <h1>Summary</h1>
-      <p className="meta">Volume: {formatNumber(summary.totalVolume)}</p>
+      <p className="meta">
+        Volume:{' '}
+        {formatVolumeLabel(
+          summary.totalVolume,
+          summary.unitPreference ?? 'METRIC',
+        )}
+      </p>
       <p className="meta">
         Duration: {formatDurationLabel(summary.durationSeconds)}
       </p>

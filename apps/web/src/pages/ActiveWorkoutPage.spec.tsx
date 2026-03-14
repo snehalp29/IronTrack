@@ -311,7 +311,7 @@ describe('ActiveWorkoutPage', () => {
     );
   });
 
-  it('renders an overflow action for each exercise card', () => {
+  it('renders overflow actions only on exercise cards', () => {
     const openOverflow = vi.fn();
     useActiveWorkoutPageDataMock.mockReturnValue({
       state: 'IN_PROGRESS',
@@ -383,9 +383,9 @@ describe('ActiveWorkoutPage', () => {
     const view = ActiveWorkoutPage();
     const overflowButtons = findButtonsByTextIncludes(view, 'Overflow');
 
-    expect(overflowButtons).toHaveLength(3);
+    expect(overflowButtons).toHaveLength(2);
+    overflowButtons[0]?.props.onClick?.();
     overflowButtons[1]?.props.onClick?.();
-    overflowButtons[2]?.props.onClick?.();
     expect(openOverflow).toHaveBeenNthCalledWith(1, 'se-1');
     expect(openOverflow).toHaveBeenNthCalledWith(2, 'se-2');
   });

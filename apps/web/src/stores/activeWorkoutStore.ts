@@ -43,6 +43,7 @@ interface ActiveWorkoutState {
     totalVolume: number;
     durationSeconds: number;
     prs: number;
+    unitPreference?: 'METRIC' | 'IMPERIAL';
   };
   start: (
     sessionId: string,
@@ -73,6 +74,7 @@ interface ActiveWorkoutState {
     totalVolume: number;
     durationSeconds: number;
     prs: number;
+    unitPreference?: 'METRIC' | 'IMPERIAL';
   }) => void;
   setRestTimer: (seconds: number) => void;
   setRestTimerDefault: (seconds: number) => void;
@@ -116,6 +118,7 @@ function createInitialWorkoutSnapshot() {
           totalVolume: number;
           durationSeconds: number;
           prs: number;
+          unitPreference?: 'METRIC' | 'IMPERIAL';
         }
       | undefined,
   };
@@ -179,7 +182,15 @@ function normalizePersistedWorkoutState(persistedState: unknown) {
       typeof maybeState.completeSummary.totalVolume === 'number' &&
       typeof maybeState.completeSummary.durationSeconds === 'number' &&
       typeof maybeState.completeSummary.prs === 'number'
-        ? maybeState.completeSummary
+        ? {
+            ...maybeState.completeSummary,
+            unitPreference:
+              maybeState.completeSummary.unitPreference === 'IMPERIAL'
+                ? 'IMPERIAL'
+                : maybeState.completeSummary.unitPreference === 'METRIC'
+                  ? 'METRIC'
+                  : undefined,
+          }
         : initialState.completeSummary,
   };
 }

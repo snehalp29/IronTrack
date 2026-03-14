@@ -1432,6 +1432,9 @@ describe('SessionsService', () => {
       where: {
         sessionId: 'session-1',
         deletedAt: null,
+        session: {
+          userId: 'user-1',
+        },
       },
       select: {
         exerciseTemplateId: true,
@@ -1450,6 +1453,48 @@ describe('SessionsService', () => {
       'exercise-2',
       expect.anything(),
     );
+  });
+
+  it('starts PR recalculation for all affected exercises before awaiting completion', async () => {
+    const { service, prismaMock, prDetectionMock } = createService();
+    (prismaMock.workoutSession.updateMany as jest.Mock).mockResolvedValue({
+      count: 1,
+    });
+    (prismaMock.sessionExercise.findMany as jest.Mock).mockResolvedValue([
+      { exerciseTemplateId: 'exercise-1' },
+      { exerciseTemplateId: 'exercise-2' },
+    ]);
+
+    let resolveFirst: (() => void) | undefined;
+    let resolveSecond: (() => void) | undefined;
+    (prDetectionMock.recalculateForExercise as jest.Mock)
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveFirst = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveSecond = resolve;
+          }),
+      );
+
+    const resultPromise = service.softDeleteSession('user-1', 'session-1');
+
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(prDetectionMock.recalculateForExercise).toHaveBeenCalledTimes(2);
+
+    resolveFirst?.();
+    resolveSecond?.();
+
+    await expect(resultPromise).resolves.toEqual({
+      success: true,
+    });
   });
 
   it('throws when deleting missing session', async () => {

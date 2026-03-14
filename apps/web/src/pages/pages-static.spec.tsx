@@ -118,7 +118,7 @@ describe('static/simple pages', () => {
           startedAt: '2026-02-27T12:00:00.000Z',
           templateName: 'Push Day A',
           durationLabel: '52m',
-          volumeLabel: '12,450',
+          volumeLabel: '12,450 kg-reps',
         },
       ],
     });
@@ -208,7 +208,7 @@ describe('static/simple pages', () => {
     expect(html).toContain('Workout History');
     expect(html).toContain('Push Day A');
     expect(html).toContain('52m');
-    expect(html).toContain('12,450');
+    expect(html).toContain('12,450 kg-reps');
   });
 
   it('renders exercise selection list from controller data', () => {
@@ -307,7 +307,9 @@ describe('static/simple pages', () => {
     expect(render(<CompletionMotivationPage />)).toContain(
       'href="/workout/complete/summary"',
     );
-    expect(render(<CompletionSummaryPage />)).toContain('Volume: 9,999');
+    expect(render(<CompletionSummaryPage />)).toContain(
+      'Volume: 9,999 kg-reps',
+    );
     expect(render(<CompletionSummaryPage />)).toContain('Duration: 21m');
     expect(render(<CompletionSummaryPage />)).toContain('PRs: 3');
     expect(render(<CompletionProgressPage />)).toContain(
@@ -371,8 +373,39 @@ describe('static/simple pages', () => {
 
     const html = render(<CompletionSummaryPage />);
 
-    expect(html).toContain('Volume: 12,500');
+    expect(html).toContain('Volume: 12,500 kg-reps');
     expect(html).toContain('Duration: 1h 1m');
+  });
+
+  it('renders completion volume using the stored unit preference when available', () => {
+    useActiveWorkoutStoreMock.mockImplementation(
+      (
+        selector: (state: {
+          clear: () => void;
+          completeSummary:
+            | {
+                totalVolume: number;
+                durationSeconds: number;
+                prs: number;
+                unitPreference?: 'METRIC' | 'IMPERIAL';
+              }
+            | undefined;
+        }) => unknown,
+      ) =>
+        selector({
+          clear: vi.fn(),
+          completeSummary: {
+            totalVolume: 9999,
+            durationSeconds: 1234,
+            prs: 3,
+            unitPreference: 'IMPERIAL',
+          },
+        }),
+    );
+
+    const html = render(<CompletionSummaryPage />);
+
+    expect(html).toContain('Volume: 9,999 lb-reps');
   });
 
   it('navigates from the streak page with a dashboard clear flag', () => {
